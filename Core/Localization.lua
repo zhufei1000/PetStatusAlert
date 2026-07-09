@@ -330,7 +330,7 @@ local UI_LOCALE = {
         LANGUAGE_RURU = "Русский",
         LANGUAGE_CHANGED = "Язык переключен на: %s",
         AUTHOR = "Автор: zhufei1000",
-        TRANSLATION_RURU = "Русский перевод: Hubbotu",
+        TRANSLATION_RURU = "Перевод на Русский: ZamestoTV",
     },
 }
 
