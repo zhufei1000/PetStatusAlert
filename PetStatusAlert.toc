@@ -1,0 +1,17 @@
+## Interface: 120005, 120007
+## Title: PetStatusAlert - Hunter / Warlock / DK / Frost Mage Pet Alert | 宠物状态提醒
+## Notes: Pet status alert for Hunter, Warlock, Unholy DK, and Frost Mage with Summon Water Elemental talent.
+## Author: zhufei1000
+## Version: 1.3.24
+## SavedVariables: PetStatusAlertDB
+
+Core/Database.lua
+Libs/LibStub/LibStub.lua
+Libs/LibCustomGlow-1.0/LibCustomGlow-1.0.lua
+Core/Localization.lua
+Core/AlertFrame.lua
+Core/TTS.lua
+Core/PetLogic.lua
+UI/Options.lua
+Core/Events.lua
+Core/Slash.lua
