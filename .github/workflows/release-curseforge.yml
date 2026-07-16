@@ -1,0 +1,68 @@
+name: Release to CurseForge
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: curseforge-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Package and upload
+    runs-on: ubuntu-latest
+
+    env:
+      CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${CF_API_TOKEN:-}" ]]; then
+            echo "::error::Repository secret CF_API_TOKEN is not configured."
+            exit 1
+          fi
+
+          if [[ ! -f "PetStatusAlert.toc" ]]; then
+            echo "::error::PetStatusAlert.toc was not found."
+            exit 1
+          fi
+
+          toc_version="$(
+            sed -n 's/^## Version:[[:space:]]*//p' PetStatusAlert.toc |
+            head -n 1 |
+            tr -d '\r'
+          )"
+
+          tag_version="${GITHUB_REF_NAME}"
+
+          if [[ -z "${toc_version}" ]]; then
+            echo "::error::No ## Version value was found in PetStatusAlert.toc."
+            exit 1
+          fi
+
+          if [[ "${tag_version}" != "${toc_version}" ]]; then
+            echo "::error::Git tag '${tag_version}' does not match TOC version '${toc_version}'."
+            echo "::error::Use a tag such as '${toc_version}', without a v prefix."
+            exit 1
+          fi
+
+          echo "Validated PetStatusAlert ${toc_version}."
+
+      - name: Package and upload to CurseForge
+        uses: BigWigsMods/packager@v2
+        with:
+          args: -p 1500392
