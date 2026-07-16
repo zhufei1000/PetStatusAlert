@@ -3,6 +3,7 @@
 ## Notes: Pet status alert for Hunter, Warlock, Unholy DK, and Frost Mage with Summon Water Elemental talent.
 ## Author: zhufei1000
 ## Version: 1.3.24
+## X-Curse-Project-ID: 1500392
 ## SavedVariables: PetStatusAlertDB
 
 Core/Database.lua
