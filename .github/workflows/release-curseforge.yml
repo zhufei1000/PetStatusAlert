@@ -66,4 +66,4 @@ jobs:
       - name: Package and upload to CurseForge
         uses: BigWigsMods/packager@v2
         with:
-          args: -p 1500392
+          args: '-p 1500392 -n "{package-name}_{project-version}:{package-name}_{project-version}"'
