@@ -13,9 +13,6 @@ local DEFAULT_ALERT_FLOAT_AMPLITUDE = PSA.DEFAULT_ALERT_FLOAT_AMPLITUDE or 8
 local DEFAULT_ALERT_FLOAT_SPEED = PSA.DEFAULT_ALERT_FLOAT_SPEED or 1
 local DEFAULT_ALERT_FONT_SIZE = PSA.DEFAULT_ALERT_FONT_SIZE or 28
 local DEFAULT_ALERT_GLOW_ENABLED = PSA.DEFAULT_ALERT_GLOW_ENABLED ~= false
-local DEFAULT_ALERT_GLOW_PADDING = PSA.DEFAULT_ALERT_GLOW_PADDING or 0
-local DEFAULT_ALERT_GLOW_THICKNESS = PSA.DEFAULT_ALERT_GLOW_THICKNESS or 2
-local DEFAULT_ALERT_GLOW_TYPE = "Pixel"
 local DEFAULT_ALERT_GLOW_SPEED = PSA.DEFAULT_ALERT_GLOW_SPEED or 1
 local DEFAULT_ALERT_GLOW_COLOR = {0.95, 0.95, 0.32, 1}
 local DEFAULT_ALERT_ICON_MODE = PSA.DEFAULT_ALERT_ICON_MODE or "text"
@@ -97,27 +94,38 @@ local function GetPlayerClassFile()
     return classFile
 end
 
+-- spellID → 纹理路径 缓存。spellID 固定、图标不变，只查询一次即可。
+local SPELL_TEXTURE_CACHE = {}
+
 local function GetSpellTextureByID(spellID)
     spellID = tonumber(spellID)
     if not spellID then
         return nil
     end
 
+    local cached = SPELL_TEXTURE_CACHE[spellID]
+    if cached ~= nil then
+        -- 空串为查询失败标记
+        return cached ~= "" and cached or nil
+    end
+
+    local tex
     if C_Spell and type(C_Spell.GetSpellTexture) == "function" then
-        local ok, tex = pcall(C_Spell.GetSpellTexture, spellID)
-        if ok and tex then
-            return tex
+        local ok, result = pcall(C_Spell.GetSpellTexture, spellID)
+        if ok and result then
+            tex = result
         end
     end
 
-    if type(GetSpellTexture) == "function" then
-        local ok, tex = pcall(GetSpellTexture, spellID)
-        if ok and tex then
-            return tex
+    if not tex and type(GetSpellTexture) == "function" then
+        local ok, result = pcall(GetSpellTexture, spellID)
+        if ok and result then
+            tex = result
         end
     end
 
-    return nil
+    SPELL_TEXTURE_CACHE[spellID] = tex or ""
+    return tex
 end
 
 local function ResolveWarlockSummonSpellID()
@@ -243,20 +251,8 @@ local function NormalizeFloatSpeed(value)
     return ClampNumber(value, DEFAULT_ALERT_FLOAT_SPEED, 0.1, 3, 1)
 end
 
-local function NormalizeGlowPadding(value)
-    return ClampNumber(value, DEFAULT_ALERT_GLOW_PADDING, 0, 60)
-end
-
-local function NormalizeGlowThickness(value)
-    return ClampNumber(value, DEFAULT_ALERT_GLOW_THICKNESS, 1, 8)
-end
-
 local function NormalizeGlowSpeed(value)
     return ClampNumber(value, DEFAULT_ALERT_GLOW_SPEED, 0.2, 3, 1)
-end
-
-local function NormalizeGlowType(value)
-    return DEFAULT_ALERT_GLOW_TYPE
 end
 
 local function NormalizeIconMode(value)
@@ -283,17 +279,13 @@ local floatingActive = false
 local currentFloatAmplitude = DEFAULT_ALERT_FLOAT_AMPLITUDE
 local currentFloatSpeed = DEFAULT_ALERT_FLOAT_SPEED
 local currentAlertFontSize = DEFAULT_ALERT_FONT_SIZE
-local currentGlowPadding = DEFAULT_ALERT_GLOW_PADDING
-local currentGlowThickness = DEFAULT_ALERT_GLOW_THICKNESS
-local currentGlowType = DEFAULT_ALERT_GLOW_TYPE
 local currentGlowSpeed = DEFAULT_ALERT_GLOW_SPEED
 local currentGlowEnabled = DEFAULT_ALERT_GLOW_ENABLED
 local currentIconMode = DEFAULT_ALERT_ICON_MODE
 local currentIconSize = DEFAULT_ALERT_ICON_SIZE
 local currentIconGap = DEFAULT_ALERT_ICON_GAP
--- 缓存当前是否处于"显示图标"的布局，供浮动函数复用锚点，避免每帧重算。
+-- 缓存当前是否处于"显示图标"的布局，供流光判断使用。
 local currentLayoutShowsIcon = false
-local currentLayoutShowsText = true
 local lastMessage = ""
 local lastStatusKey = nil
 
@@ -330,32 +322,11 @@ local function RefreshAlertGlowEnabled()
     return currentGlowEnabled
 end
 
-local function RefreshAlertGlowPadding()
-    InitDB()
-    currentGlowPadding = NormalizeGlowPadding(PetStatusAlertDB.alertGlowPadding)
-    PetStatusAlertDB.alertGlowPadding = currentGlowPadding
-    return currentGlowPadding
-end
-
-local function RefreshAlertGlowThickness()
-    InitDB()
-    currentGlowThickness = NormalizeGlowThickness(PetStatusAlertDB.alertGlowThickness)
-    PetStatusAlertDB.alertGlowThickness = currentGlowThickness
-    return currentGlowThickness
-end
-
 local function RefreshAlertGlowSpeed()
     InitDB()
     currentGlowSpeed = NormalizeGlowSpeed(PetStatusAlertDB.alertGlowSpeed)
     PetStatusAlertDB.alertGlowSpeed = currentGlowSpeed
     return currentGlowSpeed
-end
-
-local function RefreshAlertGlowType()
-    InitDB()
-    currentGlowType = NormalizeGlowType(PetStatusAlertDB.alertGlowType)
-    PetStatusAlertDB.alertGlowType = currentGlowType
-    return currentGlowType
 end
 
 local function RefreshAlertIconMode()
@@ -402,15 +373,14 @@ end
 -- 根据 statusKey 设置 icon/text 锚点和 contentFrame 尺寸。
 -- 返回 contentWidth, contentHeight（内容净尺寸，不含 glow padding）。
 local function ApplyContentLayout(statusKey)
-    -- 防御：每次布局前从 DB 同步 currentIconMode，修复 RL/重登后图标模式丢失
-    InitDB()
+    -- 防御：从 DB 同步 currentIconMode，修复 RL/重登后图标模式丢失。
+    -- 不调用 InitDB（上层 RefreshAlertVisuals/RefreshAlertBoxSize 已初始化 DB），仅做轻量同步。
     if PetStatusAlertDB.alertIconMode then
         currentIconMode = NormalizeIconMode(PetStatusAlertDB.alertIconMode)
     end
 
     local showIcon, showText, iconValue = ResolveContentLayout(statusKey)
     currentLayoutShowsIcon = showIcon
-    currentLayoutShowsText = showText
 
     icon:ClearAllPoints()
     text:ClearAllPoints()
@@ -420,7 +390,7 @@ local function ApplyContentLayout(statusKey)
     local iconTexture = nil
     if showIcon and iconValue then
         if type(iconValue) == "number" and iconValue < 0 then
-            -- 负数 = 宠物姿态，从宠物动作栏动态获取图标纹理
+            -- 负数 = 宠物姿态，直接使用硬编码纹理路径
             local token = PET_MODE_TOKEN[iconValue]
             if token then
                 iconTexture = GetPetModeIconTexture(token)
@@ -435,7 +405,6 @@ local function ApplyContentLayout(statusKey)
             showIcon = false
             showText = true
             currentLayoutShowsIcon = false
-            currentLayoutShowsText = true
         end
     end
 
@@ -483,8 +452,6 @@ end
 
 local function RefreshAlertBoxSize()
     RefreshAlertFontSize()
-    RefreshAlertGlowPadding()
-    RefreshAlertGlowThickness()
     RefreshAlertIconSize()
 
     text:SetFont(STANDARD_TEXT_FONT, currentAlertFontSize, "OUTLINE")
@@ -492,19 +459,20 @@ local function RefreshAlertBoxSize()
     text:Show()
 
     -- 用当前状态键重新计算 icon/text 锚点与内容尺寸。
+    -- glowPadding 固定为 0（InitDB 强制重置，用户不可调），此处不再计算 padding。
     local contentWidth, contentHeight = ApplyContentLayout(lastStatusKey)
     contentWidth = tonumber(contentWidth) or 0
     contentHeight = tonumber(contentHeight) or currentAlertFontSize
 
-    local boxWidth = math.max(math.ceil(contentWidth + currentGlowPadding * 2), 40)
-    local boxHeight = math.max(math.ceil(contentHeight + currentGlowPadding * 2), currentAlertFontSize + 6)
+    local boxWidth = math.max(math.ceil(contentWidth), 40)
+    local boxHeight = math.max(math.ceil(contentHeight), currentAlertFontSize + 6)
 
     addonFrame:SetSize(math.max(boxWidth, 80), math.max(boxHeight, 32))
     contentFrame:SetSize(math.max(contentWidth, 1), math.max(contentHeight, 1))
 
     -- 流光目标：有图标时只围绕图标，纯文字时围绕文字
     if currentLayoutShowsIcon then
-        local glowSize = math.max(math.ceil(currentIconSize + currentGlowPadding * 2), 32)
+        local glowSize = math.max(math.ceil(currentIconSize), 32)
         glowFrame:SetSize(glowSize, glowSize)
     else
         glowFrame:SetSize(boxWidth, boxHeight)
@@ -571,7 +539,6 @@ local function StartAlertGlow()
         return
     end
 
-    RefreshAlertGlowType()
     RefreshAlertGlowSpeed()
     RefreshAlertBoxSize()
 
@@ -604,7 +571,7 @@ local function StartAlertGlow()
         8,
         frequency,
         length,
-        currentGlowThickness,
+        2,  -- thickness（固定值，InitDB 强制重置，用户不可调）
         0,
         0,
         false,
@@ -673,30 +640,6 @@ local function GetAlertGlowEnabled()
     return RefreshAlertGlowEnabled()
 end
 
-local function SetAlertGlowPadding(value)
-    InitDB()
-    currentGlowPadding = NormalizeGlowPadding(value)
-    PetStatusAlertDB.alertGlowPadding = currentGlowPadding
-    RefreshAlertVisuals()
-    return currentGlowPadding
-end
-
-local function GetAlertGlowPadding()
-    return RefreshAlertGlowPadding()
-end
-
-local function SetAlertGlowThickness(value)
-    InitDB()
-    currentGlowThickness = NormalizeGlowThickness(value)
-    PetStatusAlertDB.alertGlowThickness = currentGlowThickness
-    RefreshAlertVisuals()
-    return currentGlowThickness
-end
-
-local function GetAlertGlowThickness()
-    return RefreshAlertGlowThickness()
-end
-
 local function SetAlertGlowSpeed(value)
     InitDB()
     currentGlowSpeed = NormalizeGlowSpeed(value)
@@ -707,18 +650,6 @@ end
 
 local function GetAlertGlowSpeed()
     return RefreshAlertGlowSpeed()
-end
-
-local function SetAlertGlowType(value)
-    InitDB()
-    currentGlowType = NormalizeGlowType(value)
-    PetStatusAlertDB.alertGlowType = currentGlowType
-    RefreshAlertVisuals()
-    return currentGlowType
-end
-
-local function GetAlertGlowType()
-    return RefreshAlertGlowType()
 end
 
 local function SetAlertIconMode(value)
@@ -904,18 +835,9 @@ PSA.RefreshAlertFloatSpeed = RefreshAlertFloatSpeed
 PSA.GetAlertGlowEnabled = GetAlertGlowEnabled
 PSA.SetAlertGlowEnabled = SetAlertGlowEnabled
 PSA.RefreshAlertGlowEnabled = RefreshAlertGlowEnabled
-PSA.GetAlertGlowPadding = GetAlertGlowPadding
-PSA.SetAlertGlowPadding = SetAlertGlowPadding
-PSA.RefreshAlertGlowPadding = RefreshAlertGlowPadding
-PSA.GetAlertGlowThickness = GetAlertGlowThickness
-PSA.SetAlertGlowThickness = SetAlertGlowThickness
-PSA.RefreshAlertGlowThickness = RefreshAlertGlowThickness
 PSA.GetAlertGlowSpeed = GetAlertGlowSpeed
 PSA.SetAlertGlowSpeed = SetAlertGlowSpeed
 PSA.RefreshAlertGlowSpeed = RefreshAlertGlowSpeed
-PSA.GetAlertGlowType = GetAlertGlowType
-PSA.SetAlertGlowType = SetAlertGlowType
-PSA.RefreshAlertGlowType = RefreshAlertGlowType
 PSA.GetAlertIconMode = GetAlertIconMode
 PSA.SetAlertIconMode = SetAlertIconMode
 PSA.RefreshAlertIconMode = RefreshAlertIconMode

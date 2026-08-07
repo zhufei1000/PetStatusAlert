@@ -15,11 +15,6 @@ local DEFAULT_ALERT_FLOAT_AMPLITUDE = 8
 local DEFAULT_ALERT_FLOAT_SPEED = 1
 local DEFAULT_ALERT_FONT_SIZE = 28
 local DEFAULT_ALERT_GLOW_ENABLED = false
-local DEFAULT_ALERT_GLOW_PADDING = 0
-local DEFAULT_ALERT_GLOW_THICKNESS = 2
-local OLD_ALERT_GLOW_PADDING_DEFAULT = 18
-local TIGHT_ALERT_GLOW_PADDING_DEFAULT = 4
-local DEFAULT_ALERT_GLOW_TYPE = "Pixel"
 local DEFAULT_ALERT_GLOW_SPEED = 1
 -- 1.4.0：图标提醒模式。text=纯文字（默认，兼容老用户）；icon=纯图标；both=图标+文字。
 local DEFAULT_ALERT_ICON_MODE = "text"
@@ -114,10 +109,6 @@ local function InitDB()
     end
     PetStatusAlertDB.alertGlowEnabled = PetStatusAlertDB.alertGlowEnabled and true or false
 
-    -- 1.3.13：像素流光只保留速度可调；距离和粗细固定为默认值，避免旧隐藏设置影响观感。
-    PetStatusAlertDB.alertGlowPadding = DEFAULT_ALERT_GLOW_PADDING
-    PetStatusAlertDB.alertGlowThickness = DEFAULT_ALERT_GLOW_THICKNESS
-
     -- 像素流光速度：1 = 默认速度。只保留 Pixel Glow，旧发光类型统一迁移。
     if PetStatusAlertDB.alertGlowSpeed == nil then
         PetStatusAlertDB.alertGlowSpeed = DEFAULT_ALERT_GLOW_SPEED
@@ -128,9 +119,6 @@ local function InitDB()
     elseif PetStatusAlertDB.alertGlowSpeed > 3 then
         PetStatusAlertDB.alertGlowSpeed = 3
     end
-
-    -- 1.3.13：只保留像素流光，不再暴露多发光类型选择。
-    PetStatusAlertDB.alertGlowType = DEFAULT_ALERT_GLOW_TYPE
 
     -- 1.4.0：图标提醒模式。默认纯文字，老用户升级后保持纯文字，不会突然冒出图标。
     if type(PetStatusAlertDB.alertIconMode) ~= "string" or not VALID_ALERT_ICON_MODES[PetStatusAlertDB.alertIconMode] then
@@ -192,9 +180,6 @@ PSA.DEFAULT_ALERT_FLOAT_AMPLITUDE = DEFAULT_ALERT_FLOAT_AMPLITUDE
 PSA.DEFAULT_ALERT_FLOAT_SPEED = DEFAULT_ALERT_FLOAT_SPEED
 PSA.DEFAULT_ALERT_FONT_SIZE = DEFAULT_ALERT_FONT_SIZE
 PSA.DEFAULT_ALERT_GLOW_ENABLED = DEFAULT_ALERT_GLOW_ENABLED
-PSA.DEFAULT_ALERT_GLOW_PADDING = DEFAULT_ALERT_GLOW_PADDING
-PSA.DEFAULT_ALERT_GLOW_THICKNESS = DEFAULT_ALERT_GLOW_THICKNESS
-PSA.DEFAULT_ALERT_GLOW_TYPE = DEFAULT_ALERT_GLOW_TYPE
 PSA.DEFAULT_ALERT_GLOW_SPEED = DEFAULT_ALERT_GLOW_SPEED
 PSA.DEFAULT_ALERT_ICON_MODE = DEFAULT_ALERT_ICON_MODE
 PSA.DEFAULT_ALERT_ICON_SIZE = DEFAULT_ALERT_ICON_SIZE
