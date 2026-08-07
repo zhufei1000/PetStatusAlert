@@ -402,6 +402,12 @@ end
 -- 根据 statusKey 设置 icon/text 锚点和 contentFrame 尺寸。
 -- 返回 contentWidth, contentHeight（内容净尺寸，不含 glow padding）。
 local function ApplyContentLayout(statusKey)
+    -- 防御：每次布局前从 DB 同步 currentIconMode，修复 RL/重登后图标模式丢失
+    InitDB()
+    if PetStatusAlertDB.alertIconMode then
+        currentIconMode = NormalizeIconMode(PetStatusAlertDB.alertIconMode)
+    end
+
     local showIcon, showText, iconValue = ResolveContentLayout(statusKey)
     currentLayoutShowsIcon = showIcon
     currentLayoutShowsText = showText

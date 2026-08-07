@@ -66,6 +66,10 @@ addonFrame:SetScript("OnEvent", function(_, event, unit)
     if event == "ADDON_LOADED" then
         if unit == ADDON_NAME or unit == "PetStatusAlert" then
             InitDB()
+            -- RL/重登后强制刷新视觉，确保 currentIconMode 等状态从 DB 同步
+            if PSA.RefreshAlertVisuals then
+                PSA.RefreshAlertVisuals()
+            end
             RegisterNativeOptionsCategory()
         end
         return
