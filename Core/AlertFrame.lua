@@ -66,89 +66,41 @@ local PET_MODE_TOKEN = {
     [-2] = "PET_MODE_DEFENSIVE",
 }
 
--- 从宠物动作栏获取指定姿态按钮的图标纹理路径。
--- 只在宠物存在且有动作栏时有效；返回 nil 表示获取失败。
--- 注意：Retail 中 GetPetActionInfo 不再返回 texture（第二个返回值现在是 isToken 布尔），
--- 因此改为从宠物动作栏按钮的 Icon 纹理对象直接读取。
+-- 宠物动作栏中姿态按钮的固定 slot 位置（从不改变）：
+-- slot 7 = PET_MODE_PASSIVE, slot 8 = PET_MODE_DEFENSIVE, slot 9 = PET_MODE_ASSIST
+local PET_POSE_SLOT = {
+    PET_MODE_PASSIVE = 7,
+    PET_MODE_DEFENSIVE = 8,
+    PET_MODE_ASSIST = 9,
+}
+
+-- 从宠物动作栏姿态按钮获取图标纹理路径。
+-- 使用固定 slot 定位，不依赖 GetPetActionInfo 返回值（其在 Retail 中已不返回 texture）。
 local function GetPetModeIconTexture(targetToken)
     if not UnitExists("pet") then
         return nil
     end
-    if type(GetPetActionInfo) ~= "function" then
+
+    local slot = PET_POSE_SLOT[targetToken]
+    if not slot then
         return nil
     end
 
-    local slotCount = tonumber(_G.NUM_PET_ACTION_SLOTS) or 10
-
-    -- 辅助：从指定 slot 的 PetActionButton Icon 获取纹理
-    local function GetButtonIcon(slot)
-        local iconObj = _G["PetActionButton" .. slot .. "Icon"]
-        if iconObj and type(iconObj.GetTexture) == "function" then
-            local tex = iconObj:GetTexture()
-            if tex and tex ~= "" then
-                return tex
-            end
-        end
-        -- 回退：button.Icon 子对象
-        local btn = _G["PetActionButton" .. slot]
-        if btn and btn.Icon and type(btn.Icon.GetTexture) == "function" then
-            local tex = btn.Icon:GetTexture()
-            if tex and tex ~= "" then
-                return tex
-            end
-        end
-        return nil
-    end
-
-    -- 第一轮：按名称精确匹配（PASSIVE / ASSIST 的 GetPetActionInfo 有明确 name）
-    for i = 1, slotCount do
-        local ok, name = pcall(GetPetActionInfo, i)
-        if ok and name then
-            local isMatch = (name == targetToken)
-            if not isMatch then
-                local globalValue = _G[targetToken]
-                if globalValue and tostring(name) == tostring(globalValue) then
-                    isMatch = true
-                end
-            end
-            if isMatch then
-                local tex = GetButtonIcon(i)
-                if tex then
-                    return tex
-                end
-            end
+    -- 方式1：PetActionButton{slot}Icon（全局纹理对象）
+    local iconObj = _G["PetActionButton" .. slot .. "Icon"]
+    if iconObj and type(iconObj.GetTexture) == "function" then
+        local tex = iconObj:GetTexture()
+        if tex and tex ~= "" then
+            return tex
         end
     end
 
-    -- 第二轮：对 DEFENSIVE 特殊处理。
-    -- GetPetMode 用排除法判断防御（非被动、非协助），因此 GetPetActionInfo 对防御
-    -- 按钮可能不返回 name。这里改为按 isActive 定位：找到激活的姿态按钮（isToken=true）
-    -- 且不是被动/协助的，即为防御。isToken 检查可排除宠物技能（如自动施放的爪击/撕咬）。
-    if targetToken == "PET_MODE_DEFENSIVE" then
-        for i = 1, slotCount do
-            local ok, name, isToken, isActive = pcall(GetPetActionInfo, i)
-            if ok and isActive then
-                -- 只检查姿态 token 按钮（isToken=true），排除宠物技能
-                if isToken then
-                    local isPassiveOrAssist = false
-                    if name == "PET_MODE_PASSIVE" or name == "PET_MODE_ASSIST" then
-                        isPassiveOrAssist = true
-                    else
-                        local gvPassive = _G["PET_MODE_PASSIVE"]
-                        local gvAssist = _G["PET_MODE_ASSIST"]
-                        if (gvPassive and tostring(name) == tostring(gvPassive))
-                            or (gvAssist and tostring(name) == tostring(gvAssist)) then
-                            isPassiveOrAssist = true
-                        end
-                    end
-                    if not isPassiveOrAssist then
-                        local tex = GetButtonIcon(i)
-                        if tex then
-                            return tex
-                        end
-                    end
-                end
-            end
+    -- 方式2：button.Icon 子对象
+    local btn = _G["PetActionButton" .. slot]
+    if btn and btn.Icon and type(btn.Icon.GetTexture) == "function" then
+        local tex = btn.Icon:GetTexture()
+        if tex and tex ~= "" then
+            return tex
         end
     end
 
