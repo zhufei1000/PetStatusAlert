@@ -294,6 +294,9 @@ local currentIconGap = DEFAULT_ALERT_ICON_GAP
 -- 缓存当前是否处于"显示图标"的布局，供浮动函数复用锚点，避免每帧重算。
 local currentLayoutShowsIcon = false
 local currentLayoutShowsText = true
+-- 流光目标中心相对于 addonFrame 中心的 X 偏移。
+-- 纯文字/纯图标模式 = 0；图文模式 = 图标中心相对于内容中心的偏移。
+local currentGlowOffsetX = 0
 local lastMessage = ""
 local lastStatusKey = nil
 
@@ -444,6 +447,7 @@ local function ApplyContentLayout(statusKey)
         icon:SetTexture(nil)
         text:Show()
         text:SetPoint("CENTER", contentFrame, "CENTER", 0, 0)
+        currentGlowOffsetX = 0
         local tw = text:GetStringWidth() or 0
         local th = text:GetStringHeight() or currentAlertFontSize
         return tw, th
@@ -453,10 +457,11 @@ local function ApplyContentLayout(statusKey)
     icon:SetSize(currentIconSize, currentIconSize)
 
     if not showText then
-        -- 纯图标
+        -- 纯图标：图标居中，流光也居中
         icon:Show()
         text:Hide()
         icon:SetPoint("CENTER", contentFrame, "CENTER", 0, 0)
+        currentGlowOffsetX = 0
         return currentIconSize, currentIconSize
     end
 
@@ -470,6 +475,8 @@ local function ApplyContentLayout(statusKey)
     local th = text:GetStringHeight() or currentAlertFontSize
     local totalW = currentIconSize + currentIconGap + tw
     local totalH = math.max(currentIconSize, th)
+    -- 图标中心相对于内容中心的 X 偏移 = 图标左边到内容中心的距离
+    currentGlowOffsetX = -(totalW - currentIconSize) / 2
     return totalW, totalH
 end
 
@@ -500,8 +507,15 @@ local function RefreshAlertBoxSize()
     local boxHeight = math.max(math.ceil(contentHeight + currentGlowPadding * 2), currentAlertFontSize + 6)
 
     addonFrame:SetSize(math.max(boxWidth, 80), math.max(boxHeight, 32))
-    glowFrame:SetSize(boxWidth, boxHeight)
     contentFrame:SetSize(math.max(contentWidth, 1), math.max(contentHeight, 1))
+
+    -- 流光目标：有图标时只围绕图标，纯文字时围绕文字
+    if currentLayoutShowsIcon then
+        local glowSize = math.max(math.ceil(currentIconSize + currentGlowPadding * 2), 32)
+        glowFrame:SetSize(glowSize, glowSize)
+    else
+        glowFrame:SetSize(boxWidth, boxHeight)
+    end
 end
 
 local function ApplyFloatOffset(y)
@@ -517,7 +531,7 @@ local function ApplyFloatOffset(y)
 
     if currentGlowEnabled and glowFrame:IsShown() then
         glowFrame:ClearAllPoints()
-        glowFrame:SetPoint("CENTER", addonFrame, "CENTER", 0, y)
+        glowFrame:SetPoint("CENTER", addonFrame, "CENTER", currentGlowOffsetX or 0, y)
     end
 end
 
@@ -589,6 +603,9 @@ local function StartAlertGlow()
 
     StopAlertGlow()
     glowFrame:Show()
+    -- 确保流光位置跟随图标偏移（浮动未启动时也要正确定位）
+    glowFrame:ClearAllPoints()
+    glowFrame:SetPoint("CENTER", addonFrame, "CENTER", currentGlowOffsetX or 0, lastFloatOffset or 0)
     LCG.PixelGlow_Start(
         glowFrame,
         color,
