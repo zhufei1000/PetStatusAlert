@@ -586,7 +586,8 @@ local function StartAlertGlow()
     RefreshAlertGlowSpeed()
     RefreshAlertBoxSize()
 
-    if not addonFrame:IsShown() or text:GetText() == "" then
+    -- 纯文字模式不显示流光（效果不佳）；只在有图标时启动
+    if not addonFrame:IsShown() or text:GetText() == "" or not currentLayoutShowsIcon then
         StopAlertGlow()
         return
     end
