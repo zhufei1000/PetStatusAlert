@@ -125,11 +125,9 @@ local function InitDB()
         PetStatusAlertDB.alertIconMode = DEFAULT_ALERT_ICON_MODE
     end
 
-    -- 1.4.0 默认值迁移：未知状态默认关闭、TTS 默认关闭、默认图文模式。
-    -- 对升级用户强制应用一次新默认，之后保留用户手动设置。
+    -- 1.4.0 默认值迁移：仅强制切换为图文模式。
+    -- TTS / UNKNOWN 只影响新用户默认值；老用户已配置的按个人习惯保留。
     if PetStatusAlertDB.v140DefaultsMigrated ~= true then
-        PetStatusAlertDB.statusEnabled["UNKNOWN"] = false
-        PetStatusAlertDB.combatTTSEnabled = false
         PetStatusAlertDB.alertIconMode = "both"
         PetStatusAlertDB.v140DefaultsMigrated = true
     end
