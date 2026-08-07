@@ -16,8 +16,8 @@ local DEFAULT_ALERT_FLOAT_SPEED = 1
 local DEFAULT_ALERT_FONT_SIZE = 28
 local DEFAULT_ALERT_GLOW_ENABLED = false
 local DEFAULT_ALERT_GLOW_SPEED = 1
--- 1.4.0：图标提醒模式。text=纯文字（默认，兼容老用户）；icon=纯图标；both=图标+文字。
-local DEFAULT_ALERT_ICON_MODE = "text"
+-- 1.4.0：图标提醒模式。both=图标+文字（默认）；text=纯文字；icon=纯图标。
+local DEFAULT_ALERT_ICON_MODE = "both"
 -- 图标边长（像素），默认 48，与默认字号 28 协调。
 local DEFAULT_ALERT_ICON_SIZE = 48
 -- 图标与文字之间的间距（像素）。
@@ -48,9 +48,9 @@ local function InitDB()
         PetStatusAlertDB.alertLocked = true
     end
 
-    -- 默认开启：战斗中 TTS 语音提醒。
+    -- 默认关闭：战斗中 TTS 语音提醒。
     if PetStatusAlertDB.combatTTSEnabled == nil then
-        PetStatusAlertDB.combatTTSEnabled = true
+        PetStatusAlertDB.combatTTSEnabled = false
     end
 
     -- TTS 语速：C_VoiceChat.SpeakText 的 rate 参数；新用户默认 3，0 = 游戏默认语速。
@@ -120,9 +120,18 @@ local function InitDB()
         PetStatusAlertDB.alertGlowSpeed = 3
     end
 
-    -- 1.4.0：图标提醒模式。默认纯文字，老用户升级后保持纯文字，不会突然冒出图标。
+    -- 1.4.0：图标提醒模式。默认图文模式。
     if type(PetStatusAlertDB.alertIconMode) ~= "string" or not VALID_ALERT_ICON_MODES[PetStatusAlertDB.alertIconMode] then
         PetStatusAlertDB.alertIconMode = DEFAULT_ALERT_ICON_MODE
+    end
+
+    -- 1.4.0 默认值迁移：未知状态默认关闭、TTS 默认关闭、默认图文模式。
+    -- 对升级用户强制应用一次新默认，之后保留用户手动设置。
+    if PetStatusAlertDB.v140DefaultsMigrated ~= true then
+        PetStatusAlertDB.statusEnabled["UNKNOWN"] = false
+        PetStatusAlertDB.combatTTSEnabled = false
+        PetStatusAlertDB.alertIconMode = "both"
+        PetStatusAlertDB.v140DefaultsMigrated = true
     end
 
     -- 图标边长（像素）。范围 24~96，默认 48。

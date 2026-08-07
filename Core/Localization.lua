@@ -468,8 +468,10 @@ end
 
 local function IsStatusEnabled(statusKey)
     InitDB()
+    -- UNKNOWN 状态默认关闭（1.4.0 起），其余状态默认开启
+    local defaultEnabled = statusKey ~= "UNKNOWN"
     if PetStatusAlertDB.statusEnabled[statusKey] == nil then
-        PetStatusAlertDB.statusEnabled[statusKey] = true
+        PetStatusAlertDB.statusEnabled[statusKey] = defaultEnabled
     end
     return PetStatusAlertDB.statusEnabled[statusKey] ~= false
 end
