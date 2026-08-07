@@ -68,6 +68,8 @@ local PET_MODE_TOKEN = {
 
 -- 从宠物动作栏获取指定姿态按钮的图标纹理路径。
 -- 只在宠物存在且有动作栏时有效；返回 nil 表示获取失败。
+-- 注意：Retail 中 GetPetActionInfo 不再返回 texture（第二个返回值现在是 isToken 布尔），
+-- 因此改为从宠物动作栏按钮的 Icon 纹理对象直接读取。
 local function GetPetModeIconTexture(targetToken)
     if not UnitExists("pet") then
         return nil
@@ -78,15 +80,24 @@ local function GetPetModeIconTexture(targetToken)
 
     local slotCount = tonumber(_G.NUM_PET_ACTION_SLOTS) or 10
     for i = 1, slotCount do
-        local ok, name, texture = pcall(GetPetActionInfo, i)
+        local ok, name = pcall(GetPetActionInfo, i)
         if ok and name then
-            if name == targetToken then
-                return texture
+            local isMatch = (name == targetToken)
+            if not isMatch then
+                local globalValue = _G[targetToken]
+                if globalValue and tostring(name) == tostring(globalValue) then
+                    isMatch = true
+                end
             end
-            -- 有些客户端返回本地化名称而非 token，回落比较
-            local globalValue = _G[targetToken]
-            if globalValue and tostring(name) == tostring(globalValue) then
-                return texture
+            if isMatch then
+                -- 从宠物动作栏按钮的 Icon 对象获取实际纹理路径
+                local iconObj = _G["PetActionButton" .. i .. "Icon"]
+                if iconObj and type(iconObj.GetTexture) == "function" then
+                    local tex = iconObj:GetTexture()
+                    if tex and tex ~= "" then
+                        return tex
+                    end
+                end
             end
         end
     end
