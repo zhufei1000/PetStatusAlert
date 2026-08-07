@@ -122,31 +122,26 @@ local function GetPetModeIconTexture(targetToken)
 
     -- 第二轮：对 DEFENSIVE 特殊处理。
     -- GetPetMode 用排除法判断防御（非被动、非协助），因此 GetPetActionInfo 对防御
-    -- 按钮可能不返回 name。这里改为按 isActive 定位：找到激活的不是被动/协助的按钮。
+    -- 按钮可能不返回 name。这里改为按 isActive 定位：找到激活的姿态按钮（isToken=true）
+    -- 且不是被动/协助的，即为防御。isToken 检查可排除宠物技能（如自动施放的爪击/撕咬）。
     if targetToken == "PET_MODE_DEFENSIVE" then
         for i = 1, slotCount do
             local ok, name, isToken, isActive = pcall(GetPetActionInfo, i)
             if ok and isActive then
-                if not name then
-                    -- name 为空但 isActive=true → 几乎可以确定是防御按钮
-                    local tex = GetButtonIcon(i)
-                    if tex then
-                        return tex
-                    end
-                else
-                    -- name 存在：排除被动和协助
-                    local knownPose = false
+                -- 只检查姿态 token 按钮（isToken=true），排除宠物技能
+                if isToken then
+                    local isPassiveOrAssist = false
                     if name == "PET_MODE_PASSIVE" or name == "PET_MODE_ASSIST" then
-                        knownPose = true
+                        isPassiveOrAssist = true
                     else
                         local gvPassive = _G["PET_MODE_PASSIVE"]
                         local gvAssist = _G["PET_MODE_ASSIST"]
                         if (gvPassive and tostring(name) == tostring(gvPassive))
                             or (gvAssist and tostring(name) == tostring(gvAssist)) then
-                            knownPose = true
+                            isPassiveOrAssist = true
                         end
                     end
-                    if not knownPose then
+                    if not isPassiveOrAssist then
                         local tex = GetButtonIcon(i)
                         if tex then
                             return tex
