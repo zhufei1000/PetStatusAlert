@@ -294,9 +294,6 @@ local currentIconGap = DEFAULT_ALERT_ICON_GAP
 -- 缓存当前是否处于"显示图标"的布局，供浮动函数复用锚点，避免每帧重算。
 local currentLayoutShowsIcon = false
 local currentLayoutShowsText = true
--- 流光目标中心相对于 addonFrame 中心的 X 偏移。
--- 纯文字/纯图标模式 = 0；图文模式 = 图标中心相对于内容中心的偏移。
-local currentGlowOffsetX = 0
 local lastMessage = ""
 local lastStatusKey = nil
 
@@ -447,7 +444,6 @@ local function ApplyContentLayout(statusKey)
         icon:SetTexture(nil)
         text:Show()
         text:SetPoint("CENTER", contentFrame, "CENTER", 0, 0)
-        currentGlowOffsetX = 0
         local tw = text:GetStringWidth() or 0
         local th = text:GetStringHeight() or currentAlertFontSize
         return tw, th
@@ -461,7 +457,6 @@ local function ApplyContentLayout(statusKey)
         icon:Show()
         text:Hide()
         icon:SetPoint("CENTER", contentFrame, "CENTER", 0, 0)
-        currentGlowOffsetX = 0
         return currentIconSize, currentIconSize
     end
 
@@ -475,8 +470,6 @@ local function ApplyContentLayout(statusKey)
     local th = text:GetStringHeight() or currentAlertFontSize
     local totalW = currentIconSize + currentIconGap + tw
     local totalH = math.max(currentIconSize, th)
-    -- 图标中心相对于内容中心的 X 偏移 = 图标左边到内容中心的距离
-    currentGlowOffsetX = -(totalW - currentIconSize) / 2
     return totalW, totalH
 end
 
@@ -526,13 +519,9 @@ local function ApplyFloatOffset(y)
     lastFloatOffset = y
 
     -- 浮动作用于 contentFrame（承载 icon + text），整体上下移动。
+    -- glowFrame 已直接锚定到 icon，自动跟随，无需手动同步。
     contentFrame:ClearAllPoints()
     contentFrame:SetPoint("CENTER", textFrame, "CENTER", 0, y)
-
-    if currentGlowEnabled and glowFrame:IsShown() then
-        glowFrame:ClearAllPoints()
-        glowFrame:SetPoint("CENTER", addonFrame, "CENTER", currentGlowOffsetX or 0, y)
-    end
 end
 
 local function OnAlertUpdate(_, elapsed)
@@ -604,9 +593,9 @@ local function StartAlertGlow()
 
     StopAlertGlow()
     glowFrame:Show()
-    -- 确保流光位置跟随图标偏移（浮动未启动时也要正确定位）
+    -- 直接锚定到 icon 纹理上，尺寸跟随图标，位置自动对齐（浮动动画自动跟随）
     glowFrame:ClearAllPoints()
-    glowFrame:SetPoint("CENTER", addonFrame, "CENTER", currentGlowOffsetX or 0, lastFloatOffset or 0)
+    glowFrame:SetPoint("CENTER", icon, "CENTER", 0, 0)
     LCG.PixelGlow_Start(
         glowFrame,
         color,
