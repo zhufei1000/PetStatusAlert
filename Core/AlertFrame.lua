@@ -588,7 +588,9 @@ local function StartAlertGlow()
 
     local color = DEFAULT_ALERT_GLOW_COLOR
     local length = math.max(8, math.floor(currentAlertFontSize * 0.38 + 0.5))
-    local frameLevel = 8
+    -- frameLevel 必须超过 icon 所在 contentFrame 的层级（textFrame = glowFrame+20），
+    -- 否则流光渲染在图标背面。glowFrame level=2，icon 层≈22，故用 25。
+    local frameLevel = 25
     local frequency = 0.2 * currentGlowSpeed
 
     StopAlertGlow()
