@@ -66,45 +66,18 @@ local PET_MODE_TOKEN = {
     [-2] = "PET_MODE_DEFENSIVE",
 }
 
--- 宠物动作栏中姿态按钮的固定 slot 位置（从不改变）：
--- slot 7 = PET_MODE_PASSIVE, slot 8 = PET_MODE_DEFENSIVE, slot 9 = PET_MODE_ASSIST
-local PET_POSE_SLOT = {
-    PET_MODE_PASSIVE = 7,
-    PET_MODE_DEFENSIVE = 8,
-    PET_MODE_ASSIST = 9,
+-- 宠物姿态图标的固定纹理路径（WoW 内置常量，跨版本不变）。
+-- 不依赖宠物是否存在、不依赖 PetActionButton UI 对象、不依赖 GetPetActionInfo 返回值。
+-- 这样 RL/重登后即使宠物栏未渲染也能立即显示正确图标。
+local PET_MODE_ICON_TEXTURE = {
+    PET_MODE_PASSIVE = "Interface\\Icons\\Ability_Seal",
+    PET_MODE_DEFENSIVE = "Interface\\Icons\\Ability_Defend",
+    PET_MODE_ASSIST = "Interface\\Icons\\Ability_Hunter_Pet_Assist",
 }
 
--- 从宠物动作栏姿态按钮获取图标纹理路径。
--- 使用固定 slot 定位，不依赖 GetPetActionInfo 返回值（其在 Retail 中已不返回 texture）。
+-- 直接返回硬编码纹理路径。不依赖任何运行时状态。
 local function GetPetModeIconTexture(targetToken)
-    if not UnitExists("pet") then
-        return nil
-    end
-
-    local slot = PET_POSE_SLOT[targetToken]
-    if not slot then
-        return nil
-    end
-
-    -- 方式1：PetActionButton{slot}Icon（全局纹理对象）
-    local iconObj = _G["PetActionButton" .. slot .. "Icon"]
-    if iconObj and type(iconObj.GetTexture) == "function" then
-        local tex = iconObj:GetTexture()
-        if tex and tex ~= "" then
-            return tex
-        end
-    end
-
-    -- 方式2：button.Icon 子对象
-    local btn = _G["PetActionButton" .. slot]
-    if btn and btn.Icon and type(btn.Icon.GetTexture) == "function" then
-        local tex = btn.Icon:GetTexture()
-        if tex and tex ~= "" then
-            return tex
-        end
-    end
-
-    return nil
+    return PET_MODE_ICON_TEXTURE[targetToken] or nil
 end
 
 -- 术士召唤技能优先级（恶魔专精优先 Felguard，其余按常用顺序）。
