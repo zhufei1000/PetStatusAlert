@@ -79,6 +79,28 @@ local function GetPetModeIconTexture(targetToken)
     end
 
     local slotCount = tonumber(_G.NUM_PET_ACTION_SLOTS) or 10
+
+    -- 辅助：从指定 slot 的 PetActionButton Icon 获取纹理
+    local function GetButtonIcon(slot)
+        local iconObj = _G["PetActionButton" .. slot .. "Icon"]
+        if iconObj and type(iconObj.GetTexture) == "function" then
+            local tex = iconObj:GetTexture()
+            if tex and tex ~= "" then
+                return tex
+            end
+        end
+        -- 回退：button.Icon 子对象
+        local btn = _G["PetActionButton" .. slot]
+        if btn and btn.Icon and type(btn.Icon.GetTexture) == "function" then
+            local tex = btn.Icon:GetTexture()
+            if tex and tex ~= "" then
+                return tex
+            end
+        end
+        return nil
+    end
+
+    -- 第一轮：按名称精确匹配（PASSIVE / ASSIST 的 GetPetActionInfo 有明确 name）
     for i = 1, slotCount do
         local ok, name = pcall(GetPetActionInfo, i)
         if ok and name then
@@ -90,12 +112,45 @@ local function GetPetModeIconTexture(targetToken)
                 end
             end
             if isMatch then
-                -- 从宠物动作栏按钮的 Icon 对象获取实际纹理路径
-                local iconObj = _G["PetActionButton" .. i .. "Icon"]
-                if iconObj and type(iconObj.GetTexture) == "function" then
-                    local tex = iconObj:GetTexture()
-                    if tex and tex ~= "" then
+                local tex = GetButtonIcon(i)
+                if tex then
+                    return tex
+                end
+            end
+        end
+    end
+
+    -- 第二轮：对 DEFENSIVE 特殊处理。
+    -- GetPetMode 用排除法判断防御（非被动、非协助），因此 GetPetActionInfo 对防御
+    -- 按钮可能不返回 name。这里改为按 isActive 定位：找到激活的不是被动/协助的按钮。
+    if targetToken == "PET_MODE_DEFENSIVE" then
+        for i = 1, slotCount do
+            local ok, name, isToken, isActive = pcall(GetPetActionInfo, i)
+            if ok and isActive then
+                if not name then
+                    -- name 为空但 isActive=true → 几乎可以确定是防御按钮
+                    local tex = GetButtonIcon(i)
+                    if tex then
                         return tex
+                    end
+                else
+                    -- name 存在：排除被动和协助
+                    local knownPose = false
+                    if name == "PET_MODE_PASSIVE" or name == "PET_MODE_ASSIST" then
+                        knownPose = true
+                    else
+                        local gvPassive = _G["PET_MODE_PASSIVE"]
+                        local gvAssist = _G["PET_MODE_ASSIST"]
+                        if (gvPassive and tostring(name) == tostring(gvPassive))
+                            or (gvAssist and tostring(name) == tostring(gvAssist)) then
+                            knownPose = true
+                        end
+                    end
+                    if not knownPose then
+                        local tex = GetButtonIcon(i)
+                        if tex then
+                            return tex
+                        end
                     end
                 end
             end
