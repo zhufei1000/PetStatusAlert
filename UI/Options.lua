@@ -37,11 +37,18 @@ local GetAlertGlowEnabled = PSA.GetAlertGlowEnabled
 local SetAlertGlowEnabled = PSA.SetAlertGlowEnabled
 local GetAlertGlowSpeed = PSA.GetAlertGlowSpeed
 local SetAlertGlowSpeed = PSA.SetAlertGlowSpeed
+local GetAlertIconMode = PSA.GetAlertIconMode
+local SetAlertIconMode = PSA.SetAlertIconMode
+local GetAlertIconSize = PSA.GetAlertIconSize
+local SetAlertIconSize = PSA.SetAlertIconSize
+local HasStatusIcon = PSA.HasStatusIcon
 local DEFAULT_ALERT_FONT_SIZE = PSA.DEFAULT_ALERT_FONT_SIZE or 28
 local DEFAULT_ALERT_FLOAT_AMPLITUDE = PSA.DEFAULT_ALERT_FLOAT_AMPLITUDE or 8
 local DEFAULT_ALERT_FLOAT_SPEED = PSA.DEFAULT_ALERT_FLOAT_SPEED or 1
 local DEFAULT_ALERT_GLOW_ENABLED = PSA.DEFAULT_ALERT_GLOW_ENABLED ~= false
 local DEFAULT_ALERT_GLOW_SPEED = PSA.DEFAULT_ALERT_GLOW_SPEED or 1
+local DEFAULT_ALERT_ICON_MODE = PSA.DEFAULT_ALERT_ICON_MODE or "text"
+local DEFAULT_ALERT_ICON_SIZE = PSA.DEFAULT_ALERT_ICON_SIZE or 48
 local STATUS_ORDER = PSA.STATUS_ORDER
 local SUPPORTED_LOCALES = PSA.SUPPORTED_LOCALES
 
@@ -70,6 +77,10 @@ local animationSpeedValueText
 local animationGlowCheckBox
 local animationGlowSpeedSlider
 local animationGlowSpeedValueText
+local iconModeButtons = {}
+local iconModeValueText
+local iconSizeSlider
+local iconSizeValueText
 
 -------------------------------------------------
 -- UI helpers
@@ -90,7 +101,7 @@ local nativeSettingsRegistered = false
 
 local LAYOUT = {
     frameWidth = 970,
-    frameHeight = 700,
+    frameHeight = 790,
     navWidth = 165,
     contentWidth = 740,
     rowHeight = 68,
@@ -377,6 +388,27 @@ local function GetGlowSpeedDisplayText()
     return string.format(UI.ANIMATION_GLOW_SPEED_VALUE or "Glow speed: %sx", FormatOneDecimal(speed))
 end
 
+local ICON_MODE_LABELS = {
+    text = "ANIMATION_ICON_MODE_TEXT",
+    icon = "ANIMATION_ICON_MODE_ICON",
+    both = "ANIMATION_ICON_MODE_BOTH",
+}
+
+local function GetIconModeLabel(mode)
+    local key = ICON_MODE_LABELS[mode] or ICON_MODE_LABELS[DEFAULT_ALERT_ICON_MODE]
+    return UI[key] or mode
+end
+
+local function GetIconModeDisplayText()
+    local mode = GetAlertIconMode and GetAlertIconMode() or DEFAULT_ALERT_ICON_MODE
+    return string.format(UI.ANIMATION_ICON_MODE_VALUE or "Current mode: %s", GetIconModeLabel(mode))
+end
+
+local function GetIconSizeDisplayText()
+    local size = GetAlertIconSize and GetAlertIconSize() or DEFAULT_ALERT_ICON_SIZE
+    return string.format(UI.ANIMATION_ICON_SIZE_VALUE or "Icon size: %s", tostring(size))
+end
+
 local function UpdateAnimationControls()
     local size = GetAlertFontSize and GetAlertFontSize() or DEFAULT_ALERT_FONT_SIZE
     local amplitude = GetAlertFloatAmplitude and GetAlertFloatAmplitude() or DEFAULT_ALERT_FLOAT_AMPLITUDE
@@ -413,6 +445,29 @@ local function UpdateAnimationControls()
     end
     if animationGlowSpeedValueText then
         animationGlowSpeedValueText:SetText(GetGlowSpeedDisplayText())
+    end
+
+    -- 图标模式按钮高亮当前模式
+    local iconMode = GetAlertIconMode and GetAlertIconMode() or DEFAULT_ALERT_ICON_MODE
+    for mode, btn in pairs(iconModeButtons) do
+        if btn then
+            local isActive = mode == iconMode
+            btn:SetAlpha(isActive and 1.0 or 0.55)
+            if btn.label then
+                btn.label:SetTextColor(ColorRGBA(isActive and PSA_STYLE.white or PSA_STYLE.gold))
+            end
+        end
+    end
+    if iconModeValueText then
+        iconModeValueText:SetText(GetIconModeDisplayText())
+    end
+
+    local iconSize = GetAlertIconSize and GetAlertIconSize() or DEFAULT_ALERT_ICON_SIZE
+    if iconSizeSlider then
+        iconSizeSlider:SetValue(iconSize)
+    end
+    if iconSizeValueText then
+        iconSizeValueText:SetText(GetIconSizeDisplayText())
     end
 end
 
@@ -901,12 +956,16 @@ local function DrawAnimationPage(page)
     animationGlowCheckBox = nil
     animationGlowSpeedSlider = nil
     animationGlowSpeedValueText = nil
+    iconModeButtons = {}
+    iconModeValueText = nil
+    iconSizeSlider = nil
+    iconSizeValueText = nil
 
     local title = CreateText(page, "GameFontNormal", ANIMATION_TITLE, "LEFT", 17, PSA_STYLE.white)
     title:SetPoint("TOPLEFT", page, "TOPLEFT", 0, 0)
 
     local box = CreateFrame("Frame", nil, page, "BackdropTemplate")
-    box:SetSize(LAYOUT.contentWidth, 500)
+    box:SetSize(LAYOUT.contentWidth, 620)
     box:SetPoint("TOPLEFT", page, "TOPLEFT", 0, -38)
     ApplyBackdrop(box,
         PSA_STYLE.panelBg[1], PSA_STYLE.panelBg[2], PSA_STYLE.panelBg[3], PSA_STYLE.panelBg[4],
@@ -1046,6 +1105,80 @@ local function DrawAnimationPage(page)
             PreviewStatus("PASSIVE")
             if statusLine then
                 statusLine:SetText(string.format(UI.ANIMATION_GLOW_SPEED_CHANGED or "Pixel glow speed set to: %sx", FormatOneDecimal(speed)))
+            end
+        end
+    )
+
+    -------------------------------------------------
+    -- 图标提醒模式区
+    -------------------------------------------------
+    local iconDivider = box:CreateTexture(nil, "ARTWORK")
+    iconDivider:SetColorTexture(ColorRGBA(PSA_STYLE.divider))
+    iconDivider:SetPoint("TOPLEFT", box, "TOPLEFT", 18, -424)
+    iconDivider:SetPoint("TOPRIGHT", box, "TOPRIGHT", -18, 0)
+    iconDivider:SetHeight(1)
+
+    local iconTitle = CreateText(box, "GameFontNormal", UI.ANIMATION_ICON_TITLE or "Icon Alert Mode", "LEFT", 16, PSA_STYLE.white)
+    iconTitle:SetPoint("TOPLEFT", box, "TOPLEFT", 18, -440)
+
+    local iconModeLabel = CreateText(box, "GameFontNormal", UI.ANIMATION_ICON_MODE or "Icon mode", "LEFT", 15, PSA_STYLE.gold)
+    iconModeLabel:SetPoint("TOPLEFT", iconTitle, "BOTTOMLEFT", 0, -10)
+
+    -- 三个模式按钮：纯文字 / 纯图标 / 图标+文字
+    local iconModes = { "text", "icon", "both" }
+    local prevModeBtn
+    for _, mode in ipairs(iconModes) do
+        local btn = CreateStyledButton(box, GetIconModeLabel(mode), 116, 28)
+        if prevModeBtn then
+            btn:SetPoint("LEFT", prevModeBtn, "RIGHT", 10, 0)
+        else
+            btn:SetPoint("LEFT", iconModeLabel, "RIGHT", 18, 0)
+        end
+        btn.label = btn:GetFontString()
+        btn.modeValue = mode
+        btn:SetScript("OnClick", function()
+            local newMode = SetAlertIconMode and SetAlertIconMode(mode) or mode
+            UpdateAnimationControls()
+            -- 预览一个有图标的状态（NO_PET 对猎人/DK/术士/法师都有图标）
+            PreviewStatus("NO_PET")
+            if statusLine then
+                statusLine:SetText(string.format(UI.ANIMATION_ICON_MODE_CHANGED or "Icon mode set to: %s", GetIconModeLabel(newMode)))
+            end
+        end)
+        iconModeButtons[mode] = btn
+        prevModeBtn = btn
+    end
+
+    iconModeValueText = CreateText(box, "GameFontDisableSmall", GetIconModeDisplayText(), "LEFT", 12, PSA_STYLE.gold)
+    iconModeValueText:SetPoint("LEFT", prevModeBtn, "RIGHT", 14, 0)
+    iconModeValueText:SetWidth(200)
+
+    local iconModeHint = CreateText(box, "GameFontDisableSmall", UI.ANIMATION_ICON_MODE_HINT or "", "LEFT", 12, PSA_STYLE.muted)
+    iconModeHint:SetPoint("TOPLEFT", iconModeLabel, "BOTTOMLEFT", 0, -6)
+    iconModeHint:SetWidth(LAYOUT.contentWidth - 64)
+
+    -- 图标大小滑条
+    iconSizeSlider, iconSizeValueText = CreateAnimationSlider(
+        box,
+        UI.ANIMATION_ICON_SIZE or "Icon size",
+        UI.ANIMATION_ICON_SIZE_HINT or "Adjust the skill icon edge length. Default: 48.",
+        -548,
+        24,
+        96,
+        1,
+        GetAlertIconSize and GetAlertIconSize() or DEFAULT_ALERT_ICON_SIZE,
+        GetIconSizeDisplayText(),
+        function(value, slider, valueText)
+            local size = SetAlertIconSize and SetAlertIconSize(value) or DEFAULT_ALERT_ICON_SIZE
+            if slider then
+                slider:SetValue(size)
+            end
+            if valueText then
+                valueText:SetText(GetIconSizeDisplayText())
+            end
+            PreviewStatus("NO_PET")
+            if statusLine then
+                statusLine:SetText(string.format(UI.ANIMATION_ICON_SIZE_CHANGED or "Icon size set to: %s", tostring(size)))
             end
         end
     )

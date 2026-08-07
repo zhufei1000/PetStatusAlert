@@ -1,7 +1,7 @@
 -------------------------------------------------
 -- PetStatusAlert
 -- Hunter / Warlock / Unholy DK / Frost Mage pet status prompt
--- Version: 1.3.23
+-- Version: 1.4.0
 -------------------------------------------------
 
 local ADDON_NAME, PSA = ...
@@ -21,6 +21,13 @@ local OLD_ALERT_GLOW_PADDING_DEFAULT = 18
 local TIGHT_ALERT_GLOW_PADDING_DEFAULT = 4
 local DEFAULT_ALERT_GLOW_TYPE = "Pixel"
 local DEFAULT_ALERT_GLOW_SPEED = 1
+-- 1.4.0：图标提醒模式。text=纯文字（默认，兼容老用户）；icon=纯图标；both=图标+文字。
+local DEFAULT_ALERT_ICON_MODE = "text"
+-- 图标边长（像素），默认 48，与默认字号 28 协调。
+local DEFAULT_ALERT_ICON_SIZE = 48
+-- 图标与文字之间的间距（像素）。
+local DEFAULT_ALERT_ICON_GAP = 10
+local VALID_ALERT_ICON_MODES = { text = true, icon = true, both = true }
 
 -------------------------------------------------
 -- SavedVariables
@@ -125,6 +132,33 @@ local function InitDB()
     -- 1.3.13：只保留像素流光，不再暴露多发光类型选择。
     PetStatusAlertDB.alertGlowType = DEFAULT_ALERT_GLOW_TYPE
 
+    -- 1.4.0：图标提醒模式。默认纯文字，老用户升级后保持纯文字，不会突然冒出图标。
+    if type(PetStatusAlertDB.alertIconMode) ~= "string" or not VALID_ALERT_ICON_MODES[PetStatusAlertDB.alertIconMode] then
+        PetStatusAlertDB.alertIconMode = DEFAULT_ALERT_ICON_MODE
+    end
+
+    -- 图标边长（像素）。范围 24~96，默认 48。
+    if PetStatusAlertDB.alertIconSize == nil then
+        PetStatusAlertDB.alertIconSize = DEFAULT_ALERT_ICON_SIZE
+    end
+    PetStatusAlertDB.alertIconSize = tonumber(PetStatusAlertDB.alertIconSize) or DEFAULT_ALERT_ICON_SIZE
+    if PetStatusAlertDB.alertIconSize < 24 then
+        PetStatusAlertDB.alertIconSize = 24
+    elseif PetStatusAlertDB.alertIconSize > 96 then
+        PetStatusAlertDB.alertIconSize = 96
+    end
+
+    -- 图标与文字间距（像素）。范围 0~40，默认 10。纯图标模式不使用此值。
+    if PetStatusAlertDB.alertIconGap == nil then
+        PetStatusAlertDB.alertIconGap = DEFAULT_ALERT_ICON_GAP
+    end
+    PetStatusAlertDB.alertIconGap = tonumber(PetStatusAlertDB.alertIconGap) or DEFAULT_ALERT_ICON_GAP
+    if PetStatusAlertDB.alertIconGap < 0 then
+        PetStatusAlertDB.alertIconGap = 0
+    elseif PetStatusAlertDB.alertIconGap > 40 then
+        PetStatusAlertDB.alertIconGap = 40
+    end
+
     -- 语言设置：默认跟随客户端；也可手动强制切换。
     local language = tostring(PetStatusAlertDB.language or "auto")
     if language ~= "auto" and language ~= "enUS" and language ~= "zhCN" and language ~= "zhTW" and language ~= "ruRU" then
@@ -162,5 +196,9 @@ PSA.DEFAULT_ALERT_GLOW_PADDING = DEFAULT_ALERT_GLOW_PADDING
 PSA.DEFAULT_ALERT_GLOW_THICKNESS = DEFAULT_ALERT_GLOW_THICKNESS
 PSA.DEFAULT_ALERT_GLOW_TYPE = DEFAULT_ALERT_GLOW_TYPE
 PSA.DEFAULT_ALERT_GLOW_SPEED = DEFAULT_ALERT_GLOW_SPEED
+PSA.DEFAULT_ALERT_ICON_MODE = DEFAULT_ALERT_ICON_MODE
+PSA.DEFAULT_ALERT_ICON_SIZE = DEFAULT_ALERT_ICON_SIZE
+PSA.DEFAULT_ALERT_ICON_GAP = DEFAULT_ALERT_ICON_GAP
+PSA.VALID_ALERT_ICON_MODES = VALID_ALERT_ICON_MODES
 PSA.Trim = Trim
 PSA.InitDB = InitDB
