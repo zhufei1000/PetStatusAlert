@@ -2,7 +2,7 @@
 ## Title: PetStatusAlert - Hunter / Warlock / DK / Frost Mage Pet Alert | 宠物状态提醒
 ## Notes: Pet status alert for Hunter, Warlock, Unholy DK, and Frost Mage with Summon Water Elemental talent. Now supports icon mode (summon spell icon for missing/dead pet).
 ## Author: zhufei1000
-## Version: 1.4.0
+## Version: 1.4.1
 ## SavedVariables: PetStatusAlertDB
 
 Core/Database.lua
