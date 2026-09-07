@@ -151,6 +151,29 @@ else
     RefreshStatusOrderForPlayer()
 end
 
+-- The redesigned Display page uses pet statuses as generic preview samples.
+-- On Warrior, transparently redirect those samples to the Warrior stance alert
+-- so the preview and status line never show unrelated pet text.
+local OriginalGetDisplayMessage = PSA.GetDisplayMessage
+if type(OriginalGetDisplayMessage) == "function" then
+    PSA.GetDisplayMessage = function(statusKey, ...)
+        if IsWarrior() and statusKey ~= STATUS_KEY then
+            statusKey = STATUS_KEY
+        end
+        return OriginalGetDisplayMessage(statusKey, ...)
+    end
+end
+
+local OriginalPreviewStatus = PSA.PreviewStatus
+if type(OriginalPreviewStatus) == "function" then
+    PSA.PreviewStatus = function(statusKey, ...)
+        if IsWarrior() then
+            statusKey = STATUS_KEY
+        end
+        return OriginalPreviewStatus(statusKey, ...)
+    end
+end
+
 -------------------------------------------------
 -- Defensive Stance aura detection
 -------------------------------------------------
