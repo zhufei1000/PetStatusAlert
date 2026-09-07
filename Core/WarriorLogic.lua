@@ -131,6 +131,12 @@ end
 
 ExtendLocalization()
 
+-- 注册防御姿态技能图标：图文/纯图标模式下 ShowStatus 会用它显示技能图标。
+-- 依赖 AlertFrame 导出的 RegisterStatusIcon（AlertFrame 先于本文件加载）。
+if type(PSA.RegisterStatusIcon) == "function" then
+    PSA.RegisterStatusIcon("WARRIOR", STATUS_KEY, SPELL_DEFENSIVE_STANCE)
+end
+
 -- RefreshLocaleTables replaces PSA.STATUS_LABEL with a new table each time.
 -- Wrap it so the Warrior status label is restored after language changes.
 local OriginalRefreshLocaleTables = PSA.RefreshLocaleTables

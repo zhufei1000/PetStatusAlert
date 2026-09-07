@@ -170,6 +170,19 @@ local function GetStatusIconSpellID(statusKey)
     return tonumber(value)
 end
 
+-- 供外部模块（如 WarriorLogic）注册"职业-状态 → 图标 spellID"映射。
+-- 与 STATUS_ICON_SPELLS 使用同一张表，正数 = spellID，负数 = 宠物姿态标记。
+local function RegisterStatusIcon(classFile, statusKey, value)
+    if type(classFile) ~= "string" or type(statusKey) ~= "string" or value == nil then
+        return false
+    end
+    if not STATUS_ICON_SPELLS[classFile] then
+        STATUS_ICON_SPELLS[classFile] = {}
+    end
+    STATUS_ICON_SPELLS[classFile][statusKey] = value
+    return true
+end
+
 local addonFrame = CreateFrame("Frame", "PetStatusAlertFrame", UIParent)
 addonFrame:SetSize(780, 86)
 addonFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 220)
@@ -836,6 +849,8 @@ PSA.GetAlertIconGap = GetAlertIconGap
 PSA.SetAlertIconGap = SetAlertIconGap
 PSA.RefreshAlertIconGap = RefreshAlertIconGap
 PSA.RefreshAlertVisuals = RefreshAlertVisuals
+-- RegisterStatusIcon 供 WarriorLogic 等扩展模块注册状态图标映射。
+PSA.RegisterStatusIcon = RegisterStatusIcon
 PSA.ShowStatus = ShowStatus
 PSA.PreviewStatus = PreviewStatus
 PSA.HideStatus = HideStatus
