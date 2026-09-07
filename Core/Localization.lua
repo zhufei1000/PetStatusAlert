@@ -441,7 +441,6 @@ local function RefreshLocaleTables()
         DEFENSIVE = UI.DEFENSIVE,
         UNKNOWN = UI.UNKNOWN,
     }
-    PSA.L = L
     PSA.UI = UI
     PSA.STATUS_LABEL = STATUS_LABEL
 end
@@ -545,16 +544,12 @@ end
 PSA.LOCALIZED_MESSAGES = LOCALIZED_MESSAGES
 PSA.UI_LOCALE = UI_LOCALE
 PSA.SUPPORTED_LOCALES = SUPPORTED_LOCALES
-PSA.CLIENT_LOCALE = CLIENT_LOCALE
 PSA.STATUS_ORDER = STATUS_ORDER
-PSA.DEFAULT_TEXT_COLOR = DEFAULT_TEXT_COLOR
 
-PSA.NormalizeLocale = NormalizeLocale
 PSA.GetSavedLanguageMode = GetSavedLanguageMode
 PSA.GetActiveLocale = GetActiveLocale
 PSA.RefreshLocaleTables = RefreshLocaleTables
 PSA.GetDefaultMessage = GetDefaultMessage
-PSA.GetCustomMessage = GetCustomMessage
 PSA.GetDisplayMessage = GetDisplayMessage
 PSA.IsStatusEnabled = IsStatusEnabled
 PSA.SetStatusEnabled = SetStatusEnabled

@@ -153,7 +153,6 @@ end
 -- Public TTS API
 -------------------------------------------------
 
-PSA.IsCombatTTSEnabled = IsCombatTTSEnabled
 PSA.GetCombatTTSRate = GetCombatTTSRate
 PSA.SetCombatTTSRate = SetCombatTTSRate
 PSA.GetCombatTTSRateDisplayText = GetCombatTTSRateDisplayText

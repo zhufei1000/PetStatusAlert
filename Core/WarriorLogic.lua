@@ -352,11 +352,8 @@ end
 
 -------------------------------------------------
 -- Public Warrior API
+-- 仅保留两个状态常量导出（供调试 / 外部查询），其余函数仅模块内部使用。
 -------------------------------------------------
 
 PSA.WARRIOR_DEFENSIVE_STANCE_STATUS_KEY = STATUS_KEY
 PSA.WARRIOR_DEFENSIVE_STANCE_SPELL_ID = SPELL_DEFENSIVE_STANCE
-PSA.SupportsWarriorStanceAlert = SupportsWarriorStanceAlert
-PSA.IsWarriorDefensiveStanceActive = IsDefensiveStanceActive
-PSA.RefreshWarriorStatusText = RefreshWarriorStatusText
-PSA.RefreshStatusOrderForPlayer = RefreshStatusOrderForPlayer
