@@ -69,7 +69,6 @@ local PET_MODE_TOKEN = {
 local PET_MODE_ICON_TEXTURE = {
     PET_MODE_PASSIVE = "Interface\\Icons\\Ability_Seal",
     PET_MODE_DEFENSIVE = "Interface\\Icons\\Ability_Defend",
-    PET_MODE_ASSIST = "Interface\\Icons\\Ability_Hunter_Pet_Assist",
 }
 
 -- 直接返回硬编码纹理路径。不依赖任何运行时状态。
@@ -385,21 +384,18 @@ local function ApplyContentLayout(statusKey)
     icon:ClearAllPoints()
     text:ClearAllPoints()
 
-    -- 获取图标纹理。iconValue 可能是数字 spellID 或负数（宠物姿态标记）。
+    -- 获取图标纹理。iconValue 由 GetStatusIconSpellID 保证为数字：负数 = 宠物姿态标记，正数 = spellID。
     -- 纯图标模式下若纹理获取失败，回退为纯文字。
     local iconTexture = nil
     if showIcon and iconValue then
-        if type(iconValue) == "number" and iconValue < 0 then
+        if iconValue < 0 then
             -- 负数 = 宠物姿态，直接使用硬编码纹理路径
             local token = PET_MODE_TOKEN[iconValue]
             if token then
                 iconTexture = GetPetModeIconTexture(token)
             end
-        elseif type(iconValue) == "number" then
-            iconTexture = GetSpellTextureByID(iconValue)
         else
-            -- 字符串（如 "WARLOCK_SUMMON"）：兜底，理论不应走到这里（已在 GetStatusIconSpellID 解析）
-            iconTexture = GetSpellTextureByID(tonumber(iconValue))
+            iconTexture = GetSpellTextureByID(iconValue)
         end
         if not iconTexture then
             showIcon = false
@@ -678,23 +674,6 @@ local function GetAlertIconSize()
     return RefreshAlertIconSize()
 end
 
-local function SetAlertIconGap(value)
-    InitDB()
-    currentIconGap = NormalizeIconGap(value)
-    PetStatusAlertDB.alertIconGap = currentIconGap
-    RefreshAlertVisuals()
-    return currentIconGap
-end
-
-local function GetAlertIconGap()
-    return RefreshAlertIconGap()
-end
-
--- 供 Options 预览时查询：当前职业在指定状态下是否有可用图标。
-local function HasStatusIcon(statusKey)
-    return GetStatusIconSpellID(statusKey) ~= nil
-end
-
 RefreshAlertVisuals()
 PSA.currentStatusKey = nil
 PSA.currentStatusForce = false
@@ -815,10 +794,6 @@ end
 
 PSA.addonFrame = addonFrame
 PSA.alertText = text
-PSA.alertIcon = icon
-PSA.alertContentFrame = contentFrame
-PSA.alertGlowFrame = glowFrame
-PSA.alertTextFrame = textFrame
 PSA.ApplyAlertTextColor = ApplyAlertTextColor
 PSA.ApplyAlertPosition = ApplyAlertPosition
 PSA.SaveAlertPosition = SaveAlertPosition
@@ -844,15 +819,8 @@ PSA.RefreshAlertIconMode = RefreshAlertIconMode
 PSA.GetAlertIconSize = GetAlertIconSize
 PSA.SetAlertIconSize = SetAlertIconSize
 PSA.RefreshAlertIconSize = RefreshAlertIconSize
-PSA.GetAlertIconGap = GetAlertIconGap
-PSA.SetAlertIconGap = SetAlertIconGap
 PSA.RefreshAlertIconGap = RefreshAlertIconGap
-PSA.HasStatusIcon = HasStatusIcon
-PSA.GetStatusIconSpellID = GetStatusIconSpellID
 PSA.RefreshAlertVisuals = RefreshAlertVisuals
-PSA.StartAlertGlow = StartAlertGlow
-PSA.StopAlertGlow = StopAlertGlow
-PSA.SetMessage = SetMessage
 PSA.ShowStatus = ShowStatus
 PSA.PreviewStatus = PreviewStatus
 PSA.HideStatus = HideStatus

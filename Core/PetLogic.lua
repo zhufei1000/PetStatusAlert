@@ -547,11 +547,7 @@ end
 -------------------------------------------------
 
 PSA.ClearPetStatusCaches = ClearPetStatusCaches
-PSA.GetPlayerSpecId = GetPlayerSpecId
+-- IsKnownPlayerSpell 供 AlertFrame 在显示图标时动态查询术士召唤技能，需保留导出。
 PSA.IsKnownPlayerSpell = IsKnownPlayerSpell
-PSA.IsWarlockGrimoireOfSacrificeActive = IsWarlockGrimoireOfSacrificeActive
-PSA.SupportsPetStatusPrompt = SupportsPetStatusPrompt
-PSA.IsPlayerMountedOrInVehicle = IsPlayerMountedOrInVehicle
-PSA.GetPetMode = GetPetMode
 PSA.RefreshPetStatusText = RefreshPetStatusText
 PSA.QueueRefresh = QueueRefresh

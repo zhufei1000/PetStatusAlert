@@ -41,7 +41,6 @@ local GetAlertIconMode = PSA.GetAlertIconMode
 local SetAlertIconMode = PSA.SetAlertIconMode
 local GetAlertIconSize = PSA.GetAlertIconSize
 local SetAlertIconSize = PSA.SetAlertIconSize
-local HasStatusIcon = PSA.HasStatusIcon
 local DEFAULT_ALERT_FONT_SIZE = PSA.DEFAULT_ALERT_FONT_SIZE or 28
 local DEFAULT_ALERT_FLOAT_AMPLITUDE = PSA.DEFAULT_ALERT_FLOAT_AMPLITUDE or 8
 local DEFAULT_ALERT_FLOAT_SPEED = PSA.DEFAULT_ALERT_FLOAT_SPEED or 1
@@ -469,10 +468,6 @@ local function UpdateAnimationControls()
     if iconSizeValueText then
         iconSizeValueText:SetText(GetIconSizeDisplayText())
     end
-end
-
-local function UpdateAnimationAmplitudeControls()
-    UpdateAnimationControls()
 end
 
 local function CreateSliderScaleLabels(parent, slider, minValue, currentValue, maxValue)
@@ -1319,7 +1314,7 @@ local function CreateOptionsFrame()
     f.psaTitle = title
 
     local getMeta = (C_AddOns and C_AddOns.GetAddOnMetadata) or _G.GetAddOnMetadata
-    local version = (getMeta and getMeta(ADDON_NAME, "Version")) or "1.3.9"
+    local version = (getMeta and getMeta(ADDON_NAME, "Version")) or "1.4.1"
     local versionText = CreateText(f, "GameFontNormal", "v" .. tostring(version), "CENTER", 17, PSA_STYLE.text)
     versionText:SetPoint("TOP", title, "BOTTOM", 0, -8)
 
@@ -1660,7 +1655,5 @@ end
 -------------------------------------------------
 
 PSA.OpenOptionsFrame = OpenOptionsFrame
-PSA.RefreshOptionsFrameLocale = RefreshOptionsFrameLocale
 PSA.RegisterNativeOptionsCategory = RegisterNativeOptionsCategory
 PSA.OpenNativeOptionsFrame = OpenNativeOptionsFrame
-PSA.ApplyLanguageSelection = ApplyLanguageSelection
