@@ -350,6 +350,18 @@ local function RefreshAlertIconGap()
     return currentIconGap
 end
 
+local function SetAlertIconGap(value)
+    InitDB()
+    currentIconGap = NormalizeIconGap(value)
+    PetStatusAlertDB.alertIconGap = currentIconGap
+    RefreshAlertVisuals()
+    return currentIconGap
+end
+
+local function GetAlertIconGap()
+    return RefreshAlertIconGap()
+end
+
 -- 计算当前状态应使用的布局：返回 showIcon, showText, iconValue
 -- 规则：
 --   UNKNOWN 状态 / 无图标标识的状态 → 始终只显示文字
@@ -819,6 +831,9 @@ PSA.RefreshAlertIconMode = RefreshAlertIconMode
 PSA.GetAlertIconSize = GetAlertIconSize
 PSA.SetAlertIconSize = SetAlertIconSize
 PSA.RefreshAlertIconSize = RefreshAlertIconSize
+-- Get/SetAlertIconGap 供新版 Options 的图标间距滑条调用。
+PSA.GetAlertIconGap = GetAlertIconGap
+PSA.SetAlertIconGap = SetAlertIconGap
 PSA.RefreshAlertIconGap = RefreshAlertIconGap
 PSA.RefreshAlertVisuals = RefreshAlertVisuals
 PSA.ShowStatus = ShowStatus
