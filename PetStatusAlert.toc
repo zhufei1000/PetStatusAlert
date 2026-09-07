@@ -1,8 +1,8 @@
 ## Interface: 120100, 120007, 120005
-## Title: PetStatusAlert - Hunter / Warlock / DK / Frost Mage Pet Alert | 宠物状态提醒
-## Notes: Pet status alert for Hunter, Warlock, Unholy DK, and Frost Mage with Summon Water Elemental talent. Now supports icon mode (summon spell icon for missing/dead pet).
+## Title: PetStatusAlert - Pet & Warrior Stance Alerts | 宠物与战士姿态提醒
+## Notes: Alerts for supported pet classes plus Arms/Fury Warrior Defensive Stance. Supports custom text/colors, icon/text display modes, and combat TTS.
 ## Author: zhufei1000
-## Version: 1.4.1
+## Version: 1.5.0
 ## SavedVariables: PetStatusAlertDB
 
 Core/Database.lua
@@ -12,6 +12,7 @@ Core/Localization.lua
 Core/AlertFrame.lua
 Core/TTS.lua
 Core/PetLogic.lua
+Core/WarriorLogic.lua
 UI/Options.lua
 Core/Events.lua
 Core/Slash.lua
