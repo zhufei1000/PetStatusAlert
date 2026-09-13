@@ -70,8 +70,6 @@ local nativeSettingsCategory
 local nativeSettingsRegistered = false
 local ApplyLanguageSelection
 
-local editBoxes = {}
-local statusEnableCheckBoxes = {}
 local statusLine
 local moveToggleButton
 
@@ -89,8 +87,6 @@ local LAYOUT = {
     frameHeight = 680,
     navWidth = 166,
     contentWidth = 650,
-    pageTopGap = 0,
-    cardGap = 10,
     buttonHeight = 28,
     sliderWidth = 306,
 }
@@ -99,13 +95,11 @@ local STYLE = {
     frameBg = { 0.025, 0.025, 0.025, 0.95 },
     frameBorder = { 0.30, 0.24, 0.14, 0.96 },
     panelBg = { 0.055, 0.055, 0.055, 0.78 },
-    panelBgSoft = { 0.045, 0.045, 0.045, 0.62 },
     divider = { 1.00, 0.82, 0.00, 0.22 },
     text = { 0.92, 0.90, 0.84, 1.00 },
     muted = { 0.64, 0.63, 0.58, 0.95 },
     white = { 1.00, 1.00, 1.00, 1.00 },
     gold = { 1.00, 0.82, 0.00, 1.00 },
-    red = { 1.00, 0.30, 0.24, 1.00 },
     green = { 0.35, 0.90, 0.40, 1.00 },
 }
 
@@ -129,6 +123,20 @@ local function LocaleText(enUS, zhCN, zhTW, ruRU)
         return ruRU or enUS
     end
     return enUS
+end
+
+local function GetAddonVersion()
+    local getMeta = (C_AddOns and C_AddOns.GetAddOnMetadata) or _G.GetAddOnMetadata
+    return (getMeta and getMeta(ADDON_NAME, "Version")) or "?"
+end
+
+local function GetNativeProxyDescription()
+    return LocaleText(
+        "Open the full PetStatusAlert panel for alert rules, appearance, voice and language settings.",
+        "打开完整的 PetStatusAlert 面板，可设置提醒规则、显示样式、语音和语言。",
+        "開啟完整的 PetStatusAlert 面板，可設定提醒規則、顯示樣式、語音和語言。",
+        "Откройте полную панель PetStatusAlert для настройки предупреждений, внешнего вида, озвучивания и языка."
+    )
 end
 
 local function RefreshStaticText()
@@ -533,7 +541,6 @@ local function CreateStatusCard(parent, statusKey, yOffset)
     check:SetSize(22, 22)
     check:SetPoint("TOPLEFT", card, "TOPLEFT", 12, -10)
     check:SetChecked(IsStatusEnabled(statusKey))
-    statusEnableCheckBoxes[statusKey] = check
 
     local title = CreateText(card, "GameFontNormal", STATUS_LABEL[statusKey] or statusKey, 15, STYLE.white)
     title:SetPoint("LEFT", check, "RIGHT", 3, 0)
@@ -571,7 +578,6 @@ local function CreateStatusCard(parent, statusKey, yOffset)
     editBox:SetPoint("LEFT", customLabel, "RIGHT", 2, 0)
     SkinEditBox(editBox)
     editBox:SetText(PetStatusAlertDB.customMessages[statusKey] or "")
-    editBoxes[statusKey] = editBox
 
     editBox:SetScript("OnEscapePressed", function(self)
         self:ClearFocus()
@@ -644,9 +650,6 @@ local function CreateStatusCard(parent, statusKey, yOffset)
 end
 
 local function DrawAlertsPage(parent)
-    editBoxes = {}
-    statusEnableCheckBoxes = {}
-
     local page, finish = CreateScrollablePage(parent)
     local _, desc = CreatePageHeader(page, TEXT.ALERTS_TITLE, TEXT.ALERTS_DESC)
 
@@ -1060,8 +1063,7 @@ local function DrawGeneralPage(parent)
 
     local aboutBox = CreateSection(page, TEXT.SECTION_ABOUT, UI.SUPPORT or "", -270, 220)
 
-    local getMeta = (C_AddOns and C_AddOns.GetAddOnMetadata) or _G.GetAddOnMetadata
-    local version = (getMeta and getMeta(ADDON_NAME, "Version")) or "?"
+    local version = GetAddonVersion()
 
     local infoLines = {
         LocaleText("Version: ", "版本：", "版本：", "Версия: ") .. tostring(version),
@@ -1171,8 +1173,7 @@ local function CreateOptionsFrame()
     subtitle:SetWidth(610)
     frame.psaSubtitle = subtitle
 
-    local getMeta = (C_AddOns and C_AddOns.GetAddOnMetadata) or _G.GetAddOnMetadata
-    local version = (getMeta and getMeta(ADDON_NAME, "Version")) or "?"
+    local version = GetAddonVersion()
     local versionText = CreateText(frame, "GameFontDisableSmall", "v" .. tostring(version), 11, STYLE.muted)
     versionText:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -22, -22)
 
@@ -1339,12 +1340,7 @@ local function CreateNativeProxyPanel()
     title:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -8)
     panel.psaProxyTitle = title
 
-    local desc = CreateText(panel, "GameFontHighlightSmall", LocaleText(
-        "Open the full PetStatusAlert panel for alert rules, appearance, voice and language settings.",
-        "打开完整的 PetStatusAlert 面板，可设置提醒规则、显示样式、语音和语言。",
-        "開啟完整的 PetStatusAlert 面板，可設定提醒規則、顯示樣式、語音和語言。",
-        "Откройте полную панель PetStatusAlert для настройки предупреждений, внешнего вида, озвучивания и языка."
-    ), 13, STYLE.text)
+    local desc = CreateText(panel, "GameFontHighlightSmall", GetNativeProxyDescription(), 13, STYLE.text)
     desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -10)
     desc:SetWidth(640)
     panel.psaProxyDesc = desc
@@ -1369,12 +1365,7 @@ local function RefreshNativeProxyPanelLocale(panel)
         panel.psaProxyTitle:SetText(UI.TITLE)
     end
     if panel.psaProxyDesc then
-        panel.psaProxyDesc:SetText(LocaleText(
-            "Open the full PetStatusAlert panel for alert rules, appearance, voice and language settings.",
-            "打开完整的 PetStatusAlert 面板，可设置提醒规则、显示样式、语音和语言。",
-            "開啟完整的 PetStatusAlert 面板，可設定提醒規則、顯示樣式、語音和語言。",
-            "Откройте полную панель PetStatusAlert для настройки предупреждений, внешнего вида, озвучивания и языка."
-        ))
+        panel.psaProxyDesc:SetText(GetNativeProxyDescription())
     end
     if panel.psaProxyOpenButton then
         panel.psaProxyOpenButton:SetText(TEXT.OPEN_LARGE_PANEL)

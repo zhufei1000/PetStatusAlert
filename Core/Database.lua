@@ -1,7 +1,7 @@
 -------------------------------------------------
 -- PetStatusAlert
 -- Hunter / Warlock / Unholy DK / Frost Mage pet status prompt + Warrior stance alerts
--- Version: 1.5.0
+-- Version: 1.5.1
 -------------------------------------------------
 
 local ADDON_NAME, PSA = ...

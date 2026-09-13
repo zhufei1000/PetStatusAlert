@@ -10,6 +10,9 @@ local STATUS_KEY = "WARRIOR_DEFENSIVE_STANCE"
 local SPEC_WARRIOR_ARMS = 71
 local SPEC_WARRIOR_FURY = 72
 local SPELL_DEFENSIVE_STANCE = 386208
+-- 战斗姿态（武器）/ 狂暴姿态（狂暴）与防御姿态互斥，施放后即离开防御姿态。
+local SPELL_BATTLE_STANCE = 386164
+local SPELL_BERSERKER_STANCE = 386196
 
 local PET_STATUS_ORDER = {
     "NO_PET",
@@ -190,22 +193,18 @@ local function IsAuraSpellActive(spellID)
         return false
     end
 
+    -- 现代客户端：spellID 查询即可给出确定结果，直接返回，不再执行后续全表扫描。
     if C_UnitAuras and type(C_UnitAuras.GetPlayerAuraBySpellID) == "function" then
         local ok, auraData = pcall(C_UnitAuras.GetPlayerAuraBySpellID, spellID)
-        if ok and auraData then
-            return true
-        end
+        return ok and auraData ~= nil
     end
 
     if AuraUtil and type(AuraUtil.FindAuraBySpellID) == "function" then
         local ok, auraData = pcall(AuraUtil.FindAuraBySpellID, spellID, "player", "HELPFUL")
-        if ok and auraData then
-            return true
-        end
+        return ok and auraData ~= nil
     end
 
-    -- Last-resort modern API scan. Only Warrior registers UNIT_AURA below,
-    -- so this does not add aura-scan cost to pet classes.
+    -- 旧客户端兜底：逐条扫描玩家光环。
     if C_UnitAuras and type(C_UnitAuras.GetAuraDataByIndex) == "function" then
         for index = 1, 40 do
             local ok, auraData = pcall(C_UnitAuras.GetAuraDataByIndex, "player", index, "HELPFUL")
@@ -221,8 +220,68 @@ local function IsAuraSpellActive(spellID)
     return false
 end
 
+------------------------------------------------
+-- Combat-safe stance tracking
+-- 12.0+ 战斗中/首领战/M+/PvP 时光环对插件保密。C_Secrets.ShouldSpellAuraBeSecret
+-- 为 true 时不能查询光环，只能用玩家自身施法事件（不受保密限制）维护缓存状态。
+------------------------------------------------
+
+local defensiveStanceActive = nil
+
+if type(PetStatusAlertDB) == "table" and type(PetStatusAlertDB.warriorDefensiveStance) == "boolean" then
+    defensiveStanceActive = PetStatusAlertDB.warriorDefensiveStance
+end
+
+local function SetDefensiveStanceActive(active)
+    defensiveStanceActive = active and true or false
+    if type(PetStatusAlertDB) == "table" then
+        PetStatusAlertDB.warriorDefensiveStance = defensiveStanceActive
+    end
+end
+
+local function CanReadDefensiveStanceAura()
+    local secrets = _G.C_Secrets
+    if type(secrets) == "table" and type(secrets.ShouldSpellAuraBeSecret) == "function" then
+        local ok, isSecret = pcall(secrets.ShouldSpellAuraBeSecret, SPELL_DEFENSIVE_STANCE)
+        if ok and isSecret ~= nil then
+            return isSecret ~= true
+        end
+        if type(InCombatLockdown) == "function" then
+            return InCombatLockdown() ~= true
+        end
+        return false
+    end
+
+    -- 12.0 之前没有光环保密机制，任何时候都可读。
+    return true
+end
+
+local function SyncDefensiveStanceFromAura()
+    if not CanReadDefensiveStanceAura() then
+        return
+    end
+    SetDefensiveStanceActive(IsAuraSpellActive(SPELL_DEFENSIVE_STANCE))
+end
+
+local function HandleStanceCast(castSpellID)
+    if CanReadDefensiveStanceAura() then
+        -- 光环可读时事件触发时已是施法后的状态，直接以查询结果为准。
+        SyncDefensiveStanceFromAura()
+        return
+    end
+
+    if castSpellID == SPELL_DEFENSIVE_STANCE then
+        if defensiveStanceActive ~= nil then
+            SetDefensiveStanceActive(not defensiveStanceActive)
+        end
+    else
+        SetDefensiveStanceActive(false)
+    end
+end
+
 local function IsDefensiveStanceActive()
-    return IsAuraSpellActive(SPELL_DEFENSIVE_STANCE)
+    SyncDefensiveStanceFromAura()
+    return defensiveStanceActive == true
 end
 
 local function RefreshWarriorStatusText()
@@ -320,20 +379,45 @@ end
 if IsWarrior() then
     local warriorEventFrame = CreateFrame("Frame")
 
-    if warriorEventFrame.RegisterUnitEvent then
+    local hasUnitEvent = warriorEventFrame.RegisterUnitEvent ~= nil
+    if hasUnitEvent then
         pcall(warriorEventFrame.RegisterUnitEvent, warriorEventFrame, "UNIT_AURA", "player")
     else
         pcall(warriorEventFrame.RegisterEvent, warriorEventFrame, "UNIT_AURA")
     end
+    local hasFilteredSpellcast = hasUnitEvent
+        and pcall(warriorEventFrame.RegisterUnitEvent, warriorEventFrame, "UNIT_SPELLCAST_SUCCEEDED", "player")
+    if not hasFilteredSpellcast then
+        pcall(warriorEventFrame.RegisterEvent, warriorEventFrame, "UNIT_SPELLCAST_SUCCEEDED")
+    end
     pcall(warriorEventFrame.RegisterEvent, warriorEventFrame, "PLAYER_SPECIALIZATION_CHANGED")
     pcall(warriorEventFrame.RegisterEvent, warriorEventFrame, "PLAYER_ENTERING_WORLD")
+    pcall(warriorEventFrame.RegisterEvent, warriorEventFrame, "ADDON_RESTRICTION_STATE_CHANGED")
 
-    warriorEventFrame:SetScript("OnEvent", function(_, event, unit)
+    warriorEventFrame:SetScript("OnEvent", function(_, event, unit, _, spellID)
         if event == "UNIT_AURA" then
             if unit and unit ~= "player" then
                 return
             end
             PSA.QueueRefresh(0.02)
+            return
+        end
+
+        if event == "UNIT_SPELLCAST_SUCCEEDED" then
+            if unit and unit ~= "player" then
+                return
+            end
+            if spellID == SPELL_DEFENSIVE_STANCE
+                or spellID == SPELL_BATTLE_STANCE
+                or spellID == SPELL_BERSERKER_STANCE then
+                HandleStanceCast(spellID)
+                PSA.QueueRefresh(0.02)
+            end
+            return
+        end
+
+        if event == "ADDON_RESTRICTION_STATE_CHANGED" then
+            PSA.QueueRefresh(0.05)
             return
         end
 
