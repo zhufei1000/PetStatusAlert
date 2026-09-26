@@ -1266,7 +1266,6 @@ local function CreateOptionsFrame()
     frame.psaCloseButton = close
 
     frame.DrawPage = DrawPage
-    DrawPage()
 
     return frame
 end

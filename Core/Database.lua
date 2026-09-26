@@ -1,7 +1,7 @@
 -------------------------------------------------
 -- PetStatusAlert
 -- Hunter / Warlock / Unholy DK / Frost Mage pet status prompt + Warrior stance alerts
--- Version: 1.5.1
+-- Version: 1.5.2
 -------------------------------------------------
 
 local ADDON_NAME, PSA = ...
@@ -28,8 +28,6 @@ local VALID_ALERT_ICON_MODES = { text = true, icon = true, both = true }
 -- SavedVariables
 -------------------------------------------------
 
-PetStatusAlertDB = type(PetStatusAlertDB) == "table" and PetStatusAlertDB or {}
-
 local function Trim(value)
     value = tostring(value or "")
     value = value:gsub("^%s+", "")
@@ -54,9 +52,6 @@ local function InitDB()
     end
 
     -- TTS 语速：C_VoiceChat.SpeakText 的 rate 参数；新用户默认 3，0 = 游戏默认语速。
-    if PetStatusAlertDB.combatTTSRate == nil then
-        PetStatusAlertDB.combatTTSRate = DEFAULT_COMBAT_TTS_RATE
-    end
     PetStatusAlertDB.combatTTSRate = tonumber(PetStatusAlertDB.combatTTSRate) or DEFAULT_COMBAT_TTS_RATE
     if PetStatusAlertDB.combatTTSRate < -10 then
         PetStatusAlertDB.combatTTSRate = -10
@@ -65,9 +60,6 @@ local function InitDB()
     end
 
     -- 屏幕提示字体大小。
-    if PetStatusAlertDB.alertFontSize == nil then
-        PetStatusAlertDB.alertFontSize = DEFAULT_ALERT_FONT_SIZE
-    end
     PetStatusAlertDB.alertFontSize = tonumber(PetStatusAlertDB.alertFontSize) or DEFAULT_ALERT_FONT_SIZE
     if PetStatusAlertDB.alertFontSize < 12 then
         PetStatusAlertDB.alertFontSize = 12
@@ -76,9 +68,6 @@ local function InitDB()
     end
 
     -- 提示文字上下浮动动画幅度：默认沿用旧版本固定数值 8。
-    if PetStatusAlertDB.alertFloatAmplitude == nil then
-        PetStatusAlertDB.alertFloatAmplitude = DEFAULT_ALERT_FLOAT_AMPLITUDE
-    end
     PetStatusAlertDB.alertFloatAmplitude = tonumber(PetStatusAlertDB.alertFloatAmplitude) or DEFAULT_ALERT_FLOAT_AMPLITUDE
     if PetStatusAlertDB.alertFloatAmplitude < 0 then
         PetStatusAlertDB.alertFloatAmplitude = 0
@@ -87,9 +76,6 @@ local function InitDB()
     end
 
     -- 提示文字上下浮动速度倍率：1 = 旧版本速度。
-    if PetStatusAlertDB.alertFloatSpeed == nil then
-        PetStatusAlertDB.alertFloatSpeed = DEFAULT_ALERT_FLOAT_SPEED
-    end
     PetStatusAlertDB.alertFloatSpeed = tonumber(PetStatusAlertDB.alertFloatSpeed) or DEFAULT_ALERT_FLOAT_SPEED
     if PetStatusAlertDB.alertFloatSpeed < 0.1 then
         PetStatusAlertDB.alertFloatSpeed = 0.1
@@ -104,15 +90,10 @@ local function InitDB()
             PetStatusAlertDB.alertGlowEnabled = DEFAULT_ALERT_GLOW_ENABLED
         end
         PetStatusAlertDB.alertGlowDefaultOffMigrated = true
-    elseif PetStatusAlertDB.alertGlowEnabled == nil then
-        PetStatusAlertDB.alertGlowEnabled = DEFAULT_ALERT_GLOW_ENABLED
     end
     PetStatusAlertDB.alertGlowEnabled = PetStatusAlertDB.alertGlowEnabled and true or false
 
-    -- 像素流光速度：1 = 默认速度。只保留 Pixel Glow，旧发光类型统一迁移。
-    if PetStatusAlertDB.alertGlowSpeed == nil then
-        PetStatusAlertDB.alertGlowSpeed = DEFAULT_ALERT_GLOW_SPEED
-    end
+    -- 像素流光速度：1 = 默认速度。
     PetStatusAlertDB.alertGlowSpeed = tonumber(PetStatusAlertDB.alertGlowSpeed) or DEFAULT_ALERT_GLOW_SPEED
     if PetStatusAlertDB.alertGlowSpeed < 0.2 then
         PetStatusAlertDB.alertGlowSpeed = 0.2
@@ -128,14 +109,11 @@ local function InitDB()
     -- 1.4.0 默认值迁移：仅强制切换为图文模式。
     -- TTS / UNKNOWN 只影响新用户默认值；老用户已配置的按个人习惯保留。
     if PetStatusAlertDB.v140DefaultsMigrated ~= true then
-        PetStatusAlertDB.alertIconMode = "both"
+        PetStatusAlertDB.alertIconMode = DEFAULT_ALERT_ICON_MODE
         PetStatusAlertDB.v140DefaultsMigrated = true
     end
 
     -- 图标边长（像素）。范围 24~96，默认 48。
-    if PetStatusAlertDB.alertIconSize == nil then
-        PetStatusAlertDB.alertIconSize = DEFAULT_ALERT_ICON_SIZE
-    end
     PetStatusAlertDB.alertIconSize = tonumber(PetStatusAlertDB.alertIconSize) or DEFAULT_ALERT_ICON_SIZE
     if PetStatusAlertDB.alertIconSize < 24 then
         PetStatusAlertDB.alertIconSize = 24
@@ -144,9 +122,6 @@ local function InitDB()
     end
 
     -- 图标与文字间距（像素）。范围 0~40，默认 10。纯图标模式不使用此值。
-    if PetStatusAlertDB.alertIconGap == nil then
-        PetStatusAlertDB.alertIconGap = DEFAULT_ALERT_ICON_GAP
-    end
     PetStatusAlertDB.alertIconGap = tonumber(PetStatusAlertDB.alertIconGap) or DEFAULT_ALERT_ICON_GAP
     if PetStatusAlertDB.alertIconGap < 0 then
         PetStatusAlertDB.alertIconGap = 0

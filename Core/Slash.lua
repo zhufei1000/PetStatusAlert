@@ -2,7 +2,7 @@
 -- PetStatusAlert slash commands
 -------------------------------------------------
 
-local ADDON_NAME, PSA = ...
+local _, PSA = ...
 PSA = PSA or _G.PetStatusAlert
 
 local Trim = PSA.Trim

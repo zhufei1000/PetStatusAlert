@@ -2,7 +2,7 @@
 -- PetStatusAlert alert frame
 -------------------------------------------------
 
-local ADDON_NAME, PSA = ...
+local _, PSA = ...
 PSA = PSA or _G.PetStatusAlert
 
 local InitDB = PSA.InitDB
@@ -15,7 +15,7 @@ local DEFAULT_ALERT_FONT_SIZE = PSA.DEFAULT_ALERT_FONT_SIZE or 28
 local DEFAULT_ALERT_GLOW_ENABLED = PSA.DEFAULT_ALERT_GLOW_ENABLED ~= false
 local DEFAULT_ALERT_GLOW_SPEED = PSA.DEFAULT_ALERT_GLOW_SPEED or 1
 local DEFAULT_ALERT_GLOW_COLOR = {0.95, 0.95, 0.32, 1}
-local DEFAULT_ALERT_ICON_MODE = PSA.DEFAULT_ALERT_ICON_MODE or "text"
+local DEFAULT_ALERT_ICON_MODE = PSA.DEFAULT_ALERT_ICON_MODE or "both"
 local DEFAULT_ALERT_ICON_SIZE = PSA.DEFAULT_ALERT_ICON_SIZE or 48
 local DEFAULT_ALERT_ICON_GAP = PSA.DEFAULT_ALERT_ICON_GAP or 10
 local VALID_ALERT_ICON_MODES = PSA.VALID_ALERT_ICON_MODES or { text = true, icon = true, both = true }
@@ -26,7 +26,7 @@ local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 -------------------------------------------------
 -- 状态图标标识
 -- 正数 = spellID，通过 C_Spell.GetSpellTexture 获取图标。
--- 负数 = 宠物姿态：-1=PET_MODE_PASSIVE, -2=PET_MODE_DEFENSIVE，从宠物动作栏动态获取图标。
+-- 负数 = 宠物姿态：-1=PET_MODE_PASSIVE, -2=PET_MODE_DEFENSIVE，使用硬编码姿态纹理。
 -- 字符串 "WARLOCK_SUMMON" = 术士动态检测已学召唤技能。
 -- nil = 该状态无图标可用 → 始终只显示文字。
 -------------------------------------------------
@@ -466,7 +466,6 @@ end
 local function StopAlertGlow()
     if LCG and LCG.PixelGlow_Stop then
         LCG.PixelGlow_Stop(glowFrame, ALERT_GLOW_KEY)
-        LCG.PixelGlow_Stop(glowFrame)
     end
     glowFrame:Hide()
 end
@@ -480,7 +479,6 @@ local function RefreshAlertBoxSize()
     text:Show()
 
     -- 用当前状态键重新计算 icon/text 锚点与内容尺寸。
-    -- glowPadding 固定为 0（InitDB 强制重置，用户不可调），此处不再计算 padding。
     local contentWidth, contentHeight = ApplyContentLayout(lastStatusKey)
     contentWidth = tonumber(contentWidth) or 0
     contentHeight = tonumber(contentHeight) or currentAlertFontSize
@@ -592,7 +590,7 @@ local function StartAlertGlow()
         8,
         frequency,
         length,
-        2,  -- thickness（固定值，InitDB 强制重置，用户不可调）
+        2,  -- thickness（固定值）
         0,
         0,
         false,

@@ -2,7 +2,7 @@
 -- PetStatusAlert pet detection logic
 -------------------------------------------------
 
-local ADDON_NAME, PSA = ...
+local _, PSA = ...
 PSA = PSA or _G.PetStatusAlert
 
 local InitDB = PSA.InitDB

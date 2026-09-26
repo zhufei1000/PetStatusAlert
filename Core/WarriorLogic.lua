@@ -3,7 +3,7 @@
 -- Arms / Fury: warn while Defensive Stance is active
 -------------------------------------------------
 
-local ADDON_NAME, PSA = ...
+local _, PSA = ...
 PSA = PSA or _G.PetStatusAlert
 
 local STATUS_KEY = "WARRIOR_DEFENSIVE_STANCE"
@@ -433,11 +433,3 @@ if IsWarrior() then
         end
     end)
 end
-
--------------------------------------------------
--- Public Warrior API
--- 仅保留两个状态常量导出（供调试 / 外部查询），其余函数仅模块内部使用。
--------------------------------------------------
-
-PSA.WARRIOR_DEFENSIVE_STANCE_STATUS_KEY = STATUS_KEY
-PSA.WARRIOR_DEFENSIVE_STANCE_SPELL_ID = SPELL_DEFENSIVE_STANCE
