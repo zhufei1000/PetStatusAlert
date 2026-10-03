@@ -2,7 +2,7 @@
 ## Title: PetStatusAlert - Pet & Warrior Stance Alerts | 宠物与战士姿态提醒
 ## Notes: Alerts for supported pet classes plus Arms/Fury Warrior Defensive Stance. Supports custom text/colors, icon/text display modes, and combat TTS.
 ## Author: zhufei1000
-## Version: 1.5.2
+## Version: 1.5.3
 ## SavedVariables: PetStatusAlertDB
 
 Core/Database.lua

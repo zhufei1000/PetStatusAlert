@@ -140,6 +140,13 @@ local function GetNativeProxyDescription()
 end
 
 local function RefreshStaticText()
+    TEXT.NAV_HEADER = LocaleText("SETTINGS", "设置", "設定", "НАСТРОЙКИ")
+    TEXT.SUPPORT_CLASSES = LocaleText(
+        "Hunter\nWarlock\nUnholy DK\nFrost Mage\nArms / Fury Warrior",
+        "猎人\n术士\n邪恶死亡骑士\n冰霜法师\n武器 / 狂暴战士",
+        "獵人\n術士\n邪惡死亡騎士\n冰霜法師\n武器 / 狂怒戰士",
+        "Охотник\nЧернокнижник\nНечестивый Рыцарь смерти\nМаг льда\nВоин: Оружие / Неистовство"
+    )
     TEXT.NAV_ALERTS = LocaleText("Alerts", "提醒设置", "提醒設定", "Предупреждения")
     TEXT.NAV_DISPLAY = LocaleText("Display", "显示样式", "顯示樣式", "Отображение")
     TEXT.NAV_VOICE = LocaleText("Voice", "语音提醒", "語音提醒", "Озвучивание")
@@ -147,10 +154,10 @@ local function RefreshStaticText()
 
     TEXT.ALERTS_TITLE = LocaleText("Alert rules and messages", "提醒规则与文字", "提醒規則與文字", "Правила и тексты предупреждений")
     TEXT.ALERTS_DESC = LocaleText(
-        "Choose which pet states should warn you. Each state can use its own text and color.",
-        "选择哪些宠物状态需要提醒；每种状态都可以单独设置文字和颜色。",
-        "選擇哪些寵物狀態需要提醒；每種狀態都可以單獨設定文字與顏色。",
-        "Выберите состояния питомца для предупреждений. Для каждого можно настроить текст и цвет."
+        "Choose which states should trigger alerts. Each state can use its own text and color.",
+        "选择哪些状态需要提醒；每种状态都可以单独设置文字和颜色。",
+        "選擇哪些狀態需要提醒；每種狀態都可以單獨設定文字與顏色。",
+        "Выберите состояния для предупреждений. Для каждого можно настроить текст и цвет."
     )
     TEXT.CUSTOM_TEXT = LocaleText("Custom text", "自定义文字", "自訂文字", "Свой текст")
     TEXT.USE_DEFAULT = LocaleText("Default", "默认文字", "預設文字", "По умолчанию")
@@ -699,7 +706,7 @@ end
 
 local function DrawDisplayPage(parent)
     local page, finish = CreateScrollablePage(parent)
-    local _, desc = CreatePageHeader(page, TEXT.DISPLAY_TITLE, TEXT.DISPLAY_DESC)
+    CreatePageHeader(page, TEXT.DISPLAY_TITLE, TEXT.DISPLAY_DESC)
 
     local y = -72
 
@@ -944,7 +951,7 @@ end
 
 local function DrawVoicePage(parent)
     local page, finish = CreateScrollablePage(parent)
-    local _, desc = CreatePageHeader(page, TEXT.VOICE_TITLE, TEXT.VOICE_DESC)
+    CreatePageHeader(page, TEXT.VOICE_TITLE, TEXT.VOICE_DESC)
 
     local voiceBox = CreateSection(page, UI.COMBAT_TTS or TEXT.VOICE_TITLE, UI.COMBAT_TTS_HINT or "", -78, 220)
 
@@ -1188,8 +1195,9 @@ local function CreateOptionsFrame()
     navDivider:SetPoint("TOPRIGHT", leftPanel, "TOPRIGHT", 0, 0)
     navDivider:SetPoint("BOTTOMRIGHT", leftPanel, "BOTTOMRIGHT", 0, 0)
 
-    local navHeader = CreateText(leftPanel, "GameFontDisableSmall", LocaleText("SETTINGS", "设置", "設定", "НАСТРОЙКИ"), 10, STYLE.muted)
+    local navHeader = CreateText(leftPanel, "GameFontDisableSmall", TEXT.NAV_HEADER, 10, STYLE.muted)
     navHeader:SetPoint("TOPLEFT", leftPanel, "TOPLEFT", 18, -2)
+    frame.psaNavHeader = navHeader
 
     local content = CreateFrame("Frame", nil, frame)
     content:SetPoint("TOPLEFT", leftPanel, "TOPRIGHT", 14, -2)
@@ -1243,15 +1251,11 @@ local function CreateOptionsFrame()
     AddNav("voice", TEXT.NAV_VOICE, -104)
     AddNav("general", TEXT.NAV_GENERAL, -142)
 
-    local support = CreateText(leftPanel, "GameFontDisableSmall", LocaleText(
-        "Hunter\nWarlock\nUnholy DK\nFrost Mage",
-        "猎人\n术士\n邪恶死亡骑士\n冰霜法师",
-        "獵人\n術士\n邪惡死亡騎士\n冰霜法師",
-        "Охотник\nЧернокнижник\nНечестивый Рыцарь смерти\nМаг льда"
-    ), 10, STYLE.muted)
+    local support = CreateText(leftPanel, "GameFontDisableSmall", TEXT.SUPPORT_CLASSES, 10, STYLE.muted)
     support:SetPoint("BOTTOMLEFT", leftPanel, "BOTTOMLEFT", 18, 12)
     support:SetWidth(LAYOUT.navWidth - 28)
     support:SetSpacing(3)
+    frame.psaSupportClasses = support
 
     statusLine = CreateText(frame, "GameFontHighlightSmall", UI.FOOTER or "/psa", 12, STYLE.text)
     statusLine:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 20, 18)
@@ -1295,6 +1299,12 @@ local function RefreshOptionsFrameLocale()
     end
     if frame.psaSubtitle then
         frame.psaSubtitle:SetText(UI.SUBTITLE or "")
+    end
+    if frame.psaNavHeader then
+        frame.psaNavHeader:SetText(TEXT.NAV_HEADER)
+    end
+    if frame.psaSupportClasses then
+        frame.psaSupportClasses:SetText(TEXT.SUPPORT_CLASSES)
     end
     if frame.navButtons then
         if frame.navButtons.alerts and frame.navButtons.alerts.text then

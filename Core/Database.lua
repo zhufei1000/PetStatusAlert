@@ -1,7 +1,7 @@
 -------------------------------------------------
 -- PetStatusAlert
 -- Hunter / Warlock / Unholy DK / Frost Mage pet status prompt + Warrior stance alerts
--- Version: 1.5.2
+-- Version: 1.5.3
 -------------------------------------------------
 
 local ADDON_NAME, PSA = ...
@@ -104,13 +104,6 @@ local function InitDB()
     -- 1.4.0：图标提醒模式。默认图文模式。
     if type(PetStatusAlertDB.alertIconMode) ~= "string" or not VALID_ALERT_ICON_MODES[PetStatusAlertDB.alertIconMode] then
         PetStatusAlertDB.alertIconMode = DEFAULT_ALERT_ICON_MODE
-    end
-
-    -- 1.4.0 默认值迁移：仅强制切换为图文模式。
-    -- TTS / UNKNOWN 只影响新用户默认值；老用户已配置的按个人习惯保留。
-    if PetStatusAlertDB.v140DefaultsMigrated ~= true then
-        PetStatusAlertDB.alertIconMode = DEFAULT_ALERT_ICON_MODE
-        PetStatusAlertDB.v140DefaultsMigrated = true
     end
 
     -- 图标边长（像素）。范围 24~96，默认 48。
