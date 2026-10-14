@@ -1275,6 +1275,10 @@ local function CreateOptionsFrame()
 end
 
 local function OpenOptionsFrame()
+    if PSA.TryOpenManager and PSA.TryOpenManager() then
+        if optionsFrame then optionsFrame:Hide() end
+        return
+    end
     local frame = CreateOptionsFrame()
     InitDB()
     if frame.DrawPage then
@@ -1360,6 +1364,7 @@ local function CreateNativeProxyPanel()
         OpenOptionsFrame()
     end)
     panel.psaProxyOpenButton = openButton
+    panel:Hide()
 
     return panel
 end
@@ -1419,6 +1424,9 @@ local function RegisterNativeOptionsCategory()
 
     local panel = CreateNativeProxyPanel()
     nativeSettingsCategory = Settings.RegisterCanvasLayoutCategory(panel, "PetStatusAlert")
+    panel:HookScript("OnShow", function(self)
+        if PSA.TryOpenManager and PSA.TryOpenManager() then self:Hide() end
+    end)
     Settings.RegisterAddOnCategory(nativeSettingsCategory)
     nativeSettingsRegistered = true
 end
@@ -1437,3 +1445,5 @@ PSA.OpenOptionsFrame = OpenOptionsFrame
 PSA.RefreshOptionsFrameLocale = RefreshOptionsFrameLocale
 PSA.RegisterNativeOptionsCategory = RegisterNativeOptionsCategory
 PSA.OpenNativeOptionsFrame = OpenNativeOptionsFrame
+PSA.ApplyManagerLanguage = function(value) ApplyLanguageSelection(value) end
+PSA.HideStandaloneConfig = function() if optionsFrame then optionsFrame:Hide() end end

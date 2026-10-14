@@ -1,0 +1,17 @@
+package-as: PetStatusAlert
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+ignore:
+  - .github
+  - AGENTS.md
+  - CHANGELOG.md
+  - CHANGELOG-qfx.txt
+  - README.md
+  - overview.md
+  - tests
+  - docs
+  - tools
+  - archive
+  - .workbuddy
+  - *.zip
