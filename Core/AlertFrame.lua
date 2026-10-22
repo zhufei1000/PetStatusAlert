@@ -104,27 +104,36 @@ local function GetSpellTextureByID(spellID)
 
     local cached = SPELL_TEXTURE_CACHE[spellID]
     if cached ~= nil then
-        -- 空串为查询失败标记
-        return cached ~= "" and cached or nil
+        return cached
     end
 
     local tex
     if C_Spell and type(C_Spell.GetSpellTexture) == "function" then
         local ok, result = pcall(C_Spell.GetSpellTexture, spellID)
-        if ok and result then
+        if ok and result and result ~= 0 then
             tex = result
         end
     end
 
     if not tex and type(GetSpellTexture) == "function" then
         local ok, result = pcall(GetSpellTexture, spellID)
-        if ok and result then
+        if ok and result and result ~= 0 then
             tex = result
         end
     end
 
-    SPELL_TEXTURE_CACHE[spellID] = tex or ""
+    -- 登录初期法术数据可能尚未就绪；失败结果不缓存，后续显示会重试，
+    -- 避免一次失败造成图标永久空白直到 /reload。
+    if tex then
+        SPELL_TEXTURE_CACHE[spellID] = tex
+    end
     return tex
+end
+
+local function ClearSpellTextureCache()
+    for spellID in pairs(SPELL_TEXTURE_CACHE) do
+        SPELL_TEXTURE_CACHE[spellID] = nil
+    end
 end
 
 local function ResolveWarlockSummonSpellID()
@@ -217,6 +226,27 @@ contentFrame:SetPoint("CENTER", textFrame, "CENTER", 0, 0)
 contentFrame:SetSize(240, 58)
 contentFrame:EnableMouse(false)
 
+-- 告警默认走 MEDIUM；预览时提升到 DIALOG，避免被 900x680 的设置面板
+-- （HIGH）遮住。设置面板或管理器关闭后会由 HideStatus 恢复。
+local ALERT_STRATA_DEFAULT = "MEDIUM"
+local ALERT_STRATA_PREVIEW = "DIALOG"
+
+local function SetAlertStrata(strata)
+    strata = strata or ALERT_STRATA_DEFAULT
+    if addonFrame and addonFrame.SetFrameStrata then
+        addonFrame:SetFrameStrata(strata)
+    end
+    if glowFrame and glowFrame.SetFrameStrata then
+        glowFrame:SetFrameStrata(strata)
+    end
+    if textFrame and textFrame.SetFrameStrata then
+        textFrame:SetFrameStrata(strata)
+    end
+    if contentFrame and contentFrame.SetFrameStrata then
+        contentFrame:SetFrameStrata(strata)
+    end
+end
+
 -- 技能图标纹理。默认隐藏，仅在有对应技能图标且模式非纯文字时显示。
 local icon = contentFrame:CreateTexture(nil, "ARTWORK")
 icon:SetSize(DEFAULT_ALERT_ICON_SIZE, DEFAULT_ALERT_ICON_SIZE)
@@ -282,6 +312,12 @@ local function NormalizeIconGap(value)
     return ClampNumber(value, DEFAULT_ALERT_ICON_GAP, 0, 40)
 end
 
+-- 告警内容最大宽度：屏幕宽度的 90%，超长自定义文字改为换行而不是横穿屏幕。
+local function GetMaxAlertContentWidth()
+    local width = (UIParent and UIParent.GetWidth and UIParent:GetWidth()) or 1920
+    return math.max(160, width * 0.9)
+end
+
 local FLOAT_PERIOD = 1.5
 local FLOAT_UPDATE_INTERVAL = 0.05
 local floatElapsed = 0
@@ -302,7 +338,9 @@ local lastMessage = ""
 local lastStatusKey = nil
 
 local function ApplyAlertTextColor(statusKey)
-    local r, g, b, a = GetStatusColor(statusKey or "UNKNOWN")
+    -- 无参调用时同步当前显示中的状态；管理器里改其他状态的颜色时，
+    -- 不会把当前告警误染成 UNKNOWN 的颜色。
+    local r, g, b, a = GetStatusColor(statusKey or PSA.currentStatusKey or "UNKNOWN")
     text:SetTextColor(r, g, b, a)
 end
 
@@ -406,6 +444,8 @@ local function ApplyContentLayout(statusKey)
     local showIcon, showText, iconValue = ResolveContentLayout(statusKey)
     currentLayoutShowsIcon = showIcon
 
+    local maxTextWidth = math.max(80, GetMaxAlertContentWidth() - (showIcon and (currentIconSize + currentIconGap) or 0))
+
     icon:ClearAllPoints()
     text:ClearAllPoints()
 
@@ -426,6 +466,8 @@ local function ApplyContentLayout(statusKey)
             showIcon = false
             showText = true
             currentLayoutShowsIcon = false
+            -- 图标纹理不可用时回退为纯文字，文字可以使用整行宽度。
+            maxTextWidth = math.max(80, GetMaxAlertContentWidth())
         end
     end
 
@@ -434,7 +476,14 @@ local function ApplyContentLayout(statusKey)
         icon:SetTexture(nil)
         text:Show()
         text:SetPoint("CENTER", contentFrame, "CENTER", 0, 0)
+        text:SetWidth(maxTextWidth)
+        if text.SetWordWrap then
+            text:SetWordWrap(true)
+        end
         local tw = text:GetStringWidth() or 0
+        if tw > maxTextWidth then
+            tw = maxTextWidth
+        end
         local th = text:GetStringHeight() or currentAlertFontSize
         return tw, th
     end
@@ -455,8 +504,15 @@ local function ApplyContentLayout(statusKey)
     text:Show()
     icon:SetPoint("LEFT", contentFrame, "LEFT", 0, 0)
     text:SetPoint("LEFT", icon, "RIGHT", currentIconGap, 0)
+    text:SetWidth(maxTextWidth)
+    if text.SetWordWrap then
+        text:SetWordWrap(true)
+    end
 
     local tw = text:GetStringWidth() or 0
+    if tw > maxTextWidth then
+        tw = maxTextWidth
+    end
     local th = text:GetStringHeight() or currentAlertFontSize
     local totalW = currentIconSize + currentIconGap + tw
     local totalH = math.max(currentIconSize, th)
@@ -483,7 +539,7 @@ local function RefreshAlertBoxSize()
     contentWidth = tonumber(contentWidth) or 0
     contentHeight = tonumber(contentHeight) or currentAlertFontSize
 
-    local boxWidth = math.max(math.ceil(contentWidth), 40)
+    local boxWidth = math.min(math.max(math.ceil(contentWidth), 40), GetMaxAlertContentWidth())
     local boxHeight = math.max(math.ceil(contentHeight), currentAlertFontSize + 6)
 
     addonFrame:SetSize(math.max(boxWidth, 80), math.max(boxHeight, 32))
@@ -744,7 +800,7 @@ SetAlertPositionLocked(PetStatusAlertDB.alertLocked)
 local function SetMessage(message, statusKey)
     message = tostring(message or "")
     PSA.currentStatusKey = statusKey
-    ApplyAlertTextColor(statusKey or "UNKNOWN")
+    ApplyAlertTextColor(statusKey)
 
     local changed = message ~= lastMessage or statusKey ~= lastStatusKey
     if changed then
@@ -763,6 +819,9 @@ local function ShowStatus(statusKey, force)
         HideStatus()
         return
     end
+
+    -- 预览（设置面板/管理器）时提升到面板之上；真实状态恢复默认层级。
+    SetAlertStrata(force and ALERT_STRATA_PREVIEW or ALERT_STRATA_DEFAULT)
 
     local wasShown = addonFrame:IsShown()
     PSA.currentStatusForce = force and true or false
@@ -788,6 +847,8 @@ local function PreviewStatus(statusKey)
 end
 
 HideStatus = function()
+    SetAlertStrata(ALERT_STRATA_DEFAULT)
+
     local wasShown = addonFrame:IsShown()
     if not wasShown and PSA.currentStatusKey == nil and lastMessage == "" then
         if PSA.StopCombatTTSReminder then
@@ -838,6 +899,7 @@ PSA.SetAlertIconSize = SetAlertIconSize
 PSA.GetAlertIconGap = GetAlertIconGap
 PSA.SetAlertIconGap = SetAlertIconGap
 PSA.RefreshAlertVisuals = RefreshAlertVisuals
+PSA.ClearSpellTextureCache = ClearSpellTextureCache
 -- RegisterStatusIcon 供 WarriorLogic 等扩展模块注册状态图标映射。
 PSA.RegisterStatusIcon = RegisterStatusIcon
 PSA.ShowStatus = ShowStatus

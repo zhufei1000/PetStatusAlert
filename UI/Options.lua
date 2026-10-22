@@ -437,13 +437,46 @@ local function CreateSliderRow(parent, labelText, hintText, yOffset, minValue, m
     local maxText = CreateText(parent, "GameFontDisableSmall", tostring(maxValue), 10, STYLE.muted, "RIGHT")
     maxText:SetPoint("TOPRIGHT", slider, "BOTTOMRIGHT", 0, -3)
 
-    slider:SetScript("OnValueChanged", function(_, newValue)
-        if onChanged then
-            local display = onChanged(newValue)
-            if display ~= nil then
-                currentText:SetText(display)
-            end
+    -- 拖动过程中只重置防抖计时器；松手或停止 0.12s 后才真正应用，
+    -- 避免每个 step 都重建告警布局并重启 LibCustomGlow 流光。
+    local pendingCommit
+
+    local function ApplyValue()
+        if not onChanged then
+            return
         end
+        local display = onChanged(slider:GetValue())
+        if display ~= nil then
+            currentText:SetText(display)
+        end
+    end
+
+    local function CancelPendingCommit()
+        if pendingCommit then
+            pendingCommit:Cancel()
+            pendingCommit = nil
+        end
+    end
+
+    local function ScheduleCommit()
+        CancelPendingCommit()
+        if type(C_Timer) == "table" and type(C_Timer.NewTimer) == "function" then
+            pendingCommit = C_Timer.NewTimer(0.12, function()
+                pendingCommit = nil
+                ApplyValue()
+            end)
+        else
+            ApplyValue()
+        end
+    end
+
+    slider:SetScript("OnValueChanged", function()
+        ScheduleCommit()
+    end)
+
+    slider:SetScript("OnMouseUp", function()
+        CancelPendingCommit()
+        ApplyValue()
     end)
 
     return slider, currentText
@@ -1168,6 +1201,17 @@ local function CreateOptionsFrame()
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
     frame:Hide()
+    frame:SetScript("OnHide", function()
+        -- 预览中关闭面板时恢复真实状态，避免告警一直停留在预览文本。
+        if PSA.currentStatusForce then
+            if PSA.HideStatus then
+                PSA.HideStatus()
+            end
+            if PSA.RefreshPetStatusText then
+                PSA.RefreshPetStatusText()
+            end
+        end
+    end)
     ApplyBackdrop(frame, STYLE.frameBg, STYLE.frameBorder)
 
     local title = CreateText(frame, "GameFontNormalLarge", UI.TITLE, 21, STYLE.gold, "CENTER")
@@ -1275,6 +1319,10 @@ local function CreateOptionsFrame()
 end
 
 local function OpenOptionsFrame()
+    if PSA.TryOpenManager and PSA.TryOpenManager() then
+        if optionsFrame then optionsFrame:Hide() end
+        return
+    end
     local frame = CreateOptionsFrame()
     InitDB()
     if frame.DrawPage then
@@ -1360,6 +1408,7 @@ local function CreateNativeProxyPanel()
         OpenOptionsFrame()
     end)
     panel.psaProxyOpenButton = openButton
+    panel:Hide()
 
     return panel
 end
@@ -1419,6 +1468,9 @@ local function RegisterNativeOptionsCategory()
 
     local panel = CreateNativeProxyPanel()
     nativeSettingsCategory = Settings.RegisterCanvasLayoutCategory(panel, "PetStatusAlert")
+    panel:HookScript("OnShow", function(self)
+        if PSA.TryOpenManager and PSA.TryOpenManager() then self:Hide() end
+    end)
     Settings.RegisterAddOnCategory(nativeSettingsCategory)
     nativeSettingsRegistered = true
 end
@@ -1437,3 +1489,5 @@ PSA.OpenOptionsFrame = OpenOptionsFrame
 PSA.RefreshOptionsFrameLocale = RefreshOptionsFrameLocale
 PSA.RegisterNativeOptionsCategory = RegisterNativeOptionsCategory
 PSA.OpenNativeOptionsFrame = OpenNativeOptionsFrame
+PSA.ApplyManagerLanguage = function(value) ApplyLanguageSelection(value) end
+PSA.HideStandaloneConfig = function() if optionsFrame then optionsFrame:Hide() end end

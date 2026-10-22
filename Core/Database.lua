@@ -1,7 +1,7 @@
 -------------------------------------------------
 -- PetStatusAlert
 -- Hunter / Warlock / Unholy DK / Frost Mage pet status prompt + Warrior stance alerts
--- Version: 1.5.3
+-- Version: 1.5.4
 -------------------------------------------------
 
 local ADDON_NAME, PSA = ...
@@ -35,7 +35,13 @@ local function Trim(value)
     return value
 end
 
-local function InitDB()
+local function InitDB(force)
+    -- 初始化/迁移一次即可。ShowStatus 链上会多次调用 InitDB，重复执行
+    -- 只会带来无意义的 tonumber/范围钳制和 SavedVariables 写回。
+    if PSA.dbInitialized and type(PetStatusAlertDB) == "table" and not force then
+        return PetStatusAlertDB
+    end
+
     PetStatusAlertDB = type(PetStatusAlertDB) == "table" and PetStatusAlertDB or {}
     PetStatusAlertDB.customMessages = type(PetStatusAlertDB.customMessages) == "table" and PetStatusAlertDB.customMessages or {}
     PetStatusAlertDB.textColors = type(PetStatusAlertDB.textColors) == "table" and PetStatusAlertDB.textColors or {}
@@ -143,6 +149,9 @@ local function InitDB()
     PetStatusAlertDB.alertPosition.relativePoint = PetStatusAlertDB.alertPosition.relativePoint or "CENTER"
     PetStatusAlertDB.alertPosition.x = tonumber(PetStatusAlertDB.alertPosition.x) or 0
     PetStatusAlertDB.alertPosition.y = tonumber(PetStatusAlertDB.alertPosition.y) or 220
+
+    PSA.dbInitialized = true
+    return PetStatusAlertDB
 end
 
 

@@ -65,7 +65,7 @@ local PET_READY_EVENTS = {
 addonFrame:SetScript("OnEvent", function(_, event, unit)
     if event == "ADDON_LOADED" then
         if unit == ADDON_NAME or unit == "PetStatusAlert" then
-            InitDB()
+            InitDB(true)
             -- RL/重登后强制刷新视觉，确保 currentIconMode 等状态从 DB 同步
             if PSA.RefreshAlertVisuals then
                 PSA.RefreshAlertVisuals()
@@ -81,6 +81,10 @@ addonFrame:SetScript("OnEvent", function(_, event, unit)
 
     if event == "UNIT_FLAGS" and unit ~= "pet" then
         return
+    end
+
+    if event == "PLAYER_ENTERING_WORLD" and PSA.ClearSpellTextureCache then
+        PSA.ClearSpellTextureCache()
     end
 
     if CACHE_INVALIDATE_EVENTS[event] and ClearPetStatusCaches then

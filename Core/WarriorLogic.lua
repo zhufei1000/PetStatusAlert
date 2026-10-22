@@ -226,17 +226,12 @@ end
 -- 为 true 时不能查询光环，只能用玩家自身施法事件（不受保密限制）维护缓存状态。
 ------------------------------------------------
 
+-- 姿态是会话状态，不写入 SavedVariables：重登后沿用上一次会话的旧值
+-- 在光环保密时会造成误报。登录/刷新时以可读光环或施法事件重新同步。
 local defensiveStanceActive = nil
-
-if type(PetStatusAlertDB) == "table" and type(PetStatusAlertDB.warriorDefensiveStance) == "boolean" then
-    defensiveStanceActive = PetStatusAlertDB.warriorDefensiveStance
-end
 
 local function SetDefensiveStanceActive(active)
     defensiveStanceActive = active and true or false
-    if type(PetStatusAlertDB) == "table" then
-        PetStatusAlertDB.warriorDefensiveStance = defensiveStanceActive
-    end
 end
 
 local function CanReadDefensiveStanceAura()
@@ -270,10 +265,10 @@ local function HandleStanceCast(castSpellID)
         return
     end
 
+    -- 防御姿态是进入姿态，不是在“未知/已开启”之间切换。初始 nil 时也必须
+    -- 置为 true，否则新用户第一次在战斗中切防御姿态不会收到提醒。
     if castSpellID == SPELL_DEFENSIVE_STANCE then
-        if defensiveStanceActive ~= nil then
-            SetDefensiveStanceActive(not defensiveStanceActive)
-        end
+        SetDefensiveStanceActive(true)
     else
         SetDefensiveStanceActive(false)
     end
@@ -397,6 +392,12 @@ if IsWarrior() then
     warriorEventFrame:SetScript("OnEvent", function(_, event, unit, _, spellID)
         if event == "UNIT_AURA" then
             if unit and unit ~= "player" then
+                return
+            end
+            -- 光环保密时（战斗中/首领战/M+/PvP）读不到结果，刷新没有意义；
+            -- 姿态切换由施法事件维护缓存，等 ADDON_RESTRICTION_STATE_CHANGED
+            -- 或离开战斗后再恢复光环同步。
+            if not CanReadDefensiveStanceAura() then
                 return
             end
             PSA.QueueRefresh(0.02)

@@ -59,13 +59,30 @@ local function IsPlayerInCombatForTTS()
     return type(InCombatLockdown) == "function" and InCombatLockdown() == true
 end
 
+-- 去掉颜色/链接/纹理转义，避免 TTS 把 |cff00ff00 之类的代码念出来。
+local function StripChatMarkup(value)
+    value = tostring(value or "")
+    value = value:gsub("|c%x%x%x%x%x%x%x%x", "")
+    value = value:gsub("|r", "")
+    value = value:gsub("|T.-|t", "")
+    value = value:gsub("|A.-|a", "")
+    value = value:gsub("|H.-|h", "")
+    value = value:gsub("|h", "")
+    value = value:gsub("[\r\n]+", " ")
+    return value
+end
+
 local function GetCurrentAlertSpeechText()
     if not addonFrame:IsShown() or PSA.currentStatusKey == nil then
         return nil
     end
 
-    local value = text:GetText()
-    value = Trim(value)
+    -- 纯图标模式下文字是隐藏的，设置页文案也说明只朗读“可见”的提示文字。
+    if text.IsShown and not text:IsShown() then
+        return nil
+    end
+
+    local value = Trim(StripChatMarkup(text:GetText()))
     if value == "" then
         return nil
     end
