@@ -477,6 +477,7 @@ local function ApplyContentLayout(statusKey)
         text:Show()
         text:SetPoint("CENTER", contentFrame, "CENTER", 0, 0)
         text:SetWidth(maxTextWidth)
+        text:SetJustifyH("CENTER")
         if text.SetWordWrap then
             text:SetWordWrap(true)
         end
@@ -505,6 +506,9 @@ local function ApplyContentLayout(statusKey)
     icon:SetPoint("LEFT", contentFrame, "LEFT", 0, 0)
     text:SetPoint("LEFT", icon, "RIGHT", currentIconGap, 0)
     text:SetWidth(maxTextWidth)
+    -- 设置宽度后必须显式左对齐，否则 FontString 默认居中会把文字推到
+    -- 宽框中间，视觉上表现为图标与文字之间出现巨大空白。
+    text:SetJustifyH("LEFT")
     if text.SetWordWrap then
         text:SetWordWrap(true)
     end
