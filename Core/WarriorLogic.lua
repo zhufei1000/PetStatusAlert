@@ -32,7 +32,7 @@ local function ExtendLocalization()
 
     if type(messages) == "table" then
         if messages.enUS then
-            messages.enUS[STATUS_KEY] = "I am currently in Defensive Stance"
+            messages.enUS[STATUS_KEY] = "Defensive Stance active!"
         end
         if messages.zhCN then
             messages.zhCN[STATUS_KEY] = "当前处于：防御姿态"

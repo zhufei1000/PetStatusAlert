@@ -1,5 +1,13 @@
 # PetStatusAlert
 
+## 1.5.5
+
+- Restore the selected language, alert position, and lock state after reloading the UI.
+- Fix the icon-spacing control, retry missing spell icons, and restart combat TTS when visible text returns.
+- Cancel pending slider callbacks when settings are hidden so previews cannot reappear after closing.
+- Refresh hosted settings when the language or supported states change; preserve fixed spell-icon caches across zones and avoid duplicate glow layouts.
+- Use shorter, natural English alerts for all supported pet states and Warrior Defensive Stance.
+
 ## 1.5.4
 
 - Declare WoW 12.1.5 compatibility.

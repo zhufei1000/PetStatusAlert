@@ -130,12 +130,6 @@ local function GetSpellTextureByID(spellID)
     return tex
 end
 
-local function ClearSpellTextureCache()
-    for spellID in pairs(SPELL_TEXTURE_CACHE) do
-        SPELL_TEXTURE_CACHE[spellID] = nil
-    end
-end
-
 local function ResolveWarlockSummonSpellID()
     -- 运行时读取：PetLogic.lua 在本文件之后加载，加载时 PSA.IsKnownPlayerSpell 尚未赋值，
     -- 因此不能在文件顶部缓存。这里在实际调用（显示图标）时读取，此时该函数已存在。
@@ -334,8 +328,10 @@ local currentIconSize = DEFAULT_ALERT_ICON_SIZE
 local currentIconGap = DEFAULT_ALERT_ICON_GAP
 -- 缓存当前是否处于"显示图标"的布局，供流光判断使用。
 local currentLayoutShowsIcon = false
+local iconTexturePending = false
 local lastMessage = ""
 local lastStatusKey = nil
+local RefreshAlertVisuals
 
 local function ApplyAlertTextColor(statusKey)
     -- 无参调用时同步当前显示中的状态；管理器里改其他状态的颜色时，
@@ -443,6 +439,7 @@ local function ApplyContentLayout(statusKey)
 
     local showIcon, showText, iconValue = ResolveContentLayout(statusKey)
     currentLayoutShowsIcon = showIcon
+    iconTexturePending = false
 
     local maxTextWidth = math.max(80, GetMaxAlertContentWidth() - (showIcon and (currentIconSize + currentIconGap) or 0))
 
@@ -466,6 +463,7 @@ local function ApplyContentLayout(statusKey)
             showIcon = false
             showText = true
             currentLayoutShowsIcon = false
+            iconTexturePending = true
             -- 图标纹理不可用时回退为纯文字，文字可以使用整行宽度。
             maxTextWidth = math.max(80, GetMaxAlertContentWidth())
         end
@@ -619,7 +617,6 @@ local function StartAlertGlow()
     end
 
     RefreshAlertGlowSpeed()
-    RefreshAlertBoxSize()
 
     -- 纯文字模式不显示流光（效果不佳）；只在有图标时启动
     if not addonFrame:IsShown() or text:GetText() == "" or not currentLayoutShowsIcon then
@@ -659,7 +656,7 @@ local function StartAlertGlow()
     )
 end
 
-local function RefreshAlertVisuals()
+RefreshAlertVisuals = function()
     RefreshAlertFloatAmplitude()
     RefreshAlertFloatSpeed()
     RefreshAlertIconMode()
@@ -668,6 +665,9 @@ local function RefreshAlertVisuals()
     UpdateFloatingScript()
     if addonFrame:IsShown() then
         StartAlertGlow()
+    end
+    if PSA.RefreshCombatTTSReminder then
+        PSA.RefreshCombatTTSReminder(true)
     end
 end
 
@@ -807,13 +807,15 @@ local function SetMessage(message, statusKey)
     ApplyAlertTextColor(statusKey)
 
     local changed = message ~= lastMessage or statusKey ~= lastStatusKey
-    if changed then
+    -- 图标尚未就绪时，同一状态也需要重新布局；加载成功后恢复快速路径。
+    local retryIconTexture = iconTexturePending
+    if changed or retryIconTexture then
         lastMessage = message
         lastStatusKey = statusKey
         text:SetText(message)
         RefreshAlertBoxSize()
     end
-    return changed
+    return changed or (retryIconTexture and not iconTexturePending)
 end
 
 local HideStatus
@@ -903,7 +905,6 @@ PSA.SetAlertIconSize = SetAlertIconSize
 PSA.GetAlertIconGap = GetAlertIconGap
 PSA.SetAlertIconGap = SetAlertIconGap
 PSA.RefreshAlertVisuals = RefreshAlertVisuals
-PSA.ClearSpellTextureCache = ClearSpellTextureCache
 -- RegisterStatusIcon 供 WarriorLogic 等扩展模块注册状态图标映射。
 PSA.RegisterStatusIcon = RegisterStatusIcon
 PSA.ShowStatus = ShowStatus

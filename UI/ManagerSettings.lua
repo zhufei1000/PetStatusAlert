@@ -1,5 +1,5 @@
 local _, PSA = ...
-local definition, rebuild
+local definition, definitionKey, rebuild
 local function Text(en, cn, tw)
     local locale = PSA.GetActiveLocale()
     return locale == "zhCN" and cn or locale == "zhTW" and tw or en
@@ -20,6 +20,8 @@ end
 function PSA.GetSettingsDefinition(context)
     if PSA.HideStandaloneConfig then PSA.HideStandaloneConfig() end
     PSA.InitDB()
+    local key = PSA.GetActiveLocale() .. ":" .. table.concat(PSA.STATUS_ORDER, ",")
+    if definitionKey ~= key then definition, definitionKey = nil, key end
     if not definition then
         definition = {external=true, tabs={
             {key="alerts", title=Text("Alerts", "提醒设置", "提醒設定"), build=function(page)
@@ -87,7 +89,7 @@ function PSA.GetSettingsDefinition(context)
                 local title=Text("Language", "语言", "語言")
                 local s=page:NewSection(title,PSA.UI.LANGUAGE_DESC)
                 s:Dropdown(title,PSA.GetSavedLanguageMode,function(v)
-                    PSA.ApplyManagerLanguage(v); definition=nil
+                    PSA.ApplyManagerLanguage(v)
                     -- 语言切换会替换所有静态文案，需要重建当前页面。
                     if rebuild then rebuild() end
                 end,{{value="auto",text=PSA.UI.LANGUAGE_AUTO},{value="enUS",text=PSA.UI.LANGUAGE_ENUS},{value="zhCN",text=PSA.UI.LANGUAGE_ZHCN},{value="zhTW",text=PSA.UI.LANGUAGE_ZHTW},{value="ruRU",text=PSA.UI.LANGUAGE_RURU}},nil,180)

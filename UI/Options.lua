@@ -442,7 +442,7 @@ local function CreateSliderRow(parent, labelText, hintText, yOffset, minValue, m
     local pendingCommit
 
     local function ApplyValue()
-        if not onChanged then
+        if not onChanged or not slider:IsVisible() then
             return
         end
         local display = onChanged(slider:GetValue())
@@ -478,6 +478,7 @@ local function CreateSliderRow(parent, labelText, hintText, yOffset, minValue, m
         CancelPendingCommit()
         ApplyValue()
     end)
+    slider:SetScript("OnHide", CancelPendingCommit)
 
     return slider, currentText
 end
@@ -1486,6 +1487,7 @@ end
 -------------------------------------------------
 
 PSA.OpenOptionsFrame = OpenOptionsFrame
+PSA.RefreshLocaleState = RefreshAllLocaleState
 PSA.RefreshOptionsFrameLocale = RefreshOptionsFrameLocale
 PSA.RegisterNativeOptionsCategory = RegisterNativeOptionsCategory
 PSA.OpenNativeOptionsFrame = OpenNativeOptionsFrame

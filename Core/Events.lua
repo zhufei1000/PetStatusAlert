@@ -66,6 +66,19 @@ addonFrame:SetScript("OnEvent", function(_, event, unit)
     if event == "ADDON_LOADED" then
         if unit == ADDON_NAME or unit == "PetStatusAlert" then
             InitDB(true)
+            -- 存档在脚本执行后载入，按保存的语言重新初始化文案和默认提醒。
+            if PSA.RefreshLocaleState then
+                PSA.RefreshLocaleState()
+            end
+            if PSA.RefreshOptionsFrameLocale then
+                PSA.RefreshOptionsFrameLocale()
+            end
+            if PSA.ApplyAlertPosition then
+                PSA.ApplyAlertPosition()
+            end
+            if PSA.SetAlertPositionLocked then
+                PSA.SetAlertPositionLocked(PetStatusAlertDB.alertLocked)
+            end
             -- RL/重登后强制刷新视觉，确保 currentIconMode 等状态从 DB 同步
             if PSA.RefreshAlertVisuals then
                 PSA.RefreshAlertVisuals()
@@ -81,10 +94,6 @@ addonFrame:SetScript("OnEvent", function(_, event, unit)
 
     if event == "UNIT_FLAGS" and unit ~= "pet" then
         return
-    end
-
-    if event == "PLAYER_ENTERING_WORLD" and PSA.ClearSpellTextureCache then
-        PSA.ClearSpellTextureCache()
     end
 
     if CACHE_INVALIDATE_EVENTS[event] and ClearPetStatusCaches then
