@@ -1,5 +1,15 @@
 # PetStatusAlert
 
+## 1.5.6
+
+- Add WoW: Forever compatibility (Interface 16001) without requiring specializations.
+- Enable Forever pet alerts from class-specific learned summon abilities; refresh eligibility when spells are learned or changed.
+- On Forever, only Assist suppresses pet-mode warnings. Passive, Defensive, and Aggressive have separate alerts and settings, with localized text and icons.
+- Disable Warrior stance alerts, previews, and settings on Forever while retaining Retail stance support.
+- Recognize pet modes explicitly, including DefensiveAssist; unknown or unreadable actions are no longer guessed as Defensive.
+- Keep Retail specialization and Grimoire of Sacrifice rules separate from Forever and preserve existing saved settings.
+- Validate with automated compatibility and UI regression checks. Forever in-game testing and live-character summon spell ID confirmation remain outstanding.
+
 ## 1.5.5
 
 - Restore the selected language, alert position, and lock state after reloading the UI.

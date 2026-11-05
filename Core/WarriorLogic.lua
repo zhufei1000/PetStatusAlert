@@ -6,6 +6,20 @@
 local _, PSA = ...
 PSA = PSA or _G.PetStatusAlert
 
+-- Forever has no specializations. Do not initialize Retail stance detection,
+-- register stance events, or expose stance previews/settings on this client.
+if PSA.IsForeverClient() then
+    local _, classFile = UnitClass("player")
+    if classFile == "WARRIOR" then
+        for index = #PSA.STATUS_ORDER, 1, -1 do
+            PSA.STATUS_ORDER[index] = nil
+        end
+        PSA.PreviewStatus = function() PSA.HideStatus() end
+        PSA.GetDisplayMessage = function() return "" end
+    end
+    return
+end
+
 local STATUS_KEY = "WARRIOR_DEFENSIVE_STANCE"
 local SPEC_WARRIOR_ARMS = 71
 local SPEC_WARRIOR_FURY = 72
@@ -14,13 +28,7 @@ local SPELL_DEFENSIVE_STANCE = 386208
 local SPELL_BATTLE_STANCE = 386164
 local SPELL_BERSERKER_STANCE = 386196
 
-local PET_STATUS_ORDER = {
-    "NO_PET",
-    "PET_DEAD",
-    "PASSIVE",
-    "DEFENSIVE",
-    "UNKNOWN",
-}
+local PET_STATUS_ORDER = PSA.PET_STATUS_ORDER
 
 -------------------------------------------------
 -- Localization extension

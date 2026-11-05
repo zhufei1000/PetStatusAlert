@@ -12,6 +12,7 @@ local LOCALIZED_MESSAGES = {
     enUS = {
         PASSIVE = "Pet: Passive",
         DEFENSIVE = "Pet: Defensive",
+        AGGRESSIVE = "Pet: Aggressive",
         UNKNOWN = "Pet status unknown.",
         NO_PET = "No pet summoned!",
         PET_DEAD = "Pet is dead!",
@@ -19,6 +20,7 @@ local LOCALIZED_MESSAGES = {
     zhCN = {
         PASSIVE = "我的宠物现在是：被动状态",
         DEFENSIVE = "我的宠物现在是：防御状态",
+        AGGRESSIVE = "我的宠物现在是：攻击状态",
         UNKNOWN = "我的宠物状态暂时无法识别",
         NO_PET = "我的宠物不存在",
         PET_DEAD = "我的宠物已死亡",
@@ -26,6 +28,7 @@ local LOCALIZED_MESSAGES = {
     zhTW = {
         PASSIVE = "我的寵物現在是：被動狀態",
         DEFENSIVE = "我的寵物現在是：防禦狀態",
+        AGGRESSIVE = "我的寵物現在是：攻擊狀態",
         UNKNOWN = "我的寵物狀態暫時無法識別",
         NO_PET = "我的寵物不存在",
         PET_DEAD = "我的寵物已死亡",
@@ -33,6 +36,7 @@ local LOCALIZED_MESSAGES = {
     ruRU = {
         PASSIVE = "Режим питомца: Пассивный",
         DEFENSIVE = "Режим питомца: Защита",
+        AGGRESSIVE = "Режим питомца: Агрессивный",
         UNKNOWN = "Статус питомца сейчас невозможно определить",
         NO_PET = "Питомец не призван",
         PET_DEAD = "Питомец мертв",
@@ -45,6 +49,7 @@ local UI_LOCALE = {
         SUBTITLE = "Custom pet warning text. Leave blank to use the default text for your client language.",
         PASSIVE = "Pet: Passive",
         DEFENSIVE = "Pet: Defensive",
+        AGGRESSIVE = "Pet: Aggressive",
         NO_PET = "No Pet Summoned",
         PET_DEAD = "Dead Pet",
         UNKNOWN = "Unknown Pet Status",
@@ -60,7 +65,8 @@ local UI_LOCALE = {
         SAVED = "Saved automatically",
         CLEARED = "Custom text cleared",
         RESET_DONE = "All custom text has been reset",
-        SUPPORT = "Supported: Hunter, Warlock, Unholy Death Knight, Frost Mage with Summon Water Elemental talent",
+        SUPPORT = PSA.IsForeverClient() and "Supported: Hunter, Warlock, Mage with Summon Water Elemental. Requires a learned pet summon ability."
+            or "Supported: Hunter, Warlock, Unholy Death Knight, Frost Mage with Summon Water Elemental talent",
         LOCKED_STATUS = "Alert position locked",
         UNLOCKED_STATUS = "Alert position unlocked. Drag the alert text to move it.",
         COMBAT_TTS = "Combat TTS voice reminder",
@@ -111,6 +117,7 @@ local UI_LOCALE = {
         SUBTITLE = "自定义不同宠物状态下的屏幕提示文字。留空时，自动使用当前客户端语言的默认文字。",
         PASSIVE = "被动状态",
         DEFENSIVE = "防御状态",
+        AGGRESSIVE = "攻击状态",
         NO_PET = "未召唤宠物",
         PET_DEAD = "宠物死亡",
         UNKNOWN = "无法识别状态",
@@ -126,7 +133,8 @@ local UI_LOCALE = {
         SAVED = "已自动保存",
         CLEARED = "已清空，将使用默认文字",
         RESET_DONE = "全部自定义文字已恢复默认",
-        SUPPORT = "支持：猎人、术士、邪恶死亡骑士、点出召唤水元素天赋的冰霜法师",
+        SUPPORT = PSA.IsForeverClient() and "支持：猎人、术士、学会召唤水元素的法师；学会宠物召唤技能后启用。"
+            or "支持：猎人、术士、邪恶死亡骑士、点出召唤水元素天赋的冰霜法师",
         LOCKED_STATUS = "提示文字位置已锁定",
         UNLOCKED_STATUS = "提示文字位置已解锁，可拖动屏幕提示文字移动位置。",
         COMBAT_TTS = "战斗中 TTS 语音提醒",
@@ -177,6 +185,7 @@ local UI_LOCALE = {
         SUBTITLE = "自訂不同寵物狀態下的螢幕提示文字。留空時，自動使用目前客戶端語言的預設文字。",
         PASSIVE = "被動狀態",
         DEFENSIVE = "防禦狀態",
+        AGGRESSIVE = "攻擊狀態",
         NO_PET = "未召喚寵物",
         PET_DEAD = "寵物死亡",
         UNKNOWN = "無法識別狀態",
@@ -192,7 +201,8 @@ local UI_LOCALE = {
         SAVED = "已自動儲存",
         CLEARED = "已清空，將使用預設文字",
         RESET_DONE = "全部自訂文字已恢復預設",
-        SUPPORT = "支援：獵人、術士、邪惡死亡騎士、點出召喚水元素天賦的冰霜法師",
+        SUPPORT = PSA.IsForeverClient() and "支援：獵人、術士、學會召喚水元素的法師；學會寵物召喚技能後啟用。"
+            or "支援：獵人、術士、邪惡死亡騎士、點出召喚水元素天賦的冰霜法師",
         LOCKED_STATUS = "提示文字位置已鎖定",
         UNLOCKED_STATUS = "提示文字位置已解鎖，可拖動螢幕提示文字移動位置。",
         COMBAT_TTS = "戰鬥中 TTS 語音提醒",
@@ -243,6 +253,7 @@ local UI_LOCALE = {
         SUBTITLE = "Собственный текст предупреждения. Оставьте поле пустым, чтобы использовать стандартный текст для языка вашего клиента.",
         PASSIVE = "Пассивный питомец",
         DEFENSIVE = "Защищающийся питомец",
+        AGGRESSIVE = "Агрессивный питомец",
         NO_PET = "Нет питомца",
         PET_DEAD = "Питомец мертв",
         UNKNOWN = "Неизвестный статус",
@@ -258,7 +269,8 @@ local UI_LOCALE = {
         SAVED = "Сохранено автоматически",
         CLEARED = "Пользовательский текст очищен",
         RESET_DONE = "Весь пользовательский текст был сброшен",
-        SUPPORT = "Поддерживается: Охотник, Чернокнижник, Рыцарь смерти «Нечестивости», Маг «Льда» с талантом «Призыв элементаля воды»",
+        SUPPORT = PSA.IsForeverClient() and "Поддерживается: Охотник, Чернокнижник, Маг с призывом элементаля воды. Требуется изученное заклинание призыва питомца."
+            or "Поддерживается: Охотник, Чернокнижник, Рыцарь смерти «Нечестивости», Маг «Льда» с талантом «Призыв элементаля воды»",
         LOCKED_STATUS = "Позиция предупреждения закреплена",
         UNLOCKED_STATUS = "Позиция предупреждения разблокирована. Перетащите текст для перемещения.",
         COMBAT_TTS = "Голосовое напоминание (TTS) в бою",
@@ -344,13 +356,10 @@ end
 local L = LOCALIZED_MESSAGES.enUS
 local UI = UI_LOCALE.enUS
 
-local STATUS_ORDER = {
-    "NO_PET",
-    "PET_DEAD",
-    "PASSIVE",
-    "DEFENSIVE",
-    "UNKNOWN",
-}
+local STATUS_ORDER = {}
+for index, key in ipairs(PSA.PET_STATUS_ORDER) do
+    STATUS_ORDER[index] = key
+end
 
 local STATUS_LABEL = {}
 
@@ -363,6 +372,7 @@ local function RefreshLocaleTables()
         PET_DEAD = UI.PET_DEAD,
         PASSIVE = UI.PASSIVE,
         DEFENSIVE = UI.DEFENSIVE,
+        AGGRESSIVE = UI.AGGRESSIVE,
         UNKNOWN = UI.UNKNOWN,
     }
     PSA.UI = UI

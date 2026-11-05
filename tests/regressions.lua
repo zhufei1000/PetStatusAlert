@@ -56,7 +56,7 @@ UnitClass = function() return "Hunter", "HUNTER" end
 local texture, textureCalls = nil, 0
 C_Spell = {GetSpellTexture = function() textureCalls = textureCalls + 1; return texture end}
 local psa = {}
-for _, file in ipairs({"Core/Database.lua", "Core/Localization.lua", "Core/AlertFrame.lua"}) do
+for _, file in ipairs({"Core/Database.lua", "Core/Compat.lua", "Core/Localization.lua", "Core/AlertFrame.lua"}) do
     assert(loadfile(file))("PetStatusAlert", psa)
 end
 local tickers, timers, spoken = {}, {}, {}
@@ -182,7 +182,7 @@ GetLocale = function() return "zhCN" end
 local function LoadLanguageSession(saved)
     PetStatusAlertDB = nil
     local session = {}
-    for _, path in ipairs({"Core/Database.lua", "Core/Localization.lua", "Core/AlertFrame.lua",
+    for _, path in ipairs({"Core/Database.lua", "Core/Compat.lua", "Core/Localization.lua", "Core/AlertFrame.lua",
         "Core/TTS.lua", "Core/PetLogic.lua", "Core/WarriorLogic.lua", "UI/Options.lua",
         "UI/ManagerSettings.lua", "Core/Events.lua"}) do
         assert(loadfile(path))("PetStatusAlert", session)
@@ -272,6 +272,35 @@ Test("manager definition is cached until language or supported statuses change",
     for index = #session.STATUS_ORDER, 1, -1 do session.STATUS_ORDER[index] = nil end
     session.STATUS_ORDER[1] = "WARRIOR_DEFENSIVE_STANCE"
     assert(session.GetSettingsDefinition({}) ~= translated, "manager reused pages for an old status list")
+end)
+Test("Forever Aggressive uses its own icon, text, and settings entry", function()
+    GetBuildInfo = function() return "1.60.1", "70790", "Nov 5 2026", 16001 end
+    local session = LoadLanguageSession({language = "enUS"})
+    session.SetAlertIconMode("both")
+    session.ShowStatus("AGGRESSIVE")
+    assert(session.alertText:GetText() == "Pet: Aggressive")
+    assert(session.alertText.parent.icon.texture == "Interface\\Icons\\Ability_Racial_BloodRage")
+    session.SetAlertIconMode("icon")
+    assert(session.alertText.parent.icon:IsShown() and not session.alertText:IsShown())
+    assert(session.STATUS_ORDER[4] == "DEFENSIVE" and session.STATUS_ORDER[5] == "AGGRESSIVE")
+    local text = Upvalue(session.RefreshOptionsFrameLocale, "TEXT")
+    assert(text.SUPPORT_CLASSES == "Hunter\nWarlock\nMage (Water Elemental)")
+    session.HideStatus()
+    GetBuildInfo = nil
+end)
+Test("Forever Warrior UI previews stay hidden after language refresh", function()
+    GetBuildInfo = function() return "1.60.1", "70790", "Nov 5 2026", 16001 end
+    local originalClass = UnitClass
+    UnitClass = function() return "Warrior", "WARRIOR" end
+    local session = LoadLanguageSession({language = "enUS"})
+    for _, language in ipairs({"enUS", "zhCN", "zhTW", "ruRU"}) do
+        session.ApplyManagerLanguage(language)
+        session.PreviewStatus("PASSIVE")
+        assert(not session.addonFrame:IsShown() and #session.STATUS_ORDER == 0)
+        session.PreviewStatus("WARRIOR_DEFENSIVE_STANCE")
+        assert(not session.addonFrame:IsShown())
+    end
+    GetBuildInfo, UnitClass = nil, originalClass
 end)
 print(string.format("RESULT: %d passed, %d failed", passed, failed))
 if failed > 0 then os.exit(1) end

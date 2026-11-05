@@ -8,6 +8,7 @@ PSA = PSA or _G.PetStatusAlert
 local InitDB = PSA.InitDB
 local HideStatus = PSA.HideStatus
 local ShowStatus = PSA.ShowStatus
+local GetPlayerSpecId = PSA.GetPlayerSpecId
 
 local SPEC_HUNTER_MARKSMANSHIP = 254
 local SPEC_DEATHKNIGHT_UNHOLY = 252
@@ -15,6 +16,13 @@ local SPEC_MAGE_FROST = 64
 local SPEC_WARLOCK_AFFLICTION = 265
 local SPEC_WARLOCK_DESTRUCTION = 267
 local SPELL_SUMMON_WATER_ELEMENTAL = 31687
+local PET_MODE_TOKENS = {
+    { "PET_MODE_ASSIST", "ASSIST" },
+    { "PET_MODE_DEFENSIVE", "DEFENSIVE" },
+    { "PET_MODE_DEFENSIVEASSIST", "DEFENSIVE" },
+    { "PET_MODE_PASSIVE", "PASSIVE" },
+    { "PET_MODE_AGGRESSIVE", "AGGRESSIVE" },
+}
 
 -- Retail talent-definition IDs supplied by the user.
 -- Do not use spellID fallback here: spell queries can be unsafe or unstable in combat.
@@ -55,20 +63,6 @@ end
 -- Pet logic
 -------------------------------------------------
 
-local function GetPlayerSpecId()
-    if type(GetSpecialization) ~= "function" or type(GetSpecializationInfo) ~= "function" then
-        return 0
-    end
-
-    local specIndex = GetSpecialization()
-    if not specIndex or specIndex <= 0 then
-        return 0
-    end
-
-    local specId = select(1, GetSpecializationInfo(specIndex))
-    return tonumber(specId) or 0
-end
-
 local function IsKnownPlayerSpell(spellID)
     spellID = tonumber(spellID)
     if not spellID then
@@ -77,21 +71,21 @@ local function IsKnownPlayerSpell(spellID)
 
     if C_SpellBook and type(C_SpellBook.IsSpellKnown) == "function" then
         local ok, known = pcall(C_SpellBook.IsSpellKnown, spellID)
-        if ok and known ~= nil then
+        if ok and PSA.IsAccessibleValue(known) and known ~= nil then
             return known and true or false
         end
     end
 
     if type(IsPlayerSpell) == "function" then
         local ok, known = pcall(IsPlayerSpell, spellID)
-        if ok and known ~= nil then
+        if ok and PSA.IsAccessibleValue(known) and known ~= nil then
             return known and true or false
         end
     end
 
     if type(IsSpellKnown) == "function" then
         local ok, known = pcall(IsSpellKnown, spellID)
-        if ok and known ~= nil then
+        if ok and PSA.IsAccessibleValue(known) and known ~= nil then
             return known and true or false
         end
     end
@@ -304,6 +298,10 @@ local function IsTalentActiveByAnyKnownID(matchIDs, specId)
 end
 
 local function IsWarlockGrimoireOfSacrificeActive()
+    -- Retail trait definition IDs do not describe Forever's talent system.
+    if PSA.IsForeverClient() then
+        return false
+    end
     local _, classFile = UnitClass("player")
     if classFile ~= "WARLOCK" then
         return false
@@ -343,7 +341,9 @@ local function SupportsPetStatusPrompt()
 
     local supports = false
 
-    if classFile == "HUNTER" then
+    if PSA.IsForeverClient() then
+        supports = PSA.SupportsForeverPetClass(classFile, IsKnownPlayerSpell)
+    elseif classFile == "HUNTER" then
         supports = specId ~= SPEC_HUNTER_MARKSMANSHIP
     elseif classFile == "WARLOCK" then
         supports = true
@@ -388,48 +388,23 @@ local function GetPetMode()
         return "UNKNOWN"
     end
 
-    local hasPetControl = false
-    if type(PetHasActionBar) == "function" and PetHasActionBar() then
-        hasPetControl = true
-    end
-    if type(HasPetUI) == "function" and HasPetUI() then
-        hasPetControl = true
-    end
-    local hasPetSpells = _G["HasPetSpells"]
-    if type(hasPetSpells) == "function" and hasPetSpells() then
-        hasPetControl = true
-    end
-
-    local sawAnyPetModeButton = false
     local slotCount = tonumber(NUM_PET_ACTION_SLOTS) or 10
 
     for i = 1, slotCount do
         local okAction, name, _, isToken, isActive = pcall(GetPetActionInfo, i)
-        if not okAction then
-            name = nil
-            isToken = nil
-            isActive = nil
-        end
-        if name then
-            sawAnyPetModeButton = true
+        if not okAction or not PSA.IsAccessibleValue(name)
+            or not PSA.IsAccessibleValue(isToken) or not PSA.IsAccessibleValue(isActive) then
+            return "UNKNOWN"
         end
 
         if name and isActive then
-            local tokenName = isToken and name or nil
-            local readable = isToken and (_G[name] or name) or name
-
-            if tokenName == "PET_MODE_ASSIST" or readable == PET_MODE_ASSIST then
-                return "ASSIST"
-            end
-
-            if tokenName == "PET_MODE_PASSIVE" or readable == PET_MODE_PASSIVE then
-                return "PASSIVE"
+            for _, entry in ipairs(PET_MODE_TOKENS) do
+                local token, mode = entry[1], entry[2]
+                if name == token or (not isToken and _G[token] and name == _G[token]) then
+                    return mode
+                end
             end
         end
-    end
-
-    if sawAnyPetModeButton or hasPetControl then
-        return "DEFENSIVE"
     end
 
     return "UNKNOWN"
@@ -441,6 +416,9 @@ local function GetPetModeStatusKey(mode)
     end
     if mode == "DEFENSIVE" then
         return "DEFENSIVE"
+    end
+    if mode == "AGGRESSIVE" then
+        return "AGGRESSIVE"
     end
     return "UNKNOWN"
 end
@@ -496,7 +474,7 @@ local function RefreshPetStatusText()
         return
     end
 
-    if mode == "ASSIST" then
+    if PSA.IsNormalPetMode(mode) then
         HideStatus()
         return
     end

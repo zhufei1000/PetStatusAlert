@@ -141,7 +141,12 @@ end
 
 local function RefreshStaticText()
     TEXT.NAV_HEADER = LocaleText("SETTINGS", "设置", "設定", "НАСТРОЙКИ")
-    TEXT.SUPPORT_CLASSES = LocaleText(
+    TEXT.SUPPORT_CLASSES = PSA.IsForeverClient() and LocaleText(
+        "Hunter\nWarlock\nMage (Water Elemental)",
+        "猎人\n术士\n法师（召唤水元素）",
+        "獵人\n術士\n法師（召喚水元素）",
+        "Охотник\nЧернокнижник\nМаг (элементаль воды)"
+    ) or LocaleText(
         "Hunter\nWarlock\nUnholy DK\nFrost Mage\nArms / Fury Warrior",
         "猎人\n术士\n邪恶死亡骑士\n冰霜法师\n武器 / 狂暴战士",
         "獵人\n術士\n邪惡死亡騎士\n冰霜法師\n武器 / 狂怒戰士",

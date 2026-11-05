@@ -26,7 +26,7 @@ local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 -------------------------------------------------
 -- 状态图标标识
 -- 正数 = spellID，通过 C_Spell.GetSpellTexture 获取图标。
--- 负数 = 宠物姿态：-1=PET_MODE_PASSIVE, -2=PET_MODE_DEFENSIVE，使用硬编码姿态纹理。
+-- 负数 = 宠物姿态：-1=被动，-2=防御，-3=攻击，使用硬编码姿态纹理。
 -- 字符串 "WARLOCK_SUMMON" = 术士动态检测已学召唤技能。
 -- nil = 该状态无图标可用 → 始终只显示文字。
 -------------------------------------------------
@@ -61,6 +61,7 @@ local STATUS_ICON_SPELLS = {
 local PET_MODE_TOKEN = {
     [-1] = "PET_MODE_PASSIVE",
     [-2] = "PET_MODE_DEFENSIVE",
+    [-3] = "PET_MODE_AGGRESSIVE",
 }
 
 -- 宠物姿态图标的固定纹理路径（WoW 内置常量，跨版本不变）。
@@ -69,6 +70,7 @@ local PET_MODE_TOKEN = {
 local PET_MODE_ICON_TEXTURE = {
     PET_MODE_PASSIVE = "Interface\\Icons\\Ability_Seal",
     PET_MODE_DEFENSIVE = "Interface\\Icons\\Ability_Defend",
+    PET_MODE_AGGRESSIVE = "Interface\\Icons\\Ability_Racial_BloodRage",
 }
 
 -- 直接返回硬编码纹理路径。不依赖任何运行时状态。
@@ -162,6 +164,9 @@ local function GetStatusIconSpellID(statusKey)
     end
 
     local value = classSpells[statusKey]
+    if statusKey == "AGGRESSIVE" then
+        return -3
+    end
     if value == nil then
         return nil
     end

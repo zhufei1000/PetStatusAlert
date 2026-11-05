@@ -31,6 +31,9 @@ RegisterEventSafe("ADDON_LOADED")
 RegisterEventSafe("PLAYER_ENTERING_WORLD")
 RegisterEventSafe("UNIT_PET")
 RegisterEventSafe("PET_BAR_UPDATE")
+RegisterEventSafe("PET_UI_UPDATE")
+RegisterEventSafe("SPELLS_CHANGED")
+RegisterEventSafe("LEARNED_SPELL_IN_SKILL_LINE")
 RegisterEventSafe("PLAYER_SPECIALIZATION_CHANGED")
 RegisterEventSafe("PLAYER_TALENT_UPDATE")
 RegisterEventSafe("TRAIT_CONFIG_UPDATED")
@@ -45,6 +48,8 @@ RegisterUnitEventSafe("UNIT_EXITED_VEHICLE", "player")
 RegisterUnitEventSafe("UNIT_FLAGS", "pet")
 
 local CACHE_INVALIDATE_EVENTS = {
+    SPELLS_CHANGED = true,
+    LEARNED_SPELL_IN_SKILL_LINE = true,
     PLAYER_ENTERING_WORLD = true,
     PLAYER_SPECIALIZATION_CHANGED = true,
     PLAYER_TALENT_UPDATE = true,
@@ -53,6 +58,9 @@ local CACHE_INVALIDATE_EVENTS = {
 }
 
 local PET_READY_EVENTS = {
+    PET_UI_UPDATE = true,
+    SPELLS_CHANGED = true,
+    LEARNED_SPELL_IN_SKILL_LINE = true,
     PLAYER_ENTERING_WORLD = true,
     UNIT_PET = true,
     PET_BAR_UPDATE = true,
