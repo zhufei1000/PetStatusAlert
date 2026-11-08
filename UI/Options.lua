@@ -7,6 +7,7 @@ local ADDON_NAME, PSA = ...
 PSA = PSA or _G.PetStatusAlert
 
 local InitDB = PSA.InitDB
+local isForever = PSA.IsForeverClient()
 local GetActiveLocale = PSA.GetActiveLocale
 local GetSavedLanguageMode = PSA.GetSavedLanguageMode
 local RefreshLocaleTables = PSA.RefreshLocaleTables
@@ -958,7 +959,7 @@ local function DrawDisplayPage(parent)
     glowCheck:SetScript("OnClick", function(self)
         local enabled = SetAlertGlowEnabled(self:GetChecked() and true or false)
         self:SetChecked(enabled)
-        PreviewStatus("NO_PET")
+        PreviewStatus("PASSIVE")
         if statusLine then
             statusLine:SetText(enabled and (UI.ANIMATION_GLOW_ON or "Pixel glow enabled") or (UI.ANIMATION_GLOW_OFF or "Pixel glow disabled"))
         end
@@ -976,7 +977,7 @@ local function DrawDisplayPage(parent)
         string.format(UI.ANIMATION_GLOW_SPEED_VALUE or "Glow speed: %sx", FormatOneDecimal(GetAlertGlowSpeed and GetAlertGlowSpeed() or DEFAULT_ALERT_GLOW_SPEED)),
         function(value)
             local newValue = SetAlertGlowSpeed(value)
-            PreviewStatus("NO_PET")
+            PreviewStatus("PASSIVE")
             return string.format(UI.ANIMATION_GLOW_SPEED_VALUE or "Glow speed: %sx", FormatOneDecimal(newValue))
         end
     )
@@ -1127,6 +1128,33 @@ local function DrawGeneralPage(parent)
     end
 
     finish(510)
+end
+
+local function DrawForeverPage(parent)
+    local page, finish = CreateScrollablePage(parent)
+    CreatePageHeader(page, UI.FOREVER_SETTINGS, "")
+    local section = CreateSection(page, UI.AMMO_SETTINGS, UI.AMMO_THRESHOLD_HINT, -52, 124)
+
+    local label = CreateText(section, "GameFontNormal", UI.AMMO_THRESHOLD, 14, STYLE.gold)
+    label:SetPoint("BOTTOMLEFT", section, "BOTTOMLEFT", 18, 24)
+    label:SetWidth(LAYOUT.contentWidth - 130)
+
+    local input = CreateFrame("EditBox", nil, section, "InputBoxTemplate")
+    input:SetSize(84, 26)
+    input:SetPoint("BOTTOMRIGHT", section, "BOTTOMRIGHT", -24, 17)
+    SkinEditBox(input)
+    input:SetNumeric(true)
+    input:SetJustifyH("RIGHT")
+    input:SetText(tostring(PSA.GetAmmoThreshold()))
+    input:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    input:SetScript("OnEditFocusLost", function(self)
+        self:SetText(tostring(PSA.SetAmmoThreshold(self:GetText())))
+    end)
+    input:SetScript("OnEscapePressed", function(self)
+        self:SetText(tostring(PSA.GetAmmoThreshold()))
+        self:ClearFocus()
+    end)
+    finish(190)
 end
 
 -------------------------------------------------
@@ -1280,6 +1308,8 @@ local function CreateOptionsFrame()
             DrawVoicePage(pageHolder)
         elseif frame.activePage == "general" then
             DrawGeneralPage(pageHolder)
+        elseif frame.activePage == "forever" then
+            DrawForeverPage(pageHolder)
         else
             DrawAlertsPage(pageHolder)
         end
@@ -1300,6 +1330,9 @@ local function CreateOptionsFrame()
     AddNav("display", TEXT.NAV_DISPLAY, -66)
     AddNav("voice", TEXT.NAV_VOICE, -104)
     AddNav("general", TEXT.NAV_GENERAL, -142)
+    if isForever then
+        AddNav("forever", UI.FOREVER_SETTINGS, -180)
+    end
 
     local support = CreateText(leftPanel, "GameFontDisableSmall", TEXT.SUPPORT_CLASSES, 10, STYLE.muted)
     support:SetPoint("BOTTOMLEFT", leftPanel, "BOTTOMLEFT", 18, 12)
@@ -1325,10 +1358,6 @@ local function CreateOptionsFrame()
 end
 
 local function OpenOptionsFrame()
-    if PSA.TryOpenManager and PSA.TryOpenManager() then
-        if optionsFrame then optionsFrame:Hide() end
-        return
-    end
     local frame = CreateOptionsFrame()
     InitDB()
     if frame.DrawPage then
@@ -1372,6 +1401,9 @@ local function RefreshOptionsFrameLocale()
         end
         if frame.navButtons.general and frame.navButtons.general.text then
             frame.navButtons.general.text:SetText(TEXT.NAV_GENERAL)
+        end
+        if frame.navButtons.forever then
+            frame.navButtons.forever.text:SetText(UI.FOREVER_SETTINGS)
         end
     end
     if frame.psaCloseButton then
@@ -1474,9 +1506,6 @@ local function RegisterNativeOptionsCategory()
 
     local panel = CreateNativeProxyPanel()
     nativeSettingsCategory = Settings.RegisterCanvasLayoutCategory(panel, "PetStatusAlert")
-    panel:HookScript("OnShow", function(self)
-        if PSA.TryOpenManager and PSA.TryOpenManager() then self:Hide() end
-    end)
     Settings.RegisterAddOnCategory(nativeSettingsCategory)
     nativeSettingsRegistered = true
 end

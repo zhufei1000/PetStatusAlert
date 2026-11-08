@@ -4,16 +4,6 @@ local function Text(en, cn, tw)
     local locale = PSA.GetActiveLocale()
     return locale == "zhCN" and cn or locale == "zhTW" and tw or en
 end
-function PSA.TryOpenManager(key)
-    local manager = rawget(_G, "QFXAddonManagerAPI")
-    if not manager or not manager.OpenAddonSettings then return false end
-    -- 管理器可能因为配置/适配器未就绪而拒绝打开；此时必须让调用方回退到
-    -- 独立面板，不能先隐藏面板再返回 true，否则 /psa 会没有任何反应。
-    local opened = manager.OpenAddonSettings("PetStatusAlert", key)
-    if not opened then return false end
-    if PSA.HideStandaloneConfig then PSA.HideStandaloneConfig() end
-    return true
-end
 local function StopPreview()
     if PSA.currentStatusForce then PSA.HideStatus(); PSA.RefreshPetStatusText() end
 end
@@ -96,6 +86,13 @@ function PSA.GetSettingsDefinition(context)
                 page:AddSection(s)
             end},
         }, OnSettingsHide=function() rebuild=nil; StopPreview() end, OnTabShow=StopPreview}
+        if PSA.IsForeverClient() then
+            definition.tabs[#definition.tabs + 1] = {key="forever", title=PSA.UI.FOREVER_SETTINGS, build=function(page)
+                local s = page:NewSection(PSA.UI.AMMO_SETTINGS, PSA.UI.AMMO_THRESHOLD_HINT)
+                s:EditBox(PSA.UI.AMMO_THRESHOLD, PSA.GetAmmoThreshold, PSA.SetAmmoThreshold, nil, 84, {numeric=true})
+                page:AddSection(s)
+            end}
+        end
     end
     -- 外部插件设置页由 UI.RefreshToolboxSettings 提供 Rebuild；管理器内部页面
     -- 只有 Refresh（W:Refresh）。两者都保留，按钮/语言切换后控件不会停在旧值。

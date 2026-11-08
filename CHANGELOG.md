@@ -1,5 +1,14 @@
 # PetStatusAlert
 
+## 1.6.0
+
+- Add low-ammo alerts for bows, crossbows, and guns in WoW: Forever. Check the equipped ammunition after every combat and display the remaining amount below a configurable threshold. The default is 100, and 0 disables the alert.
+- Add a Forever settings tab in `/psa` and QFXAddonManager. Both use the same saved ammo threshold.
+- Add a Hunter feeding shortcut for hungry pets. Left-click to feed out of combat, or right-click to choose food. The addon remembers the selection per character and rechecks the item slot before feeding.
+- Put ammo, feeding, and stance icons on one row with a shared size and position. Ammo text extends to the left, and the remaining count appears on the icon. Pixel glow defaults to on for ammo, feeding, Passive, and Defensive alerts.
+- Reuse food data for unchanged bags and item data for the equipped weapon and ammo. Coalesce pet bar updates into a single stance check on Forever.
+- Open the standalone settings directly with `/psa`, and use the current voice API for combat TTS.
+
 ## 1.5.6
 
 - Add WoW: Forever compatibility (Interface 16001) without requiring specializations.

@@ -9,10 +9,10 @@ local InitDB = PSA.InitDB
 local GetStatusColor = PSA.GetStatusColor
 local GetDisplayMessage = PSA.GetDisplayMessage
 local IsStatusEnabled = PSA.IsStatusEnabled
+local isForever = PSA.IsForeverClient()
 local DEFAULT_ALERT_FLOAT_AMPLITUDE = PSA.DEFAULT_ALERT_FLOAT_AMPLITUDE or 8
 local DEFAULT_ALERT_FLOAT_SPEED = PSA.DEFAULT_ALERT_FLOAT_SPEED or 1
 local DEFAULT_ALERT_FONT_SIZE = PSA.DEFAULT_ALERT_FONT_SIZE or 28
-local DEFAULT_ALERT_GLOW_ENABLED = PSA.DEFAULT_ALERT_GLOW_ENABLED ~= false
 local DEFAULT_ALERT_GLOW_SPEED = PSA.DEFAULT_ALERT_GLOW_SPEED or 1
 local DEFAULT_ALERT_GLOW_COLOR = {0.95, 0.95, 0.32, 1}
 local DEFAULT_ALERT_ICON_MODE = PSA.DEFAULT_ALERT_ICON_MODE or "both"
@@ -20,6 +20,8 @@ local DEFAULT_ALERT_ICON_SIZE = PSA.DEFAULT_ALERT_ICON_SIZE or 48
 local DEFAULT_ALERT_ICON_GAP = PSA.DEFAULT_ALERT_ICON_GAP or 10
 local VALID_ALERT_ICON_MODES = PSA.VALID_ALERT_ICON_MODES or { text = true, icon = true, both = true }
 local ALERT_GLOW_KEY = "PetStatusAlert_Glow"
+local ALERT_ROW_GAP = 8
+local ALERT_ROW_EDGE_PADDING = 3
 
 local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 
@@ -229,9 +231,14 @@ contentFrame:EnableMouse(false)
 -- （HIGH）遮住。设置面板或管理器关闭后会由 HideStatus 恢复。
 local ALERT_STRATA_DEFAULT = "MEDIUM"
 local ALERT_STRATA_PREVIEW = "DIALOG"
+local currentAlertStrata
 
 local function SetAlertStrata(strata)
     strata = strata or ALERT_STRATA_DEFAULT
+    if strata == currentAlertStrata then
+        return
+    end
+    currentAlertStrata = strata
     if addonFrame and addonFrame.SetFrameStrata then
         addonFrame:SetFrameStrata(strata)
     end
@@ -311,23 +318,17 @@ local function NormalizeIconGap(value)
     return ClampNumber(value, DEFAULT_ALERT_ICON_GAP, 0, 40)
 end
 
--- 告警内容最大宽度：屏幕宽度的 90%，超长自定义文字改为换行而不是横穿屏幕。
-local function GetMaxAlertContentWidth()
-    local width = (UIParent and UIParent.GetWidth and UIParent:GetWidth()) or 1920
-    return math.max(160, width * 0.9)
-end
-
 local FLOAT_PERIOD = 1.5
 local FLOAT_UPDATE_INTERVAL = 0.05
 local floatElapsed = 0
 local floatUpdateElapsed = 0
-local lastFloatOffset
-local floatingActive = false
+local lastFloatOffset, lastContentOffsetX
+local contentOffsetX = 0
+local floatingFrame
 local currentFloatAmplitude = DEFAULT_ALERT_FLOAT_AMPLITUDE
 local currentFloatSpeed = DEFAULT_ALERT_FLOAT_SPEED
 local currentAlertFontSize = DEFAULT_ALERT_FONT_SIZE
 local currentGlowSpeed = DEFAULT_ALERT_GLOW_SPEED
-local currentGlowEnabled = DEFAULT_ALERT_GLOW_ENABLED
 local currentIconMode = DEFAULT_ALERT_ICON_MODE
 local currentIconSize = DEFAULT_ALERT_ICON_SIZE
 local currentIconGap = DEFAULT_ALERT_ICON_GAP
@@ -337,6 +338,22 @@ local iconTexturePending = false
 local lastMessage = ""
 local lastStatusKey = nil
 local RefreshAlertVisuals
+local petCareFrame, petCareIcon, petCareKind, petCareTexture
+local petCareDesaturated = false
+local ammoFrame, ammoIcon, ammoText, ammoLabel
+local ammoKind, ammoCount, ammoTexture
+local ammoLabelWidth = 0
+
+-- Reserve space for the active accessory icons when wrapping the stance text.
+local function GetMaxAlertContentWidth()
+    local width = UIParent:GetWidth()
+    local accessoryCount = (petCareKind and 1 or 0) + (ammoKind and 1 or 0)
+    local reserved = accessoryCount * (currentIconSize + ALERT_ROW_GAP) + 2 * ALERT_ROW_EDGE_PADDING
+    if ammoKind then
+        reserved = reserved + ammoLabelWidth + currentIconGap
+    end
+    return math.max(160, math.min(width * 0.9, width - reserved))
+end
 
 local function ApplyAlertTextColor(statusKey)
     -- 无参调用时同步当前显示中的状态；管理器里改其他状态的颜色时，
@@ -366,11 +383,8 @@ local function RefreshAlertFloatSpeed()
     return currentFloatSpeed
 end
 
-local function RefreshAlertGlowEnabled()
-    InitDB()
-    currentGlowEnabled = PetStatusAlertDB.alertGlowEnabled and true or false
-    PetStatusAlertDB.alertGlowEnabled = currentGlowEnabled
-    return currentGlowEnabled
+local function GetAlertGlowEnabled()
+    return InitDB().alertGlowEnabled ~= false
 end
 
 local function RefreshAlertGlowSpeed()
@@ -533,11 +547,78 @@ local function StopAlertGlow()
     glowFrame:Hide()
 end
 
+local function ApplyFloatOffset(y)
+    if lastContentOffsetX == contentOffsetX and lastFloatOffset and math.abs(y - lastFloatOffset) < 0.05 then
+        return
+    end
+    lastContentOffsetX, lastFloatOffset = contentOffsetX, y
+    contentFrame:ClearAllPoints()
+    contentFrame:SetPoint("CENTER", textFrame, "CENTER", contentOffsetX, y)
+end
+
+local function LayoutAlertRow()
+    local stanceWidth = lastStatusKey and contentFrame:GetWidth() or 0
+    local centeredIcon = isForever and lastStatusKey and currentLayoutShowsIcon
+    -- In Forever the stance icon shares the saved center with standalone accessory icons.
+    local stanceLeft = centeredIcon and currentIconSize / 2 or stanceWidth / 2
+    contentOffsetX = stanceWidth / 2 - stanceLeft
+    ApplyFloatOffset(lastFloatOffset or 0)
+
+    if not petCareKind and not ammoKind and not centeredIcon then
+        addonFrame:SetClampRectInsets(0, 0, 0, 0)
+        addonFrame:SetShown(lastStatusKey ~= nil)
+        return
+    end
+
+    local anchor = lastStatusKey and contentFrame or nil
+    local leftReach = anchor and stanceLeft or currentIconSize / 2
+    local rightReach = anchor and stanceWidth - stanceLeft or currentIconSize / 2
+    if petCareKind then
+        petCareFrame:SetSize(currentIconSize, currentIconSize)
+        petCareFrame:ClearAllPoints()
+        if anchor then
+            petCareFrame:SetPoint("RIGHT", currentLayoutShowsIcon and icon or anchor, "LEFT", -ALERT_ROW_GAP, 0)
+            leftReach = leftReach + ALERT_ROW_GAP + currentIconSize
+        else
+            petCareFrame:SetPoint("CENTER", contentFrame, "CENTER", 0, 0)
+        end
+        anchor = petCareFrame
+    end
+    if ammoKind then
+        ammoFrame:SetSize(currentIconSize, currentIconSize)
+        ammoFrame:ClearAllPoints()
+        if anchor then
+            ammoFrame:SetPoint("RIGHT", anchor, "LEFT", -ALERT_ROW_GAP, 0)
+            leftReach = leftReach + ALERT_ROW_GAP + currentIconSize
+        else
+            ammoFrame:SetPoint("CENTER", contentFrame, "CENTER", 0, 0)
+        end
+        ammoLabel:ClearAllPoints()
+        ammoLabel:SetPoint("RIGHT", ammoFrame, "LEFT", -currentIconGap, 0)
+        leftReach = leftReach + ammoLabelWidth + currentIconGap
+    end
+
+    local halfWidth = addonFrame:GetWidth() / 2
+    local left = leftReach + ALERT_ROW_EDGE_PADDING - halfWidth
+    local right = rightReach + ALERT_ROW_EDGE_PADDING - halfWidth
+    local amplitude = (lastStatusKey or petCareKind == "unhappy") and currentFloatAmplitude or 0
+    local rowHeight = math.max(currentIconSize, lastStatusKey and contentFrame:GetHeight() or 0,
+        ammoKind and ammoLabel:GetStringHeight() or 0)
+    local vertical = math.max(0, rowHeight / 2 + amplitude + ALERT_ROW_EDGE_PADDING - addonFrame:GetHeight() / 2)
+    addonFrame:SetClampRectInsets(-left, right, vertical, -vertical)
+    addonFrame:Show()
+end
+
 local function RefreshAlertBoxSize()
     RefreshAlertFontSize()
     RefreshAlertIconSize()
 
     text:SetFont(STANDARD_TEXT_FONT, currentAlertFontSize, "OUTLINE")
+    if ammoKind then
+        ammoLabel:SetFont(STANDARD_TEXT_FONT, currentAlertFontSize, "OUTLINE")
+        ammoLabelWidth = math.max(1, math.min(math.ceil(ammoLabel:GetUnboundedStringWidth()), UIParent:GetWidth() / 3))
+        ammoLabel:SetWidth(ammoLabelWidth)
+    end
     -- 默认恢复 text 可见；ApplyContentLayout 会按纯图标模式再隐藏。
     text:Show()
 
@@ -559,19 +640,7 @@ local function RefreshAlertBoxSize()
     else
         glowFrame:SetSize(boxWidth, boxHeight)
     end
-end
-
-local function ApplyFloatOffset(y)
-    y = tonumber(y) or 0
-    if lastFloatOffset ~= nil and math.abs(y - lastFloatOffset) < 0.05 then
-        return
-    end
-    lastFloatOffset = y
-
-    -- 浮动作用于 contentFrame（承载 icon + text），整体上下移动。
-    -- glowFrame 已直接锚定到 icon，自动跟随，无需手动同步。
-    contentFrame:ClearAllPoints()
-    contentFrame:SetPoint("CENTER", textFrame, "CENTER", 0, y)
+    LayoutAlertRow()
 end
 
 local function OnAlertUpdate(_, elapsed)
@@ -588,77 +657,190 @@ local function OnAlertUpdate(_, elapsed)
 end
 
 local function UpdateFloatingScript()
-    local shouldFloat = addonFrame:IsShown() and currentFloatAmplitude > 0 and currentFloatSpeed > 0
-    if shouldFloat and not floatingActive then
-        floatingActive = true
-        floatUpdateElapsed = 0
-        lastFloatOffset = nil
-        addonFrame:SetScript("OnUpdate", OnAlertUpdate)
-        return
+    local nextFrame
+    if currentFloatAmplitude > 0 and currentFloatSpeed > 0 then
+        if lastStatusKey then
+            nextFrame = addonFrame
+        elseif petCareKind == "unhappy" then
+            nextFrame = petCareFrame
+        end
     end
 
-    if not shouldFloat and floatingActive then
-        floatingActive = false
-        addonFrame:SetScript("OnUpdate", nil)
+    if nextFrame ~= floatingFrame then
+        if floatingFrame then
+            floatingFrame:SetScript("OnUpdate", nil)
+        end
+        floatingFrame = nextFrame
+        floatUpdateElapsed = 0
+        if nextFrame then
+            nextFrame:SetScript("OnUpdate", OnAlertUpdate)
+        end
+    end
+
+    if not nextFrame then
         floatElapsed = 0
-        floatUpdateElapsed = 0
-        lastFloatOffset = nil
-        ApplyFloatOffset(0)
-        return
-    end
-
-    if not shouldFloat then
         ApplyFloatOffset(0)
     end
 end
 
-local function StartAlertGlow()
-    RefreshAlertGlowEnabled()
-    if not currentGlowEnabled then
-        if glowFrame:IsShown() then
-            StopAlertGlow()
-        end
-        return
-    end
-
-    RefreshAlertGlowSpeed()
-
-    -- 纯文字模式不显示流光（效果不佳）；只在有图标时启动
-    if not addonFrame:IsShown() or text:GetText() == "" or not currentLayoutShowsIcon then
-        StopAlertGlow()
-        return
-    end
-
-    if not LCG or not LCG.PixelGlow_Start then
-        StopAlertGlow()
-        return
-    end
-
-    local color = DEFAULT_ALERT_GLOW_COLOR
+local function StartIconGlow(frame, frameLevel)
     local length = math.max(8, math.floor(currentAlertFontSize * 0.38 + 0.5))
-    -- frameLevel 必须超过 icon 所在 contentFrame 的层级（textFrame = glowFrame+20），
-    -- 否则流光渲染在图标背面。glowFrame level=2，icon 层≈22，故用 25。
-    local frameLevel = 25
-    local frequency = 0.2 * currentGlowSpeed
+    local frequency = 0.2 * RefreshAlertGlowSpeed()
+    LCG.PixelGlow_Start(frame, DEFAULT_ALERT_GLOW_COLOR, 8, frequency, length, 2, 0, 0, false, ALERT_GLOW_KEY, frameLevel)
+end
+
+local function StartAlertGlow()
+    local setting = InitDB().alertGlowEnabled
+    local enabled = setting == true or (setting == nil and (lastStatusKey == "PASSIVE" or lastStatusKey == "DEFENSIVE"))
 
     StopAlertGlow()
+    if not enabled or not lastStatusKey or text:GetText() == "" or not currentLayoutShowsIcon
+        or not LCG or not LCG.PixelGlow_Start then
+        return
+    end
+
+    -- frameLevel 必须超过 icon 所在 contentFrame 的层级（textFrame = glowFrame+20），
+    -- 否则流光渲染在图标背面。glowFrame level=2，icon 层≈22，故用 25。
     glowFrame:Show()
     -- 直接锚定到 icon 纹理上，尺寸跟随图标，位置自动对齐（浮动动画自动跟随）
     glowFrame:ClearAllPoints()
     glowFrame:SetPoint("CENTER", icon, "CENTER", 0, 0)
-    LCG.PixelGlow_Start(
-        glowFrame,
-        color,
-        8,
-        frequency,
-        length,
-        2,  -- thickness（固定值）
-        0,
-        0,
-        false,
-        ALERT_GLOW_KEY,
-        frameLevel
-    )
+    StartIconGlow(glowFrame, 25)
+end
+
+local function RefreshAccessoryGlow(frame, active)
+    if not frame or not LCG or not LCG.PixelGlow_Start then
+        return
+    end
+    LCG.PixelGlow_Stop(frame, ALERT_GLOW_KEY)
+    if active and GetAlertGlowEnabled() then
+        StartIconGlow(frame)
+    end
+end
+
+local function RefreshAmmoTooltip(frame)
+    local tooltip = GameTooltip
+    if ammoKind and tooltip and not tooltip:IsForbidden() and tooltip:IsOwned(frame) then
+        tooltip:SetText(PSA.UI[ammoKind]:format(ammoCount))
+        tooltip:Show()
+    end
+end
+
+local function HideAmmoTooltip(frame)
+    if GameTooltip and not GameTooltip:IsForbidden() and GameTooltip:IsOwned(frame) then
+        GameTooltip:Hide()
+    end
+end
+
+local function UpdateAmmoText()
+    local label = PSA.UI[ammoKind .. "_LABEL"]
+    local labelChanged = ammoLabel:GetText() ~= label
+    if labelChanged then
+        ammoLabel:SetText(label)
+    end
+    ammoText:SetText(tostring(ammoCount))
+    RefreshAmmoTooltip(ammoFrame)
+    return labelChanged
+end
+
+function PSA.RefreshAmmoAlertText()
+    if ammoKind and UpdateAmmoText() then
+        RefreshAlertBoxSize()
+    end
+end
+
+function PSA.SetAmmoAlert(kind, count, texture)
+    if kind == ammoKind and count == ammoCount and texture == ammoTexture then
+        return
+    end
+    local textureChanged = texture ~= ammoTexture
+    ammoKind, ammoCount, ammoTexture = kind, count, texture
+    if not kind then
+        RefreshAccessoryGlow(ammoFrame, false)
+        ammoFrame:Hide()
+        RefreshAlertBoxSize()
+        return
+    end
+    if not ammoFrame then
+        ammoFrame = CreateFrame("Frame", nil, textFrame)
+        ammoFrame:Hide()
+        ammoFrame:SetFrameStrata(ALERT_STRATA_DEFAULT)
+        ammoFrame:SetMouseMotionEnabled(true)
+        ammoIcon = ammoFrame:CreateTexture(nil, "ARTWORK")
+        ammoIcon:SetAllPoints(ammoFrame)
+        ammoText = ammoFrame:CreateFontString(nil, "OVERLAY")
+        ammoText:SetFont(STANDARD_TEXT_FONT, 12, "OUTLINE")
+        ammoText:SetTextColor(1, 0.72, 0.2)
+        ammoText:SetPoint("BOTTOMRIGHT", ammoFrame, "BOTTOMRIGHT", -2, 2)
+        ammoLabel = ammoFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        ammoLabel:SetTextColor(1, 0.72, 0.2)
+        ammoLabel:SetJustifyH("RIGHT")
+        ammoLabel:SetWordWrap(true)
+        ammoFrame:SetScript("OnEnter", function(self)
+            if GameTooltip and not GameTooltip:IsForbidden() then
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                RefreshAmmoTooltip(self)
+            end
+        end)
+        ammoFrame:SetScript("OnLeave", HideAmmoTooltip)
+        ammoFrame:SetScript("OnHide", HideAmmoTooltip)
+    end
+    local wasShown = ammoFrame:IsShown()
+    if textureChanged or not wasShown then
+        ammoIcon:SetTexture(texture)
+    end
+    local labelChanged = UpdateAmmoText()
+    if not wasShown or labelChanged then
+        RefreshAlertBoxSize()
+    end
+    if not wasShown then
+        ammoFrame:Show()
+        RefreshAccessoryGlow(ammoFrame, true)
+    end
+end
+
+function PSA.GetPetCareFrame()
+    if not petCareFrame then
+        petCareFrame = CreateFrame("Frame", nil, textFrame)
+        petCareFrame:SetFrameStrata(ALERT_STRATA_DEFAULT)
+        petCareFrame:Hide()
+        petCareIcon = petCareFrame:CreateTexture(nil, "ARTWORK")
+        petCareIcon:SetAllPoints(petCareFrame)
+    end
+    return petCareFrame
+end
+
+function PSA.SetPetCareAlert(kind, texture, desaturated)
+    desaturated = not not desaturated
+    if kind == petCareKind and texture == petCareTexture and desaturated == petCareDesaturated then
+        return
+    end
+    local kindChanged = kind ~= petCareKind
+    local visibilityChanged = (kind == nil) ~= (petCareKind == nil)
+    petCareKind, petCareTexture, petCareDesaturated = kind, texture, desaturated
+    if kind == "unhappy" then
+        PSA.GetPetCareFrame()
+        petCareIcon:SetAtlas("UI-PetMad")
+        petCareIcon:SetDesaturated(false)
+        petCareFrame:Show()
+    elseif kind == "feed" then
+        PSA.GetPetCareFrame()
+        petCareIcon:SetTexture(texture)
+        petCareIcon:SetTexCoord(0, 1, 0, 1)
+        petCareIcon:SetDesaturated(desaturated)
+        petCareFrame:Show()
+    else
+        petCareFrame:Hide()
+    end
+    if kindChanged then
+        if visibilityChanged then
+            RefreshAlertBoxSize()
+        else
+            LayoutAlertRow()
+        end
+        RefreshAccessoryGlow(petCareFrame, petCareKind)
+        UpdateFloatingScript()
+    end
 end
 
 RefreshAlertVisuals = function()
@@ -668,9 +850,11 @@ RefreshAlertVisuals = function()
     RefreshAlertIconGap()
     RefreshAlertBoxSize()
     UpdateFloatingScript()
-    if addonFrame:IsShown() then
+    if lastStatusKey then
         StartAlertGlow()
     end
+    RefreshAccessoryGlow(petCareFrame, petCareKind)
+    RefreshAccessoryGlow(ammoFrame, ammoKind)
     if PSA.RefreshCombatTTSReminder then
         PSA.RefreshCombatTTSReminder(true)
     end
@@ -714,14 +898,9 @@ end
 
 local function SetAlertGlowEnabled(enabled)
     InitDB()
-    currentGlowEnabled = enabled and true or false
-    PetStatusAlertDB.alertGlowEnabled = currentGlowEnabled
+    PetStatusAlertDB.alertGlowEnabled = not not enabled
     RefreshAlertVisuals()
-    return currentGlowEnabled
-end
-
-local function GetAlertGlowEnabled()
-    return RefreshAlertGlowEnabled()
+    return PetStatusAlertDB.alertGlowEnabled
 end
 
 local function SetAlertGlowSpeed(value)
@@ -834,14 +1013,8 @@ local function ShowStatus(statusKey, force)
     -- 预览（设置面板/管理器）时提升到面板之上；真实状态恢复默认层级。
     SetAlertStrata(force and ALERT_STRATA_PREVIEW or ALERT_STRATA_DEFAULT)
 
-    local wasShown = addonFrame:IsShown()
     PSA.currentStatusForce = force and true or false
     local changed = SetMessage(GetDisplayMessage(statusKey), statusKey)
-
-    if not wasShown then
-        addonFrame:Show()
-        changed = true
-    end
 
     UpdateFloatingScript()
     if changed then
@@ -860,8 +1033,7 @@ end
 HideStatus = function()
     SetAlertStrata(ALERT_STRATA_DEFAULT)
 
-    local wasShown = addonFrame:IsShown()
-    if not wasShown and PSA.currentStatusKey == nil and lastMessage == "" then
+    if not lastStatusKey and lastMessage == "" then
         if PSA.StopCombatTTSReminder then
             PSA.StopCombatTTSReminder()
         end
@@ -873,9 +1045,6 @@ HideStatus = function()
     SetMessage("", nil)
     icon:Hide()
     StopAlertGlow()
-    if wasShown then
-        addonFrame:Hide()
-    end
     UpdateFloatingScript()
     if PSA.StopCombatTTSReminder then
         PSA.StopCombatTTSReminder()

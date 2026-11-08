@@ -97,34 +97,13 @@ local function StopCombatTTSReminder()
     end
 end
 
-local function GetTTSDestination()
-    if type(Enum) == "table" and type(Enum.VoiceTtsDestination) == "table" then
-        return Enum.VoiceTtsDestination.QueuedLocalPlayback
-            or Enum.VoiceTtsDestination.LocalPlayback
-            or 0
-    end
-    return 0
-end
-
 local function SpeakLocalTTS(spokenText)
     if type(C_VoiceChat) ~= "table" or type(C_VoiceChat.SpeakText) ~= "function" then
         return false
     end
 
     local rate = GetCombatTTSRate()
-    local volume = 100
-
-    -- Current WoW API: SpeakText(voiceID, text, rate, volume [, overlap]).
-    -- Call this first. Passing the old destination argument here makes the saved
-    -- speech rate become the volume, so the default rate 3 sounds like 3% volume.
-    local ok = pcall(C_VoiceChat.SpeakText, 0, spokenText, rate, volume, false)
-    if ok then
-        return true
-    end
-
-    -- Compatibility fallback for old clients that still require a TTS destination.
-    ok = pcall(C_VoiceChat.SpeakText, 0, spokenText, GetTTSDestination(), rate, volume)
-    return ok and true or false
+    return pcall(C_VoiceChat.SpeakText, 0, spokenText, rate, 100, false)
 end
 
 local function SpeakCurrentAlertText()

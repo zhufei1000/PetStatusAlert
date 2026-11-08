@@ -1,7 +1,7 @@
 -------------------------------------------------
 -- PetStatusAlert
 -- Hunter / Warlock / Unholy DK / Frost Mage pet status prompt + Warrior stance alerts
--- Version: 1.5.6
+-- Version: 1.6.0
 -------------------------------------------------
 
 local ADDON_NAME, PSA = ...
@@ -14,7 +14,7 @@ local DEFAULT_COMBAT_TTS_RATE = 3
 local DEFAULT_ALERT_FLOAT_AMPLITUDE = 8
 local DEFAULT_ALERT_FLOAT_SPEED = 1
 local DEFAULT_ALERT_FONT_SIZE = 28
-local DEFAULT_ALERT_GLOW_ENABLED = false
+local DEFAULT_ALERT_GLOW_ENABLED = true
 local DEFAULT_ALERT_GLOW_SPEED = 1
 -- 1.4.0：图标提醒模式。both=图标+文字（默认）；text=纯文字；icon=纯图标。
 local DEFAULT_ALERT_ICON_MODE = "both"
@@ -22,6 +22,8 @@ local DEFAULT_ALERT_ICON_MODE = "both"
 local DEFAULT_ALERT_ICON_SIZE = 48
 -- 图标与文字之间的间距（像素）。
 local DEFAULT_ALERT_ICON_GAP = 10
+local DEFAULT_AMMO_THRESHOLD = 100
+local MAX_AMMO_THRESHOLD = 9999
 local VALID_ALERT_ICON_MODES = { text = true, icon = true, both = true }
 
 -------------------------------------------------
@@ -89,15 +91,14 @@ local function InitDB(force)
         PetStatusAlertDB.alertFloatSpeed = 3
     end
 
-    -- 动态发光边框设置：边框是围绕文字外层透明 Frame 的动画，不是每个字的笔画动画。
-    -- 1.3.14：像素流光默认关闭；旧版本默认开启的配置升级后也关闭一次，避免玩家更新后自动显示流光。
-    if PetStatusAlertDB.alertGlowDefaultOffMigrated ~= true then
-        if PetStatusAlertDB.alertGlowEnabled == nil or PetStatusAlertDB.alertGlowEnabled == true then
-            PetStatusAlertDB.alertGlowEnabled = DEFAULT_ALERT_GLOW_ENABLED
+    -- The old default and a manual opt-out were both saved as false.
+    -- Migrate that value once to the new per-alert defaults; keep explicit opt-ins.
+    if PetStatusAlertDB.alertGlowDefaultsMigrated ~= true then
+        if PetStatusAlertDB.alertGlowEnabled ~= true then
+            PetStatusAlertDB.alertGlowEnabled = nil
         end
-        PetStatusAlertDB.alertGlowDefaultOffMigrated = true
+        PetStatusAlertDB.alertGlowDefaultsMigrated = true
     end
-    PetStatusAlertDB.alertGlowEnabled = PetStatusAlertDB.alertGlowEnabled and true or false
 
     -- 像素流光速度：1 = 默认速度。
     PetStatusAlertDB.alertGlowSpeed = tonumber(PetStatusAlertDB.alertGlowSpeed) or DEFAULT_ALERT_GLOW_SPEED
@@ -152,6 +153,30 @@ local function InitDB(force)
 
     PSA.dbInitialized = true
     return PetStatusAlertDB
+end
+
+local function NormalizeAmmoThreshold(value)
+    value = tonumber(value)
+    if value and value == value then
+        return math.floor(math.max(0, math.min(value, MAX_AMMO_THRESHOLD)))
+    end
+end
+
+function PSA.GetAmmoThreshold()
+    return NormalizeAmmoThreshold(InitDB().ammoThreshold) or DEFAULT_AMMO_THRESHOLD
+end
+
+function PSA.SetAmmoThreshold(value)
+    local db = InitDB()
+    local current = PSA.GetAmmoThreshold()
+    local threshold = NormalizeAmmoThreshold(value) or current
+    if threshold ~= current then
+        db.ammoThreshold = threshold
+        if PSA.QueueAmmoRefresh then
+            PSA.QueueAmmoRefresh()
+        end
+    end
+    return threshold
 end
 
 

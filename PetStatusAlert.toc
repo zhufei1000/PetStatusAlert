@@ -2,7 +2,7 @@
 ## Title: PetStatusAlert - Pet & Warrior Stance Alerts | 宠物与战士姿态提醒
 ## Notes: Pet alerts for Retail and Forever, plus Retail Arms/Fury Warrior Defensive Stance. Supports custom text/colors, icon/text display modes, and combat TTS.
 ## Author: zhufei1000
-## Version: 1.5.6
+## Version: 1.6.0
 ## X-Curse-Project-ID: 1500392
 ## SavedVariables: PetStatusAlertDB
 ## OptionalDeps: QFXAddonManager
@@ -15,6 +15,7 @@ Core/Localization.lua
 Core/AlertFrame.lua
 Core/TTS.lua
 Core/PetLogic.lua
+Core/PetFeed.lua
 Core/WarriorLogic.lua
 UI/Options.lua
 UI/ManagerSettings.lua
