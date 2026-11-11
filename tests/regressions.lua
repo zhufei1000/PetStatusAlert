@@ -13,7 +13,7 @@ for _, name in ipairs({"SetPoint", "ClearAllPoints", "SetAllPoints", "SetClamped
     "SetJustifyH", "SetOrientation", "SetMinMaxValues", "SetValueStep", "SetObeyStepOnDrag",
     "SetHighlightTexture", "SetTexCoord", "SetMouseMotionEnabled", "EnableMouseWheel", "SetScrollChild",
     "SetColorTexture", "SetAutoFocus", "SetMultiLine", "SetMaxLetters", "SetFontObject", "SetTextInsets",
-    "SetNumeric"}) do
+    "SetNumeric", "SetSpacing", "StartMoving", "StopMovingOrSizing", "Raise"}) do
     Methods[name] = noop
 end
 function Methods:SetScript(key, callback) self.scripts[key] = callback end
@@ -45,6 +45,23 @@ function Methods:SetFont() self.fontUpdates = (self.fontUpdates or 0) + 1 end
 function Methods:GetFont() return STANDARD_TEXT_FONT end
 function Methods:SetText(value) self.text = value end
 function Methods:GetText() return self.text end
+function Methods:GetFontString() return self end
+function Methods:SetChecked(value) self.checked = value end
+function Methods:GetChecked() return self.checked end
+function Methods:HasFocus() return self.focused == true end
+function Methods:SetTextColor(...) self.textColor = {...} end
+function Methods:SetAlpha(alpha) self.alpha = alpha end
+function Methods:Disable() self.disabled = true end
+function Methods:SetButtonState(state) self.buttonState = state end
+function Methods:SetParent(parent)
+    if self.parent then
+        for index, child in ipairs(self.parent.children) do
+            if child == self then table.remove(self.parent.children, index); break end
+        end
+    end
+    self.parent = parent
+    if parent then parent.children[#parent.children + 1] = self end
+end
 function Methods:SetWidth(value) self.width = value end
 function Methods:SetHeight(value) self.height = value end
 function Methods:GetWidth() return self.width end
@@ -69,6 +86,9 @@ function Methods:SetValue(value)
     if self.scripts.OnValueChanged then self.scripts.OnValueChanged(self, value) end
 end
 function Methods:GetValue() return self.value end
+function Methods:GetVerticalScroll() return self.scrollOffset or 0 end
+function Methods:GetVerticalScrollRange() return 300 end
+function Methods:SetVerticalScroll(offset) self.scrollOffset = offset end
 
 CreateFrame = function(_, _, parent, template)
     local frame = Object(parent)
@@ -90,8 +110,8 @@ local function Timer(callback)
     return {callback = callback, Cancel = function(self) self.cancelled = true end}
 end
 C_Timer = {
-    NewTicker = function(_, callback)
-        local timer = Timer(callback); tickers[#tickers + 1] = timer; return timer
+    NewTicker = function(interval, callback)
+        local timer = Timer(callback); timer.interval = interval; tickers[#tickers + 1] = timer; return timer
     end,
     NewTimer = function(_, callback)
         local timer = Timer(callback); timers[#timers + 1] = timer; return timer
@@ -169,7 +189,7 @@ end)
 -- Run the real local slider factory, supplying only its UI dependencies.
 local file = assert(io.open("UI/Options.lua", "rb"))
 local source = file:read("*a"); file:close()
-local first = assert(source:find("local function CreateSliderRow", 1, true))
+local first = assert(source:find("local function AddTooltip", 1, true))
 local last = assert(source:find("-- Color picker", first, true))
 local environment = setmetatable({STYLE = {}, LAYOUT = {sliderWidth = 300},
     CreateText = function() return Object() end, HideSliderTemplateLabels = noop}, {__index = _G})
@@ -179,6 +199,32 @@ local function FlushTimers()
     local pending = timers; timers = {}
     for _, timer in ipairs(pending) do if not timer.cancelled then timer.callback() end end
 end
+Test("hovering the font size slider passes tooltip opacity before wrapping", function()
+    local panel = Object(UIParent)
+    local hint = "调整屏幕提示文字的字体大小。默认：28。"
+    local tooltip = {
+        SetOwner = function(self, owner) self.owner = owner end,
+        SetText = function(self, message, _, _, _, alpha, wrap)
+            assert(type(alpha) == "number", "GameTooltip:SetText expects numeric opacity before wrap")
+            assert(message == hint and alpha == 1 and wrap == true)
+        end,
+        Show = function(self) self.shown = true end,
+        Hide = function(self) self.shown = false end,
+    }
+    environment.GameTooltip = tooltip
+    local slider = createSlider(panel, "Font size", hint, 0, 12, 72, 1, 28, "28", noop)
+    local labelHover = assert(panel.children[1])
+    local ok, err = pcall(function()
+        for _, target in ipairs({ labelHover, slider }) do
+            target.scripts.OnEnter(target)
+            assert(tooltip.owner == target and tooltip.shown)
+            target.scripts.OnLeave(target)
+            assert(not tooltip.shown)
+        end
+    end)
+    environment.GameTooltip = nil
+    assert(ok, err)
+end)
 Test("closing a panel cancels slider work and prevents preview resurrection", function()
     local panel = Object(UIParent)
     panel:SetScript("OnHide", function() if psa.currentStatusForce then psa.HideStatus() end end)
@@ -227,7 +273,20 @@ local function Upvalue(callback, key)
     end
     error("Missing upvalue: " .. key)
 end
-local alertTabTitles = {enUS = "Alerts", zhCN = "提醒设置", zhTW = "提醒設定", ruRU = "Предупреждения"}
+local function FindNode(node, predicate)
+    if predicate(node) then return node end
+    for _, child in ipairs(node.children) do
+        local match = FindNode(child, predicate)
+        if match then return match end
+    end
+end
+local function FindText(node, value)
+    return FindNode(node, function(child) return child:GetText() == value end)
+end
+local function FindButton(node, value)
+    return FindNode(node, function(child) return child.template == "UIPanelButtonTemplate" and child:GetText() == value end)
+end
+local hunterLabels = {enUS = "Hunter", zhCN = "猎人", zhTW = "獵人", ruRU = "Охотник"}
 for _, mode in ipairs({"enUS", "zhCN", "zhTW", "ruRU", "auto"}) do
     Test("saved language survives reload: " .. mode, function()
         local first = LoadLanguageSession()
@@ -239,7 +298,9 @@ for _, mode in ipairs({"enUS", "zhCN", "zhTW", "ruRU", "auto"}) do
         local locale = mode == "auto" and "zhCN" or mode
         assert(reloaded.GetSavedLanguageMode() == mode, "saved selection was changed")
         assert(reloaded.UI == reloaded.UI_LOCALE[locale], "UI kept the client language after loading the saved selection")
-        assert(Upvalue(reloaded.RefreshOptionsFrameLocale, "TEXT").NAV_ALERTS == alertTabTitles[locale],
+        reloaded.OpenOptionsFrame()
+        local frame = Upvalue(reloaded.RefreshOptionsFrameLocale, "optionsFrame")
+        assert(frame.navButtons.HUNTER.text:GetText() == hunterLabels[locale],
             "standalone navigation kept the client language")
         for _, key in ipairs({"PASSIVE", "DEFENSIVE", "NO_PET", "PET_DEAD", "UNKNOWN", "WARRIOR_DEFENSIVE_STANCE"}) do
             assert(reloaded.GetDefaultMessage(key) == reloaded.LOCALIZED_MESSAGES[locale][key], key .. " used the wrong language")
@@ -249,8 +310,7 @@ for _, mode in ipairs({"enUS", "zhCN", "zhTW", "ruRU", "auto"}) do
         reloaded.ShowStatus("NO_PET")
         assert(reloaded.alertText:GetText() == reloaded.LOCALIZED_MESSAGES[locale].NO_PET,
             "runtime alert did not use the restored language")
-        local managerTitle = locale == "ruRU" and "Alerts" or alertTabTitles[locale]
-        assert(reloaded.GetSettingsDefinition({}).tabs[1].title == managerTitle,
+        assert(reloaded.GetSettingsDefinition({}).tabs[1].title == hunterLabels[locale],
             "manager tabs did not use the restored language")
         assert(reloaded.GetDisplayMessage("DEFENSIVE") == "Custom text" and PetStatusAlertDB.alertFontSize == 41,
             "restoring language changed other preferences")
@@ -308,30 +368,196 @@ Test("ordinary options refresh does not recreate localization tables", function(
     session.RefreshOptionsFrameLocale()
     assert(session.STATUS_LABEL == labels, "ordinary UI refresh rebuilt the locale state")
 end)
-Test("manager definition is cached until language or supported statuses change", function()
+Test("manager definition changes with language and ignores current specialization", function()
     local session = LoadLanguageSession({language = "zhCN"})
     local original = session.GetSettingsDefinition({})
     assert(session.GetSettingsDefinition({}) == original)
     session.ApplyManagerLanguage("enUS")
     local translated = session.GetSettingsDefinition({})
-    assert(translated ~= original and translated.tabs[1].title == "Alerts", "manager reused old-language tabs")
+    assert(translated ~= original and translated.tabs[1].title == "Hunter", "manager reused old-language tabs")
     assert(session.GetSettingsDefinition({}) == translated)
     for index = #session.STATUS_ORDER, 1, -1 do session.STATUS_ORDER[index] = nil end
     session.STATUS_ORDER[1] = "WARRIOR_DEFENSIVE_STANCE"
-    assert(session.GetSettingsDefinition({}) ~= translated, "manager reused pages for an old status list")
+    assert(session.GetSettingsDefinition({}) == translated, "player status list changed the class catalog")
+end)
+
+Test("standalone navigation edits another class from an unsupported character", function()
+    local originalClass = UnitClass
+    UnitClass = function() return "Priest", "PRIEST" end
+    local session = LoadLanguageSession({language = "enUS",
+        customMessages = {NO_PET = "Legacy message"},
+        statusEnabled = {NO_PET = true}, textColors = {NO_PET = {r = 0.5, g = 0.3, b = 0.2, a = 1}}})
+    session.OpenOptionsFrame()
+    local frame = Upvalue(session.RefreshOptionsFrameLocale, "optionsFrame")
+    assert(not frame.navButtons.HUNTER:IsShown() and not frame.clientButtons.retail:IsVisible())
+    assert(frame.navButtons.classes.text:GetText() == "+ Class Settings")
+    frame.navButtons.classes.scripts.OnClick()
+    assert(frame.navButtons.HUNTER:IsShown() and frame.navButtons.classes.text:GetText() == "- Class Settings")
+    frame.navButtons.WARLOCK.scripts.OnClick()
+    local warlockPage = frame.currentPage
+    assert(not frame.viewForever and frame.clientButtons.retail:IsVisible())
+    assert(frame.clientButtons.retail.buttonState == "PUSHED")
+    local cards = warlockPage.children[1].children[1].children
+    local card, nextCard = cards[3], cards[4]
+    local spacing = card.point[5] - nextCard.point[5] - card:GetHeight()
+    assert(card:GetHeight() <= 64 and spacing >= 0 and spacing <= 8, "alert cards should fit two compact rows")
+    assert(card.children[4]:GetText() == "Default: No pet summoned!")
+    local rules = cards[#cards - 1]
+    local advanced = assert(FindButton(rules, "+ Advanced"))
+    local ruleID = assert(FindNode(rules, function(control)
+        return control.template == "InputBoxTemplate" and control:GetText() == "124691"
+    end))
+    assert(not ruleID:IsVisible() and FindButton(rules, "Affliction").buttonState == "PUSHED")
+    advanced.scripts.OnClick(advanced)
+    assert(ruleID:IsVisible())
+    FindButton(rules, "Destruction").scripts.OnClick()
+    assert(ruleID:GetText() == "125618")
+    ruleID:SetText("135713")
+    ruleID.scripts.OnEditFocusLost(ruleID)
+    assert(session.GetWarlockSacrificeID(267) == 135713 and session.GetWarlockSacrificeID(265) == 124691)
+    local wrongCard = assert(FindText(rules, session.UI.WARLOCK_WRONG_PET)).parent
+    local toggle = assert(FindNode(wrongCard, function(node) return node.template == "UICheckButtonTemplate" end))
+    assert(FindText(rules, session.UI.WRONG_PET_OFF) and not toggle:GetChecked())
+    toggle:SetChecked(true)
+    toggle.scripts.OnClick(toggle)
+    assert(FindText(rules, session.UI.WRONG_PET_NONE))
+    local sayaad = assert(FindText(rules, session.GetWarlockPetLabel(17))).point[2]
+    sayaad:SetChecked(true)
+    sayaad.scripts.OnClick(sayaad)
+    assert(FindText(rules, session.UI.WARLOCK_PET_RULES_HINT) and session.GetWarlockBlockedPets(267)[17])
+    toggle:SetChecked(false)
+    toggle.scripts.OnClick(toggle)
+    assert(sayaad:GetChecked() and FindText(rules, session.UI.WRONG_PET_OFF))
+    local check, input
+    for _, child in ipairs(card.children) do
+        if child.template == "UICheckButtonTemplate" then check = child end
+        if child.template == "InputBoxTemplate" then input = child end
+    end
+    assert(check:GetChecked() and input:GetText() == "Legacy message")
+    check:SetChecked(false)
+    check.scripts.OnClick(check)
+    input:SetText("Warlock only")
+    input.scripts.OnTextChanged(input, true)
+    session.ResetStatusColor("NO_PET", "WARLOCK")
+    assert(session.IsStatusEnabled("NO_PET", "HUNTER"))
+    assert(session.GetDisplayMessage("NO_PET", "HUNTER") == "Legacy message")
+    assert(session.GetStatusColor("NO_PET", "HUNTER") == 0.5)
+    assert(not session.IsStatusEnabled("NO_PET", "WARLOCK"))
+    assert(session.GetStatusColor("NO_PET", "WARLOCK") == 1)
+
+    frame.clientButtons.forever.scripts.OnClick()
+    local foreverPage = frame.currentPage.children[1].children[1]
+    assert(frame.viewForever and frame.clientButtons.forever.buttonState == "PUSHED")
+    assert(frame.clientButtons.forever:GetText():find(session.UI.READ_ONLY_TAB, 1, true))
+    assert(FindText(foreverPage, "Pet: Aggressive") and FindText(foreverPage.children[#foreverPage.children], "Wrong summon alert"))
+    assert(not FindButton(foreverPage, session.UI.CLASS_RESET))
+    assert(foreverPage.children[3]:GetHeight() == card:GetHeight())
+    local disabled = 0
+    for _, child in ipairs(foreverPage.children[3].children) do
+        if child.disabled then
+            disabled = disabled + 1
+            assert(child.alpha == 0.5 and not child.scripts.OnClick and not child.scripts.OnTextChanged)
+        end
+        if child.template == "UICheckButtonTemplate" then assert(child:GetChecked()) end
+        if child.template == "InputBoxTemplate" then assert(child:GetText() == "") end
+    end
+    assert(disabled == 5, "all controls on a preview card should be disabled")
+    frame.clientButtons.retail.scripts.OnClick()
+    assert(frame.currentPage == warlockPage and input:GetText() == "Warlock only" and not check:GetChecked())
+
+    frame.navButtons.WARRIOR.scripts.OnClick()
+    local stancePage = frame.currentPage.children[1].children[1]
+    assert(#stancePage.children == 4, "warrior settings should have one stance card and a reset action")
+    frame.clientButtons.forever.scripts.OnClick()
+    local unsupported = frame.currentPage.children[1].children[1]
+    assert(#unsupported.children == 2 and unsupported.children[2]:GetText() == session.UI.CLASS_UNSUPPORTED)
+    frame.navButtons.WARLOCK.scripts.OnClick()
+    assert(frame.currentPage == warlockPage and input:GetText() == "Warlock only")
+    frame.navButtons.classes.scripts.OnClick()
+    assert(not frame.navButtons.WARLOCK:IsShown() and frame.currentPage == warlockPage)
+    local reloaded = LoadLanguageSession(PetStatusAlertDB)
+    assert(reloaded.GetDisplayMessage("NO_PET", "WARLOCK") == "Warlock only")
+    reloaded.SetCustomMessage("NO_PET", "", "WARLOCK")
+    assert(reloaded.GetDisplayMessage("NO_PET", "WARLOCK") == reloaded.GetDefaultMessage("NO_PET"))
+    UnitClass = originalClass
+end)
+
+Test("cross-class preview uses its own icon and runtime restores the player's rule", function()
+    local originalTexture, originalExists = C_Spell.GetSpellTexture, UnitExists
+    C_Spell.GetSpellTexture = function(spellID) return spellID end
+    UnitExists = function() return false end
+    local session = LoadLanguageSession({language = "enUS", combatTTSEnabled = true})
+    inCombat = true
+    session.ShowStatus("NO_PET")
+    local icon = session.alertText.parent.icon
+    assert(icon.texture == 883 and ActiveTickers() == 1)
+    local before = #spoken
+    session.PreviewStatus("NO_PET", "WARLOCK")
+    assert(icon.texture == 688 and session.currentStatusClass == "WARLOCK")
+    assert(ActiveTickers() == 0 and #spoken == before)
+    session.SetCustomMessage("NO_PET", "Hunter runtime", "HUNTER")
+    session.SetCustomMessage("NO_PET", "Warlock preview", "WARLOCK")
+    session.RefreshConfiguredAlert("NO_PET", "WARLOCK")
+    assert(session.alertText:GetText() == "Warlock preview")
+    session.StopSettingsPreview()
+    assert(not session.currentStatusForce and icon.texture == 883)
+    assert(session.alertText:GetText() == "Hunter runtime")
+    session.HideStatus()
+    inCombat, C_Spell.GetSpellTexture, UnitExists = false, originalTexture, originalExists
+end)
+
+Test("Forever opens its own class tab and shows Retail Warrior defaults", function()
+    GetBuildInfo = function() return "1.60.1", "70862", "", 16001 end
+    local session = LoadLanguageSession({language = "zhCN"})
+    session.OpenOptionsFrame()
+    local frame = Upvalue(session.RefreshOptionsFrameLocale, "optionsFrame")
+    frame.navButtons.classes.scripts.OnClick()
+    assert(frame.navButtons.WARRIOR:IsShown() and frame.navButtons.DEATHKNIGHT:IsShown())
+    frame.navButtons.MAGE.scripts.OnClick()
+    assert(frame.viewForever and frame.navButtons.MAGE.text:GetText() == "法师")
+    assert(frame.currentPage.children[1].children[1].children[1]:GetText() == "法师（召唤水元素）")
+    assert(FindText(frame.currentPage, session.UI.AGGRESSIVE) and FindText(frame.currentPage, session.UI.MAGE_SUMMON_SETTINGS))
+    frame.navButtons.WARRIOR.scripts.OnClick()
+    assert(#frame.currentPage.children[1].children[1].children == 2)
+    frame.clientButtons.retail.scripts.OnClick()
+    local retail = frame.currentPage.children[1].children[1]
+    assert(retail.children[1]:GetText() == "武器 / 狂暴战士")
+    assert(retail.children[3].children[3]:GetText() == "战士：防御姿态")
+    assert(retail.children[3].children[4]:GetText():find("当前处于：防御姿态", 1, true))
+
+    local tabs = session.GetSettingsDefinition({}).tabs
+    assert(tabs[5].key == "WARRIOR" and tabs[5].subtabs[2].title == "|cff9a9a9a正式服 · 仅预览|r")
+    local section = {
+        Check = function(_, _, get, set, _, opts) assert(get() and not set and opts.enabled == false) end,
+        EditBox = function(_, _, get, set, _, _, opts) assert(get() == "" and not set and opts.enabled == false) end,
+        ColorGrid = function(_, entries) assert(not entries[1].setColor and entries[1].enabled == false) end,
+        ButtonRow = function(_, buttons)
+            for _, button in ipairs(buttons) do assert(not button.onClick and button.enabled == false) end
+        end,
+    }
+    tabs[5].subtabs[2].build({NewSection = function(_, title, note)
+        if title == "战士：防御姿态" then
+            assert(note == "当前处于：防御姿态")
+            return section
+        end
+        assert(title == "武器 / 狂暴战士" and note[1] == session.UI.OTHER_CLIENT_SETTINGS)
+        return {}
+    end, AddSection = noop})
+    GetBuildInfo = nil
 end)
 Test("Forever Aggressive uses its own icon, text, and settings entry", function()
     GetBuildInfo = function() return "1.60.1", "70790", "Nov 5 2026", 16001 end
     local session = LoadLanguageSession({language = "enUS"})
     session.SetAlertIconMode("both")
+    session.SetStatusEnabled("AGGRESSIVE", true)
     session.ShowStatus("AGGRESSIVE")
     assert(session.alertText:GetText() == "Pet: Aggressive")
     assert(session.alertText.parent.icon.texture == "Interface\\Icons\\Ability_Racial_BloodRage")
     session.SetAlertIconMode("icon")
     assert(session.alertText.parent.icon:IsShown() and not session.alertText:IsShown())
     assert(session.STATUS_ORDER[4] == "DEFENSIVE" and session.STATUS_ORDER[5] == "AGGRESSIVE")
-    local text = Upvalue(session.RefreshOptionsFrameLocale, "TEXT")
-    assert(text.SUPPORT_CLASSES == "Hunter\nWarlock\nMage (Water Elemental)")
+    assert(session.GetClassAlertStatuses("HUNTER", true)[5] == "AGGRESSIVE")
+    assert(session.GetClassAlertStatuses("HUNTER", false)[5] == "UNKNOWN")
     session.HideStatus()
     GetBuildInfo = nil
 end)
@@ -348,6 +574,119 @@ Test("Forever Warrior UI previews stay hidden after language refresh", function(
         assert(not session.addonFrame:IsShown())
     end
     GetBuildInfo, UnitClass = nil, originalClass
+end)
+
+Test("display sample works on Forever Warrior and stops when leaving the page", function()
+    local originalClass = UnitClass
+    GetBuildInfo = function() return "1.60.1", "70862", "", 16001 end
+    UnitClass = function() return "Warrior", "WARRIOR" end
+    local session = LoadLanguageSession({language = "enUS"})
+    session.OpenOptionsFrame()
+    local frame = Upvalue(session.RefreshOptionsFrameLocale, "optionsFrame")
+    frame.navButtons.display.scripts.OnClick()
+    local preview = assert(FindButton(frame.currentPage, session.UI.PREVIEW))
+    assert(preview.parent == frame.currentPage, "preview should sit outside the scroll frame")
+    preview.scripts.OnClick()
+    assert(session.addonFrame:IsShown() and session.alertText:GetText() == session.UI.PREVIEW_SAMPLE)
+    assert(preview:GetText() == session.UI.STOP_PREVIEW)
+    session.ApplyManagerLanguage("zhCN")
+    assert(session.IsDisplayPreviewActive() and session.alertText:GetText() == "提醒预览")
+    preview = assert(FindButton(frame.currentPage, session.UI.STOP_PREVIEW))
+    session.RefreshPetStatusText()
+    assert(session.IsDisplayPreviewActive(), "ordinary runtime refresh must not replace the sample")
+    session.SetAlertIconMode("icon")
+    assert(session.alertText.parent.icon:IsShown() and not session.alertText:IsShown())
+    preview.scripts.OnClick()
+    assert(not session.IsDisplayPreviewActive() and not session.addonFrame:IsShown())
+    preview.scripts.OnClick()
+    frame.currentPage.psaScroll:SetVerticalScroll(38)
+    frame.navButtons.voice.scripts.OnClick()
+    assert(not session.IsDisplayPreviewActive() and not session.addonFrame:IsShown())
+    frame.navButtons.display.scripts.OnClick()
+    assert(frame.currentPage.psaScroll:GetVerticalScroll() == 38)
+    GetBuildInfo, UnitClass = nil, originalClass
+end)
+
+Test("Forever Mage page updates eligibility when the summon ability is learned", function()
+    local originalClass, originalSpellBook = UnitClass, C_SpellBook
+    local knowsSummon = false
+    GetBuildInfo = function() return "1.60.1", "70862", "", 16001 end
+    UnitClass = function() return "Mage", "MAGE" end
+    C_SpellBook = { IsSpellKnown = function(id) return knowsSummon and id == 31687 end }
+    local session = LoadLanguageSession({language = "zhCN"})
+    session.OpenOptionsFrame()
+    local frame = Upvalue(session.RefreshOptionsFrameLocale, "optionsFrame")
+    frame.navButtons.classes.scripts.OnClick()
+    frame.navButtons.MAGE.scripts.OnClick()
+    assert(FindText(frame.currentPage, session.UI.ELIGIBILITY_UNMET))
+    knowsSummon = true
+    session.addonFrame.scripts.OnEvent(session.addonFrame, "SPELLS_CHANGED")
+    assert(FindText(frame.currentPage, session.UI.ELIGIBILITY_MET))
+    frame.clientButtons.retail.scripts.OnClick()
+    assert(not FindText(frame.currentPage, session.UI.ELIGIBILITY_MET))
+    GetBuildInfo, UnitClass, C_SpellBook = nil, originalClass, originalSpellBook
+end)
+
+Test("voice settings provide an out-of-combat sample and save both playback modes", function()
+    local session = LoadLanguageSession({language = "enUS"})
+    session.OpenOptionsFrame()
+    local frame = Upvalue(session.RefreshOptionsFrameLocale, "optionsFrame")
+    frame.navButtons.voice.scripts.OnClick()
+    local page = frame.currentPage
+    local before = #spoken
+    assert(session.GetCombatTTSInterval() == 3)
+    FindButton(page, session.UI.TTS_SAMPLE).scripts.OnClick()
+    assert(#spoken == before + 1 and spoken[#spoken] == session.UI.PREVIEW_SAMPLE)
+    session.SetCombatTTSInterval(6)
+    FindButton(page, session.UI.TTS_ONCE).scripts.OnClick()
+    assert(session.GetCombatTTSInterval() == 0 and session.GetCombatTTSRepeatInterval() == 6)
+    PetStatusAlertDB.combatTTSEnabled, inCombat = true, true
+    session.ShowStatus("PASSIVE")
+    session.RefreshCombatTTSReminder(true)
+    assert(#spoken == before + 2 and ActiveTickers() == 0)
+    session.ShowStatus("DEFENSIVE")
+    assert(#spoken == before + 3 and ActiveTickers() == 0)
+    session.PreviewStatus("PASSIVE", "HUNTER")
+    assert(#spoken == before + 3 and ActiveTickers() == 0)
+    session.ShowStatus("DEFENSIVE")
+    FindButton(page, session.UI.TTS_REPEAT).scripts.OnClick()
+    assert(session.GetCombatTTSInterval() == 6 and tickers[#tickers].interval == 6)
+    tickers[#tickers].callback()
+    assert(#spoken == before + 5)
+    session.HideStatus()
+    inCombat = false
+    assert(LoadLanguageSession(PetStatusAlertDB).GetCombatTTSInterval() == 6)
+end)
+
+Test("class reset waits for confirmation and isolates class and client rules", function()
+    local session = LoadLanguageSession({language = "enUS", customMessages = {NO_PET = "Legacy"}})
+    session.SetCustomMessage("NO_PET", "Custom Warlock", "WARLOCK")
+    session.SetStatusEnabled("NO_PET", false, "WARLOCK")
+    session.SetWarlockBlockedPet(265, 17, true)
+    session.SetWarlockBlockedPet(0, 17, true)
+    session.SetWarlockSacrificeID(265, 123)
+    session.SetClassOption("warlockIgnoreSacrifice", false)
+    session.SetClassOption("mageSummonID", 111)
+    session.SetCombatTTSInterval(9)
+    session.OpenOptionsFrame()
+    local frame = Upvalue(session.RefreshOptionsFrameLocale, "optionsFrame")
+    frame.navButtons.classes.scripts.OnClick()
+    frame.navButtons.WARLOCK.scripts.OnClick()
+    local confirm
+    StaticPopupDialogs = {}
+    StaticPopup_Show = function(key, title, body, data)
+        assert(title:find("Warlock", 1, true) and body == session.UI.CLASS_RESET_BODY)
+        confirm = function() StaticPopupDialogs[key].OnAccept(nil, data) end
+    end
+    FindButton(frame.currentPage, session.UI.CLASS_RESET).scripts.OnClick()
+    assert(confirm and session.GetCustomMessage("NO_PET", "WARLOCK") == "Custom Warlock")
+    confirm()
+    assert(session.IsStatusEnabled("NO_PET", "WARLOCK") and session.GetCustomMessage("NO_PET", "WARLOCK") == "")
+    assert(not session.GetWarlockBlockedPets(265) and session.GetWarlockBlockedPets(0)[17])
+    assert(session.GetWarlockSacrificeID(265) == 124691 and session.GetClassOption("warlockIgnoreSacrifice"))
+    assert(session.GetCustomMessage("NO_PET", "HUNTER") == "Legacy" and session.GetClassOption("mageSummonID") == 111)
+    assert(session.GetCombatTTSInterval() == 9)
+    StaticPopup_Show, StaticPopupDialogs = nil, nil
 end)
 
 local activeGlows = {}
@@ -384,7 +723,7 @@ Test("Forever threshold settings share the saved numeric value", function()
     assert(session.GetAmmoThreshold() == 100)
     local tabs = session.GetSettingsDefinition({}).tabs
     local tab = tabs[#tabs]
-    assert(tab.key == "forever" and tab.title == "无限专用")
+    assert(tab.key == "forever" and tab.title == "弹药不足提醒")
     local section = {EditBox = function(_, _, get, set, _, _, opts)
         assert(opts.numeric and get() == 100)
         assert(set("160") == 160 and get() == 160)
@@ -411,9 +750,15 @@ Test("Forever threshold settings share the saved numeric value", function()
     local reloaded = LoadLanguageSession(PetStatusAlertDB)
     assert(reloaded.GetAmmoThreshold() == 250)
     GetBuildInfo = nil
-    for _, entry in ipairs(LoadLanguageSession().GetSettingsDefinition({}).tabs) do
-        assert(entry.key ~= "forever")
-    end
+    local retail = LoadLanguageSession({language = "enUS", ammoThreshold = 250})
+    retail.OpenOptionsFrame()
+    local frame = Upvalue(retail.RefreshOptionsFrameLocale, "optionsFrame")
+    frame.navButtons.forever.scripts.OnClick()
+    local retailPage = frame.currentPage.children[1].children[1]
+    local retailSection = retailPage.children[#retailPage.children]
+    local retailInput = retailSection.children[#retailSection.children]
+    assert(retailInput.disabled and retailInput:GetText() == "100" and not retailInput.scripts.OnEditFocusLost)
+    assert(retail.GetAmmoThreshold() == 250)
 end)
 
 Test("Forever ammo warns below 100 after every combat and only updates outside combat", function()
@@ -647,6 +992,7 @@ Test("Forever feeding tracks happiness, food, combat, and the stance layout", fu
     MenuVariants = {GetDefaultContextMenuMixin = noop}
     Menu = {PopulateDescription = function(build, owner, root) build(owner, root) end}
     MenuUtil = {}
+    local latestMenu
     function MenuUtil.CreateRootMenuDescription()
         return {
             rows = {},
@@ -666,11 +1012,12 @@ Test("Forever feeding tracks happiness, food, combat, and the stance layout", fu
         end
         function menu:Close()
             self.closed = true
-            self.release(self)
+            if self.release then self.release(self) end
         end
         local root = MenuUtil.CreateRootMenuDescription()
         Menu.PopulateDescription(build, owner, root)
         menu:SetMenuDescription(root)
+        latestMenu = menu
         return menu
     end
     UnitGUID = function() return "Player-1" end
@@ -732,6 +1079,41 @@ Test("Forever feeding tracks happiness, food, combat, and the stance layout", fu
     bags[0] = {food, fish}
     bags[1] = {{itemID = 43, stackCount = 2}, {itemID = 44, stackCount = 7}}
     Event("BAG_UPDATE_DELAYED")
+    happiness = 3
+    Event("UNIT_HAPPINESS", "pet")
+    assert(not button:IsVisible())
+    session.OpenOptionsFrame()
+    local options = Upvalue(session.RefreshOptionsFrameLocale, "optionsFrame")
+    options.navButtons.classes.scripts.OnClick()
+    options.navButtons.HUNTER.scripts.OnClick()
+    local feedSettings = assert(FindText(options.currentPage, session.UI.FEED_SETTINGS)).parent
+    local feedCheck = assert(FindText(feedSettings, session.UI.FEED_ENABLED)).point[2]
+    local unhappyCheck = assert(FindText(feedSettings, session.UI.PET_UNHAPPY_ENABLED)).point[2]
+    local foodSelector = assert(FindButton(feedSettings, session.UI.FEED_CHOOSE_AUTO))
+    assert(feedCheck:GetChecked() and foodSelector:GetText() == "Choose Automatically")
+    foodSelector.scripts.OnClick(foodSelector)
+    latestMenu.rows[43].selectFood(43)
+    assert(foodSelector:GetText() == "Fish" and PetStatusAlertDB.petFeedFoodByCharacter["Player-1"] == 43)
+    happiness = 2
+    feedCheck:SetChecked(false)
+    feedCheck.scripts.OnClick(feedCheck)
+    assert(not session.GetClassOption("petFeedEnabled") and not button:IsVisible())
+    happiness = 1
+    Event("UNIT_HAPPINESS", "pet")
+    assert(care:IsShown() and care.icon.texture == "UI-PetMad" and not button:IsVisible())
+    unhappyCheck:SetChecked(false)
+    unhappyCheck.scripts.OnClick(unhappyCheck)
+    assert(not care:IsShown(), "the unhappy reminder must have its own switch")
+    feedCheck:SetChecked(true)
+    feedCheck.scripts.OnClick(feedCheck)
+    assert(button:IsVisible() and care.icon.texture == 456)
+    unhappyCheck:SetChecked(true)
+    unhappyCheck.scripts.OnClick(unhappyCheck)
+    happiness = 2
+    latestMenu.rows[0].selectFood(0)
+    assert(foodSelector:GetText() == "Choose Automatically" and care.icon.texture == 123)
+    options:Hide()
+
     button.scripts.PreClick(button, "RightButton")
     assert(not button.attributes.type1)
     button.scripts.PostClick(button, "RightButton")

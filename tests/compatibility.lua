@@ -27,6 +27,7 @@ local function Session(config)
     env.C_SpecializationInfo = {GetSpecialization = SpecQuery, GetSpecializationInfo = env.GetSpecializationInfo}
     env.UnitClass = function() return config.class or "HUNTER", config.class or "HUNTER" end
     env.UnitExists = function() return config.pet == true end
+    env.UnitCreatureFamily = function() return config.familyName, config.familyID end
     env.UnitIsDeadOrGhost = function() return config.dead == true end
     env.IsMounted = function() return config.mounted == true end
     env.InCombatLockdown = function() return false end
@@ -42,8 +43,15 @@ local function Session(config)
     env.issecretvalue = function(value) return config.secret ~= nil and value == config.secret end
     env.C_ClassTalents = {GetActiveConfigID = function()
         counters.traits = counters.traits + 1
-        return nil
+        return config.traitID and 1
     end}
+    env.C_Traits = {
+        GetConfigInfo = function() return {treeIDs = {1}} end,
+        GetTreeNodes = function() return {1} end,
+        GetNodeInfo = function()
+            return {currentRank = config.traitRank or 1, activeEntry = {definitionID = config.traitID}}
+        end,
+    }
     env.C_UnitAuras = {GetPlayerAuraBySpellID = function()
         counters.aura = counters.aura + 1
         return config.stance and {} or nil
@@ -101,7 +109,7 @@ for _, class in ipairs({"HUNTER", "WARLOCK", "MAGE"}) do
         assert(Session({forever = true, class = class}).Refresh() == nil)
     end)
 end
-for _, spell in ipairs({688, 697, 712, 691, 30146}) do
+for _, spell in ipairs({688, 697, 712, 713, 691, 30146}) do
     Test("Forever Warlock summon " .. spell .. " independently enables alerts", function()
         assert(Session({forever = true, class = "WARLOCK", known = {[spell] = true}}).Refresh() == "NO_PET")
     end)
@@ -132,6 +140,10 @@ end)
 for _, mode in ipairs({"ASSIST", "DEFENSIVE", "PASSIVE", "AGGRESSIVE"}) do
     Test("Forever identifies " .. mode .. " independently", function()
         local session = Session({forever = true, pet = true, known = {[883] = true}, mode = "PET_MODE_" .. mode})
+        if mode == "AGGRESSIVE" then
+            assert(session.Refresh() == nil, "Aggressive should be silent by default")
+            session.SetStatusEnabled(mode, true)
+        end
         local expected = mode ~= "ASSIST" and mode or nil
         assert(session.Refresh() == expected)
     end)
@@ -139,6 +151,7 @@ end
 Test("localized pet names work without token flags", function()
     local session = Session({forever = true, pet = true, known = {[688] = true}, class = "WARLOCK",
         mode = "Localized Aggressive", token = false})
+    session.env.PetStatusAlertDB.statusEnabled.AGGRESSIVE = true
     assert(session.Refresh() == "AGGRESSIVE")
 end)
 Test("DefensiveAssist token warns on both clients", function()
@@ -228,6 +241,131 @@ Test("Retail still excludes Marksmanship and requires Frost for Mage", function(
     assert(Session({spec = 253}).Refresh() == "NO_PET")
     assert(Session({class = "MAGE", spec = 63, known = {[31687] = true}}).Refresh() == nil)
     assert(Session({class = "MAGE", spec = 64, known = {[31687] = true}}).Refresh() == "NO_PET")
+end)
+
+Test("Retail wrong summon is opt-in and uses the current spec's multi-selection", function()
+    local config = {class = "WARLOCK", spec = 265, pet = true, familyID = 23, mode = "PET_MODE_ASSIST"}
+    local session = Session(config)
+    local key = session.WRONG_PET_STATUS_KEY
+    session.SetWarlockBlockedPet(265, 23, true)
+    session.SetWarlockBlockedPet(265, 16, true)
+    assert(not session.IsStatusEnabled(key) and not session.Refresh())
+    session.SetStatusEnabled(key, true)
+    session.Event("UNIT_PET", "player")
+    assert(session.currentStatusKey == key)
+    config.familyID = 101 -- Voidlord is treated as its base Voidwalker family.
+    assert(session.Refresh() == key)
+    config.spec = 267
+    session.Event("PLAYER_SPECIALIZATION_CHANGED", "player")
+    assert(not session.currentStatusKey)
+    session.SetWarlockBlockedPet(267, 16, true)
+    assert(session.Refresh() == key)
+    config.dead = true
+    assert(session.Refresh() == "PET_DEAD")
+    config.dead = false
+    session.SetWarlockBlockedPet(267, 16, false)
+    assert(not session.Refresh() and session.GetWarlockBlockedPets(265)[16])
+end)
+
+Test("wrong summon ignores restricted family data and leaves normal alerts available", function()
+    local config = {class = "WARLOCK", spec = 266, pet = true, familyName = "Imp",
+        familyID = 23, secret = 23, mode = "PET_MODE_PASSIVE"}
+    local session = Session(config)
+    session.SetStatusEnabled(session.WRONG_PET_STATUS_KEY, true)
+    session.SetWarlockBlockedPet(266, 23, true)
+    assert(session.Refresh() == "PASSIVE")
+    config.secret = nil
+    assert(session.Refresh() == session.WRONG_PET_STATUS_KEY)
+end)
+
+Test("Retail Grimoire defaults and custom talent IDs control suppression", function()
+    local config = {class = "WARLOCK", spec = 265, pet = true, familyID = 23, traitID = 124691, mode = "PET_MODE_ASSIST"}
+    local session = Session(config)
+    local key = session.WRONG_PET_STATUS_KEY
+    session.SetStatusEnabled(key, true)
+    session.SetWarlockBlockedPet(265, 23, true)
+    assert(session.GetClassOption("warlockIgnoreSacrifice") and session.GetWarlockSacrificeID(267) == 125618)
+    assert(not session.Refresh())
+    session.SetClassOption("warlockIgnoreSacrifice", false)
+    session.RefreshClassPetSettings("WARLOCK")
+    assert(session.currentStatusKey == key)
+    session.SetClassOption("warlockIgnoreSacrifice", true)
+    config.traitID = 131313
+    session.SetWarlockSacrificeID(265, "131313")
+    session.RefreshClassPetSettings("WARLOCK")
+    assert(not session.currentStatusKey and session.GetWarlockSacrificeID(265, true) == 124691)
+    config.pet = false
+    assert(not session.Refresh())
+    session.SetWarlockSacrificeID(265, "")
+    session.RefreshClassPetSettings("WARLOCK")
+    assert(session.currentStatusKey == "NO_PET" and session.GetWarlockSacrificeID(265) == 124691)
+end)
+
+Test("saved Succubus and Incubus choices merge into one Sayaad rule", function()
+    local config = {class = "WARLOCK", spec = 265, pet = true, familyID = 17, mode = "PET_MODE_ASSIST"}
+    local session = Session(config)
+    session.env.PetStatusAlertDB.warlockBlockedPets = {
+        [265] = {[302] = true, [23] = true},
+        [266] = {[17] = true, [302] = false},
+        [267] = {[302] = false},
+        [0] = {[302] = true},
+    }
+    session.Event("ADDON_LOADED", "PetStatusAlert")
+    local blocked = session.GetWarlockBlockedPets(265)
+    assert(blocked[17] and blocked[23] and blocked[302] == nil)
+    assert(session.GetWarlockBlockedPets(266)[17])
+    assert(not session.GetWarlockBlockedPets(267)[17])
+    assert(session.GetWarlockBlockedPets(0)[17])
+    session.SetStatusEnabled(session.WRONG_PET_STATUS_KEY, true)
+    for _, familyID in ipairs({17, 302, 102}) do
+        config.familyID = familyID
+        assert(session.Refresh() == session.WRONG_PET_STATUS_KEY)
+    end
+    session.SetWarlockBlockedPet(265, 17, false)
+    assert(not session.Refresh() and session.GetWarlockBlockedPets(265)[23])
+    assert(not session.GetWarlockBlockedPets(265)[302])
+end)
+
+Test("Forever Warlocks expose one Sayaad option and recognize both localized names", function()
+    local config = {forever = true, locale = "zhCN", class = "WARLOCK", pet = true,
+        familyName = "夜魔", known = {[713] = true}, mode = "PET_MODE_ASSIST"}
+    local session = Session(config)
+    session.env.PetStatusAlertDB.language = "enUS"
+    session.RefreshLocaleTables()
+    local key = session.WRONG_PET_STATUS_KEY
+    session.SetStatusEnabled(key, true)
+    session.SetWarlockBlockedPet(0, 17, true)
+    assert(session.GetWarlockPetLabel(17) == "Sayaad (Succubus or Incubus)")
+    assert(table.concat(session.GetWarlockPetFamilies(true), ",") == "23,16,15,17")
+    assert(table.concat(session.GetWarlockPetFamilies(false), ",") == "23,16,15,17,29")
+    assert(session.Refresh() == key)
+    config.familyName = "魅魔"
+    assert(session.Refresh() == key)
+    assert(session.counters.spec == 0 and session.counters.traits == 0)
+end)
+
+Test("Mage summon requirement uses default, custom talent, and opt-out", function()
+    local config = {class = "MAGE", spec = 64, traitID = 131313}
+    local session = Session(config)
+    assert(session.GetClassOption("mageRequireSummon") and session.GetClassOption("mageSummonID") == 31687)
+    assert(not session.Refresh())
+    session.SetClassOption("mageSummonID", "131313")
+    session.RefreshClassPetSettings("MAGE")
+    assert(session.currentStatusKey == "NO_PET")
+    session.SetClassOption("mageSummonID", "-5")
+    assert(session.GetClassOption("mageSummonID") == 131313)
+    session.SetClassOption("mageSummonID", "")
+    session.SetClassOption("mageRequireSummon", false)
+    session.RefreshClassPetSettings("MAGE")
+    assert(session.currentStatusKey == "NO_PET" and session.GetClassOption("mageSummonID") == 31687)
+    config.spec = 63
+    assert(not session.Refresh())
+
+    local forever = Session({forever = true, class = "MAGE", known = {[131313] = true}})
+    assert(not forever.Refresh())
+    forever.SetClassOption("mageSummonID", "131313")
+    forever.RefreshClassPetSettings("MAGE")
+    assert(forever.currentStatusKey == "NO_PET" and forever.counters.traits == 0)
 end)
 Test("Retail Defensive still warns and Assist stays normal", function()
     assert(Session({pet = true, mode = "PET_MODE_DEFENSIVE"}).Refresh() == "DEFENSIVE")

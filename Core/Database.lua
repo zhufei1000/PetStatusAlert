@@ -25,6 +25,14 @@ local DEFAULT_ALERT_ICON_GAP = 10
 local DEFAULT_AMMO_THRESHOLD = 100
 local MAX_AMMO_THRESHOLD = 9999
 local VALID_ALERT_ICON_MODES = { text = true, icon = true, both = true }
+local classOptionDefaults = {
+    warlockIgnoreSacrifice = true,
+    mageRequireSummon = true,
+    mageSummonID = 31687,
+    petFeedEnabled = true,
+    petUnhappyAlertEnabled = true,
+}
+local defaultSacrificeIDs = { [265] = 124691, [267] = 125618 }
 
 -------------------------------------------------
 -- SavedVariables
@@ -48,6 +56,18 @@ local function InitDB(force)
     PetStatusAlertDB.customMessages = type(PetStatusAlertDB.customMessages) == "table" and PetStatusAlertDB.customMessages or {}
     PetStatusAlertDB.textColors = type(PetStatusAlertDB.textColors) == "table" and PetStatusAlertDB.textColors or {}
     PetStatusAlertDB.statusEnabled = type(PetStatusAlertDB.statusEnabled) == "table" and PetStatusAlertDB.statusEnabled or {}
+    PetStatusAlertDB.classAlerts = type(PetStatusAlertDB.classAlerts) == "table" and PetStatusAlertDB.classAlerts or {}
+
+    local petRules = PetStatusAlertDB.warlockBlockedPets
+    if type(petRules) == "table" then
+        for _, pets in pairs(petRules) do
+            if type(pets) == "table" and pets[302] ~= nil then
+                -- Either old selection enables the shared Sayaad rule.
+                if pets[302] == true then pets[17] = true end
+                pets[302] = nil
+            end
+        end
+    end
 
     -- 默认锁定提示文字位置；旧版本用户升级后也会保持默认锁定。
     if PetStatusAlertDB.alertLocked == nil then
@@ -155,6 +175,140 @@ local function InitDB(force)
     return PetStatusAlertDB
 end
 
+-- Legacy settings remain the fallback for each field until that class overrides it.
+function PSA.GetStatusSetting(field, statusKey, classFile)
+    local db = InitDB()
+    classFile = classFile or PSA.GetPlayerClassFile()
+    local profile = db.classAlerts[classFile]
+    local rule = type(profile) == "table" and profile[statusKey]
+    if type(rule) == "table" and rule[field] ~= nil then
+        return rule[field]
+    end
+    return db[field][statusKey]
+end
+
+function PSA.SetStatusSetting(field, statusKey, value, classFile)
+    local db = InitDB()
+    classFile = classFile or PSA.GetPlayerClassFile()
+    if not classFile then
+        db[field][statusKey] = value
+        return
+    end
+    local profile = db.classAlerts[classFile]
+    if type(profile) ~= "table" then
+        profile = {}
+        db.classAlerts[classFile] = profile
+    end
+    if type(profile[statusKey]) ~= "table" then
+        profile[statusKey] = {}
+    end
+    profile[statusKey][field] = value
+end
+
+function PSA.ResetClassSettings(classFile)
+    local forever = PSA.IsForeverClient()
+    local statuses = PSA.GetClassAlertStatuses(classFile, forever)
+    if not statuses then return false end
+    local db = InitDB()
+    local profile = {}
+    for _, key in ipairs(statuses) do
+        -- Write explicit defaults so pre-profile shared values cannot reappear.
+        profile[key] = { statusEnabled = PSA.GetDefaultStatusEnabled(key), customMessages = "", textColors = {} }
+    end
+    db.classAlerts[classFile] = profile
+    if classFile == "WARLOCK" then
+        if type(db.warlockBlockedPets) == "table" then
+            if forever then
+                db.warlockBlockedPets[0] = nil
+            else
+                for _, specID in ipairs(PSA.WARLOCK_SPECS) do db.warlockBlockedPets[specID] = nil end
+            end
+        end
+        if not forever then
+            db.warlockIgnoreSacrifice, db.warlockSacrificeIDs = nil, nil
+        end
+    elseif classFile == "MAGE" then
+        db.mageRequireSummon, db.mageSummonID = nil, nil
+    elseif forever and classFile == "HUNTER" then
+        db.petFeedEnabled, db.petUnhappyAlertEnabled = nil, nil
+    end
+    return true
+end
+
+local function PositiveID(value)
+    local id = tonumber(value)
+    if id and id > 0 and id <= 4294967295 and id % 1 == 0 then
+        return id
+    end
+end
+
+function PSA.GetClassOption(key, defaultsOnly)
+    local default = classOptionDefaults[key]
+    if default == nil or defaultsOnly then
+        return default
+    end
+    local value = InitDB()[key]
+    if type(default) == "number" then
+        return PositiveID(value) or default
+    end
+    if type(value) == "boolean" then
+        return value
+    end
+    return default
+end
+
+function PSA.SetClassOption(key, value)
+    local default = classOptionDefaults[key]
+    if type(default) == "number" then
+        value = value == "" and default or PositiveID(value)
+    end
+    if default ~= nil and type(value) == type(default) then
+        InitDB()[key] = value
+    end
+end
+
+function PSA.GetWarlockSacrificeID(specID, defaultsOnly)
+    if not defaultsOnly then
+        local ids = InitDB().warlockSacrificeIDs
+        local id = type(ids) == "table" and PositiveID(ids[specID])
+        if id then return id end
+    end
+    return defaultSacrificeIDs[specID]
+end
+
+function PSA.SetWarlockSacrificeID(specID, value)
+    local id = PositiveID(value)
+    if not id and value ~= "" then return end
+    local db = InitDB()
+    if type(db.warlockSacrificeIDs) ~= "table" then
+        db.warlockSacrificeIDs = {}
+    end
+    db.warlockSacrificeIDs[specID] = id
+end
+
+function PSA.GetWarlockBlockedPets(specID)
+    local profiles = InitDB().warlockBlockedPets
+    local pets = type(profiles) == "table" and profiles[specID]
+    if type(pets) == "table" then
+        return pets
+    end
+end
+
+function PSA.SetWarlockBlockedPet(specID, familyID, blocked)
+    if familyID == 302 then familyID = 17 end
+    local db = InitDB()
+    local pets = PSA.GetWarlockBlockedPets(specID)
+    if not pets then
+        if not blocked then return end
+        if type(db.warlockBlockedPets) ~= "table" then
+            db.warlockBlockedPets = {}
+        end
+        pets = {}
+        db.warlockBlockedPets[specID] = pets
+    end
+    pets[familyID] = blocked and true or nil
+end
+
 local function NormalizeAmmoThreshold(value)
     value = tonumber(value)
     if value and value == value then
@@ -193,6 +347,7 @@ PSA.DEFAULT_ALERT_GLOW_SPEED = DEFAULT_ALERT_GLOW_SPEED
 PSA.DEFAULT_ALERT_ICON_MODE = DEFAULT_ALERT_ICON_MODE
 PSA.DEFAULT_ALERT_ICON_SIZE = DEFAULT_ALERT_ICON_SIZE
 PSA.DEFAULT_ALERT_ICON_GAP = DEFAULT_ALERT_ICON_GAP
+PSA.DEFAULT_AMMO_THRESHOLD = DEFAULT_AMMO_THRESHOLD
 PSA.VALID_ALERT_ICON_MODES = VALID_ALERT_ICON_MODES
 PSA.Trim = Trim
 PSA.InitDB = InitDB

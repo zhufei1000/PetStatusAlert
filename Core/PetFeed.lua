@@ -81,13 +81,14 @@ local function ResolvePreferredFood()
     return itemID, count
 end
 
-local function GetHappiness()
-    if PSA.IsPlayerMountedOrInVehicle() or UnitIsDeadOrGhost("player")
-        or not UnitExists("pet") or UnitIsDeadOrGhost("pet") then
-        return
-    end
+local function HasLivingHunterPet()
+    if not UnitExists("pet") or UnitIsDeadOrGhost("pet") then return false end
     local _, isHunterPet = HasPetUI()
-    if not IsAccessible(isHunterPet) or not isHunterPet then
+    return IsAccessible(isHunterPet) and isHunterPet
+end
+
+local function GetHappiness()
+    if PSA.IsPlayerMountedOrInVehicle() or UnitIsDeadOrGhost("player") or not HasLivingHunterPet() then
         return
     end
     local happiness = C_PetInfo.GetPetHappiness()
@@ -143,7 +144,7 @@ local function PrepareClick(button, mouseButton)
     end
     ClearAction(button)
     if mouseButton ~= "LeftButton" or not button:IsVisible() or SpellIsTargeting() or GetCursorInfo()
-        or not GetHappiness() or not PSA.IsKnownPlayerSpell(FEED_PET) then
+        or not PSA.GetClassOption("petFeedEnabled") or not GetHappiness() or not PSA.IsKnownPlayerSpell(FEED_PET) then
         return
     end
 
@@ -184,28 +185,28 @@ local function HideTooltip(button)
     end
 end
 
-local function BuildFoodMenu(button, root)
-    root:AddMenuReleasedCallback(function(menu)
-        if button.foodMenu == menu then
-            button.foodMenu = nil
-        end
-    end)
+local function AddFoodChoices(root, canChoose, onChange)
     local function IsSelected(itemID)
         return (GetPreferredFood() or 0) == itemID
     end
     local function SelectFood(itemID)
-        if InCombatLockdown() or not button:IsVisible() or not GetHappiness() then
+        if InCombatLockdown() or not canChoose() then
             return
         end
-        if itemID ~= 0 and not FindFood(itemID) then
+        if itemID ~= 0 and (not HasLivingHunterPet() or not FindFood(itemID)) then
             return
         end
         SetPreferredFood(itemID ~= 0 and itemID or nil)
         PSA.RefreshPetCare()
+        if onChange then onChange() end
     end
 
     root:CreateTitle(PSA.UI.FEED_CHOOSE_TITLE)
     root:CreateRadio(PSA.UI.FEED_CHOOSE_AUTO, IsSelected, SelectFood, 0)
+    if not HasLivingHunterPet() then
+        root:CreateTitle(PSA.UI.FEED_REQUIRES_PET)
+        return
+    end
     local seen = {}
     FindFood(nil, function(food)
         local itemID = food.itemID
@@ -220,6 +221,27 @@ local function BuildFoodMenu(button, root)
     else
         root:CreateTitle(PSA.UI.FEED_FOOD_UNAVAILABLE)
     end
+end
+
+local function BuildFoodMenu(button, root)
+    root:AddMenuReleasedCallback(function(menu)
+        if button.foodMenu == menu then
+            button.foodMenu = nil
+        end
+    end)
+    AddFoodChoices(root, function() return button:IsVisible() and GetHappiness() end)
+end
+
+function PSA.GetPetFeedFoodLabel()
+    local itemID = GetPreferredFood()
+    return itemID and GetFoodName(itemID) or PSA.UI.FEED_CHOOSE_AUTO
+end
+
+function PSA.OpenPetFoodSettingsMenu(owner, onChange)
+    if InCombatLockdown() or not MenuUtil or not owner:IsVisible() then return end
+    return MenuUtil.CreateContextMenu(owner, function(_, root)
+        AddFoodChoices(root, function() return owner:IsVisible() end, onChange)
+    end)
 end
 
 local function RefreshFoodMenu(button)
@@ -279,13 +301,17 @@ function PSA.RefreshPetCare(refreshFoodMenu)
     local happiness = GetHappiness()
     local inCombat = InCombatLockdown()
     local preferredID, preferredCount = ResolvePreferredFood()
+    local feedingEnabled = PSA.GetClassOption("petFeedEnabled")
+    local unhappyEnabled = PSA.GetClassOption("petUnhappyAlertEnabled")
     local kind, texture, unavailable
 
-    if happiness and (happiness == UNHAPPY or not inCombat) then
+    if happiness == UNHAPPY and unhappyEnabled and not feedingEnabled then
+        kind = "unhappy"
+    elseif happiness and ((happiness == UNHAPPY and unhappyEnabled) or (feedingEnabled and not inCombat)) then
         local food, _, _, hasFood = FindFood(preferredID, nil, true)
-        if happiness == UNHAPPY and not hasFood then
+        if happiness == UNHAPPY and unhappyEnabled and not hasFood then
             kind = "unhappy"
-        elseif not inCombat and (food or (preferredID and hasFood)) and PSA.IsKnownPlayerSpell(FEED_PET) then
+        elseif feedingEnabled and not inCombat and (food or (preferredID and hasFood)) and PSA.IsKnownPlayerSpell(FEED_PET) then
             kind = "feed"
             local itemID = food and food.itemID or preferredID
             texture = (food and food.iconFileID) or C_Item.GetItemIconByID(itemID) or "Interface\\Icons\\INV_Misc_QuestionMark"

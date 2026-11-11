@@ -1,5 +1,14 @@
 # PetStatusAlert
 
+## 1.7.0
+
+- Configure reminders, text, and colors for any supported class from the expandable **Class Settings** menu. Each class has Retail and Forever tabs. The other client shows its defaults in read-only mode.
+- Add a wrong-summon alert for Warlocks on both clients. Choose which demons trigger the alert. Sayaad covers both Succubus and Incubus. Retail supports separate lists for each specialization and a configurable Grimoire of Sacrifice exception.
+- Let Mages change or disable the Water Elemental requirement. Add a class-only reset and show which specializations or summon abilities are required for alerts to work.
+- Split the Forever Hunter feeding button and unhappy-pet reminder into separate switches. Add food selection to the Hunter settings. The Aggressive alert on Forever is now off by default and can be enabled per class.
+- Compact the alert settings and keep the display preview accessible while scrolling. The preview works on any class. Fix the error when hovering over a settings slider or its label.
+- Add voice preview outside combat and a choice of one announcement or a repeat interval of 2–15 seconds. The default interval is 3 seconds.
+
 ## 1.6.0
 
 - Add low-ammo alerts for bows, crossbows, and guns in WoW: Forever. Check the equipped ammunition after every combat and display the remaining amount below a configurable threshold. The default is 100, and 0 disables the alert.

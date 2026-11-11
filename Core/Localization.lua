@@ -16,6 +16,8 @@ local LOCALIZED_MESSAGES = {
         UNKNOWN = "Pet status unknown.",
         NO_PET = "No pet summoned!",
         PET_DEAD = "Pet is dead!",
+        WARRIOR_DEFENSIVE_STANCE = "Defensive Stance active!",
+        WARLOCK_WRONG_PET = "Wrong demon summoned!",
     },
     zhCN = {
         PASSIVE = "我的宠物现在是：被动状态",
@@ -24,6 +26,8 @@ local LOCALIZED_MESSAGES = {
         UNKNOWN = "我的宠物状态暂时无法识别",
         NO_PET = "我的宠物不存在",
         PET_DEAD = "我的宠物已死亡",
+        WARRIOR_DEFENSIVE_STANCE = "当前处于：防御姿态",
+        WARLOCK_WRONG_PET = "召唤错误",
     },
     zhTW = {
         PASSIVE = "我的寵物現在是：被動狀態",
@@ -32,6 +36,8 @@ local LOCALIZED_MESSAGES = {
         UNKNOWN = "我的寵物狀態暫時無法識別",
         NO_PET = "我的寵物不存在",
         PET_DEAD = "我的寵物已死亡",
+        WARRIOR_DEFENSIVE_STANCE = "目前處於：防禦姿態",
+        WARLOCK_WRONG_PET = "召喚錯誤",
     },
     ruRU = {
         PASSIVE = "Режим питомца: Пассивный",
@@ -40,6 +46,8 @@ local LOCALIZED_MESSAGES = {
         UNKNOWN = "Статус питомца сейчас невозможно определить",
         NO_PET = "Питомец не призван",
         PET_DEAD = "Питомец мертв",
+        WARRIOR_DEFENSIVE_STANCE = "Сейчас включена защитная стойка",
+        WARLOCK_WRONG_PET = "Призван неподходящий демон!",
     },
 }
 
@@ -96,7 +104,35 @@ local UI_LOCALE = {
         LOW_BULLETS = "Low bullets (%d left)",
         LOW_ARROWS_LABEL = "Low arrows",
         LOW_BULLETS_LABEL = "Low bullets",
-        FOREVER_SETTINGS = "Forever",
+        RETAIL_CLIENT = "Retail",
+        FOREVER_CLIENT = "Forever",
+        CLASS_SETTINGS = "Class Settings",
+        OTHER_CLIENT_SETTINGS = "Read-only defaults. Open this game version to change its settings.",
+        CLASS_UNSUPPORTED = "This class has no alerts in this game version.",
+        WARLOCK_WRONG_PET = "Wrong summon alert",
+        WARLOCK_PET_RULES = "Demon selection",
+        WARLOCK_PET_RULES_HINT = "The alert triggers when a checked demon is your active pet.",
+        WARLOCK_SPEC = "Specialization",
+        WARLOCK_SPECS = { [265] = "Affliction", [266] = "Demonology", [267] = "Destruction" },
+        WARLOCK_PETS = { [23] = "Imp", [16] = "Voidwalker", [15] = "Felhunter", [17] = "Succubus", [302] = "Incubus", [29] = "Felguard" },
+        WARLOCK_SAYAAD = "Sayaad (Succubus or Incubus)",
+        WARLOCK_IGNORE_SACRIFICE = "Suppress alerts with Grimoire of Sacrifice",
+        WARLOCK_SACRIFICE_ID = "Grimoire talent ID",
+        WARLOCK_SACRIFICE_HINT = "Uses the ID for the selected specialization. Clear the field to restore its default.",
+        MAGE_SUMMON_SETTINGS = "Water Elemental requirement",
+        MAGE_REQUIRE_SUMMON = "Require the summon talent or spell",
+        MAGE_SUMMON_ID = "Talent or spell ID",
+        MAGE_SUMMON_HINT = "Default: 31687. Clear the field to restore the default.",
+        FEED_SETTINGS = "One-click pet feeding",
+        FEED_ENABLED = "Show one-click feed button",
+        FEED_SETTINGS_HINT = "Choose food automatically or prefer an item in your bags. The choice is saved per character.",
+        FEED_REQUIRES_PET = "Summon a hunter pet to list suitable food.",
+        FEED_REQUIRES_HUNTER = "Select food on your Forever hunter.",
+        SETTING_OUT_OF_COMBAT = "Available out of combat.",
+        ALERT_CLASSES = { HUNTER = "Hunter", WARLOCK = "Warlock", MAGE = "Mage", DEATHKNIGHT = "Death Knight", WARRIOR = "Warrior" },
+        ALERT_CLASS_VARIANTS = { MAGE = "Frost Mage (Water Elemental)", FOREVER_MAGE = "Mage (Water Elemental)",
+            DEATHKNIGHT = "Unholy Death Knight", WARRIOR = "Arms / Fury Warrior" },
+        WARRIOR_DEFENSIVE_STANCE = "Warrior: Defensive Stance",
         AMMO_SETTINGS = "Low Ammo Alert",
         AMMO_THRESHOLD = "Ammo threshold",
         AMMO_THRESHOLD_HINT = "Warn out of combat below this amount. Default: 100. Range: 0–9999. Set 0 to turn off.",
@@ -177,7 +213,35 @@ local UI_LOCALE = {
         LOW_BULLETS = "子弹不足（剩余 %d）",
         LOW_ARROWS_LABEL = "箭矢不足",
         LOW_BULLETS_LABEL = "子弹不足",
-        FOREVER_SETTINGS = "无限专用",
+        RETAIL_CLIENT = "正式服",
+        FOREVER_CLIENT = "无限服",
+        CLASS_SETTINGS = "职业设置",
+        OTHER_CLIENT_SETTINGS = "此处只读，展示该版本的默认设置。请在对应客户端修改。",
+        CLASS_UNSUPPORTED = "该职业在此版本没有可用的提醒。",
+        WARLOCK_WRONG_PET = "召唤错误提示",
+        WARLOCK_PET_RULES = "宠物选择",
+        WARLOCK_PET_RULES_HINT = "当前召唤的宠物在勾选列表中时，显示召唤错误。",
+        WARLOCK_SPEC = "专精",
+        WARLOCK_SPECS = { [265] = "痛苦", [266] = "恶魔学识", [267] = "毁灭" },
+        WARLOCK_PETS = { [23] = "小鬼", [16] = "虚空行者", [15] = "地狱猎犬", [17] = "魅魔", [302] = "夜魔", [29] = "恶魔卫士" },
+        WARLOCK_SAYAAD = "萨亚德（魅魔或夜魔）",
+        WARLOCK_IGNORE_SACRIFICE = "点出牺牲魔典时忽略相关提醒",
+        WARLOCK_SACRIFICE_ID = "牺牲魔典天赋 ID",
+        WARLOCK_SACRIFICE_HINT = "对应当前选中的专精。清空输入框可恢复默认 ID。",
+        MAGE_SUMMON_SETTINGS = "水元素天赋检测",
+        MAGE_REQUIRE_SUMMON = "要求已学会召唤水元素",
+        MAGE_SUMMON_ID = "天赋或技能 ID",
+        MAGE_SUMMON_HINT = "默认 31687。清空输入框可恢复默认 ID。",
+        FEED_SETTINGS = "一键喂养",
+        FEED_ENABLED = "显示一键喂养按钮",
+        FEED_SETTINGS_HINT = "可自动挑选，也可指定背包里的一种食物。食物选择按角色保存。",
+        FEED_REQUIRES_PET = "召出猎人宠物后可查看适合它的食物。",
+        FEED_REQUIRES_HUNTER = "请用无限服猎人选择食物。",
+        SETTING_OUT_OF_COMBAT = "脱战后可选择。",
+        ALERT_CLASSES = { HUNTER = "猎人", WARLOCK = "术士", MAGE = "法师", DEATHKNIGHT = "死亡骑士", WARRIOR = "战士" },
+        ALERT_CLASS_VARIANTS = { MAGE = "冰霜法师（召唤水元素）", FOREVER_MAGE = "法师（召唤水元素）",
+            DEATHKNIGHT = "邪恶死亡骑士", WARRIOR = "武器 / 狂暴战士" },
+        WARRIOR_DEFENSIVE_STANCE = "战士：防御姿态",
         AMMO_SETTINGS = "弹药不足提醒",
         AMMO_THRESHOLD = "弹药低于此数量时提醒",
         AMMO_THRESHOLD_HINT = "脱战时检查剩余弹药。默认 100，可设为 0–9999，设为 0 关闭提醒。",
@@ -258,7 +322,35 @@ local UI_LOCALE = {
         LOW_BULLETS = "子彈不足（剩餘 %d）",
         LOW_ARROWS_LABEL = "箭矢不足",
         LOW_BULLETS_LABEL = "子彈不足",
-        FOREVER_SETTINGS = "無限專用",
+        RETAIL_CLIENT = "正式服",
+        FOREVER_CLIENT = "無限服",
+        CLASS_SETTINGS = "職業設定",
+        OTHER_CLIENT_SETTINGS = "此處唯讀，顯示該版本的預設設定。請在對應用戶端修改。",
+        CLASS_UNSUPPORTED = "此職業在這個版本沒有可用的提醒。",
+        WARLOCK_WRONG_PET = "召喚錯誤提醒",
+        WARLOCK_PET_RULES = "寵物選擇",
+        WARLOCK_PET_RULES_HINT = "目前召喚的寵物在勾選清單中時，顯示召喚錯誤。",
+        WARLOCK_SPEC = "專精",
+        WARLOCK_SPECS = { [265] = "痛苦", [266] = "惡魔學識", [267] = "毀滅" },
+        WARLOCK_PETS = { [23] = "小鬼", [16] = "虛無行者", [15] = "惡魔獵犬", [17] = "魅魔", [302] = "夢魔", [29] = "惡魔守衛" },
+        WARLOCK_SAYAAD = "薩亞德（魅魔或夢魔）",
+        WARLOCK_IGNORE_SACRIFICE = "點出犧牲魔典時忽略相關提醒",
+        WARLOCK_SACRIFICE_ID = "犧牲魔典天賦 ID",
+        WARLOCK_SACRIFICE_HINT = "對應目前選取的專精。清空輸入欄可恢復預設 ID。",
+        MAGE_SUMMON_SETTINGS = "水元素天賦偵測",
+        MAGE_REQUIRE_SUMMON = "要求已學會召喚水元素",
+        MAGE_SUMMON_ID = "天賦或技能 ID",
+        MAGE_SUMMON_HINT = "預設 31687。清空輸入欄可恢復預設 ID。",
+        FEED_SETTINGS = "一鍵餵食",
+        FEED_ENABLED = "顯示一鍵餵食按鈕",
+        FEED_SETTINGS_HINT = "可自動挑選，也可指定背包中的一種食物。食物選擇依角色儲存。",
+        FEED_REQUIRES_PET = "召喚獵人寵物後可查看適合牠的食物。",
+        FEED_REQUIRES_HUNTER = "請使用無限服獵人選擇食物。",
+        SETTING_OUT_OF_COMBAT = "脫離戰鬥後可選擇。",
+        ALERT_CLASSES = { HUNTER = "獵人", WARLOCK = "術士", MAGE = "法師", DEATHKNIGHT = "死亡騎士", WARRIOR = "戰士" },
+        ALERT_CLASS_VARIANTS = { MAGE = "冰霜法師（召喚水元素）", FOREVER_MAGE = "法師（召喚水元素）",
+            DEATHKNIGHT = "邪惡死亡騎士", WARRIOR = "武器 / 狂怒戰士" },
+        WARRIOR_DEFENSIVE_STANCE = "戰士：防禦姿態",
         AMMO_SETTINGS = "彈藥不足提醒",
         AMMO_THRESHOLD = "彈藥低於此數量時提醒",
         AMMO_THRESHOLD_HINT = "脫戰時檢查剩餘彈藥。預設 100，可設為 0–9999，設為 0 關閉提醒。",
@@ -339,7 +431,35 @@ local UI_LOCALE = {
         LOW_BULLETS = "Мало пуль (осталось %d)",
         LOW_ARROWS_LABEL = "Мало стрел",
         LOW_BULLETS_LABEL = "Мало пуль",
-        FOREVER_SETTINGS = "Forever",
+        RETAIL_CLIENT = "Retail",
+        FOREVER_CLIENT = "Forever",
+        CLASS_SETTINGS = "Настройки классов",
+        OTHER_CLIENT_SETTINGS = "Показаны настройки по умолчанию. Изменить их можно в соответствующем клиенте.",
+        CLASS_UNSUPPORTED = "Для этого класса в данной версии нет предупреждений.",
+        WARLOCK_WRONG_PET = "Предупреждение о неверном призыве",
+        WARLOCK_PET_RULES = "Выбор демонов",
+        WARLOCK_PET_RULES_HINT = "Предупреждение появляется, если активный демон отмечен в списке.",
+        WARLOCK_SPEC = "Специализация",
+        WARLOCK_SPECS = { [265] = "Колдовство", [266] = "Демонология", [267] = "Разрушение" },
+        WARLOCK_PETS = { [23] = "Бес", [16] = "Демон Бездны", [15] = "Охотник Скверны", [17] = "Суккуб", [302] = "Инкуб", [29] = "Страж Скверны" },
+        WARLOCK_SAYAAD = "Саяад (суккуб или инкуб)",
+        WARLOCK_IGNORE_SACRIFICE = "Игнорировать при «Гримуаре жертвоприношения»",
+        WARLOCK_SACRIFICE_ID = "ID таланта «Гримуар жертвоприношения»",
+        WARLOCK_SACRIFICE_HINT = "ID для выбранной специализации. Очистите поле для восстановления значения по умолчанию.",
+        MAGE_SUMMON_SETTINGS = "Проверка элементаля воды",
+        MAGE_REQUIRE_SUMMON = "Требовать изученный призыв элементаля",
+        MAGE_SUMMON_ID = "ID таланта или заклинания",
+        MAGE_SUMMON_HINT = "По умолчанию: 31687. Очистите поле, чтобы вернуть это значение.",
+        FEED_SETTINGS = "Кормление в один клик",
+        FEED_ENABLED = "Показывать кнопку кормления",
+        FEED_SETTINGS_HINT = "Выберите корм из сумок или оставьте автоматический выбор. Настройка сохраняется для персонажа.",
+        FEED_REQUIRES_PET = "Призовите питомца охотника, чтобы увидеть подходящий корм.",
+        FEED_REQUIRES_HUNTER = "Выберите корм на охотнике в Forever.",
+        SETTING_OUT_OF_COMBAT = "Доступно вне боя.",
+        ALERT_CLASSES = { HUNTER = "Охотник", WARLOCK = "Чернокнижник", MAGE = "Маг", DEATHKNIGHT = "Рыцарь смерти", WARRIOR = "Воин" },
+        ALERT_CLASS_VARIANTS = { MAGE = "Маг льда (элементаль воды)", FOREVER_MAGE = "Маг (элементаль воды)",
+            DEATHKNIGHT = "Рыцарь смерти (Нечестивость)", WARRIOR = "Воин (Оружие / Неистовство)" },
+        WARRIOR_DEFENSIVE_STANCE = "Воин: Защитная стойка",
         AMMO_SETTINGS = "Нехватка боеприпасов",
         AMMO_THRESHOLD = "Порог боеприпасов",
         AMMO_THRESHOLD_HINT = "Проверка вне боя. По умолчанию 100. Диапазон 0–9999. Значение 0 отключает предупреждение.",
@@ -369,6 +489,49 @@ local UI_LOCALE = {
         TRANSLATION_RURU = "Русский перевод: Hubbotu",
     },
 }
+
+local SETTINGS_STRINGS = {
+    READ_ONLY_TAB = { "Preview only", "仅预览", "僅預覽", "Только просмотр" },
+    PREVIEW_SAMPLE = { "Sample alert", "提醒预览", "提醒預覽", "Пример предупреждения" },
+    MOVE_HINT = { "Unlock, then drag the sample alert to move it.", "解锁后，拖动屏幕上的预览提醒即可调整位置。", "解鎖後，拖曳畫面上的預覽提醒即可調整位置。", "Разблокируйте и перетащите пример предупреждения." },
+    STOP_PREVIEW = { "Stop preview", "停止预览", "停止預覽", "Остановить предпросмотр" },
+    ADVANCED = { "Advanced", "高级", "進階", "Дополнительно" },
+    WRONG_PET_OFF = { "Alert off. Your pet choices are kept.", "提醒已关闭，所选宠物仍会保留。", "提醒已關閉，所選寵物仍會保留。", "Предупреждение выключено. Выбор питомцев сохраняется." },
+    WRONG_PET_NONE = { "Select at least one demon to trigger the alert.", "至少勾选一种宠物才会触发提醒。", "至少勾選一種寵物才會觸發提醒。", "Выберите хотя бы одного демона для предупреждения." },
+    WARLOCK_BLOCKED_PETS = { "Demons that trigger the alert", "会触发提醒的宠物", "會觸發提醒的寵物", "Демоны, вызывающие предупреждение" },
+    TTS_BEHAVIOR_HINT = { "Speaks visible alert text in combat. Icon-only alerts without text are silent.", "在战斗中朗读屏幕上的提醒。只显示图标、没有文字时不会播报。", "在戰鬥中朗讀畫面上的提醒。只顯示圖示、沒有文字時不會播報。", "Озвучивает видимый текст в бою. Значки без текста не озвучиваются." },
+    TTS_SAMPLE = { "Listen", "试听", "試聽", "Прослушать" },
+    TTS_UNAVAILABLE = { "Voice preview is unavailable.", "当前无法播放语音试听。", "目前無法播放語音試聽。", "Прослушивание недоступно." },
+    TTS_ONCE = { "Speak once", "仅播一次", "僅播一次", "Один раз" },
+    TTS_REPEAT = { "Repeat", "重复播报", "重複播報", "Повторять" },
+    TTS_INTERVAL = { "Repeat interval (seconds)", "重复间隔（秒）", "重複間隔（秒）", "Интервал повтора (сек.)" },
+    TTS_INTERVAL_VALUE = { "%d sec", "%d 秒", "%d 秒", "%d сек." },
+    PET_UNHAPPY_ENABLED = { "Warn when the pet is unhappy", "宠物不高兴时提醒", "寵物不高興時提醒", "Предупреждать о недовольстве питомца" },
+    AMMO_WEAPON_HINT = { "Any class with a bow, crossbow, or gun that requires ammo.", "适用于装备需要弹药的弓、弩或枪的职业。", "適用於裝備需要彈藥的弓、弩或槍的職業。", "Для любого класса с луком, арбалетом или ружьём, требующим боеприпасы." },
+    CLASS_RESET = { "Reset this class", "恢复本职业默认", "恢復本職業預設", "Сбросить настройки класса" },
+    CLASS_RESET_TITLE = { "Reset %s settings?", "恢复%s的默认设置？", "恢復%s的預設設定？", "Сбросить настройки: %s?" },
+    CLASS_RESET_BODY = { "Restores this class’s alert switches, custom text, colors, and rules on this client.", "恢复当前版本此职业的提醒开关、自定义文字、颜色和职业规则。", "恢復目前版本此職業的提醒開關、自訂文字、顏色和職業規則。", "Восстанавливает переключатели, тексты, цвета и правила этого класса в текущей версии." },
+    CLASS_RESET_KEEP_FOOD = { "Saved food choices are kept.", "角色选定的食物会保留。", "角色選定的食物會保留。", "Выбор еды сохраняется." },
+    RESET_ACTION = { "Reset", "恢复默认", "恢復預設", "Сбросить" },
+    CLASS_RESET_DONE = { "Class settings restored.", "已恢复本职业的默认设置。", "已恢復本職業的預設設定。", "Настройки класса восстановлены." },
+    CANCEL = { "Cancel", "取消", "取消", "Отмена" },
+    ELIGIBILITY_MET = { "Current character: eligible.", "当前角色：满足生效条件。", "目前角色：符合生效條件。", "Текущий персонаж: условия выполнены." },
+    ELIGIBILITY_UNMET = { "Current character: requirements not met.", "当前角色：尚未满足生效条件。", "目前角色：尚未符合生效條件。", "Текущий персонаж: условия не выполнены." },
+    SUPPORT_HUNTER = { "Beast Mastery and Survival only.", "仅野兽控制和生存专精。", "僅獸王和生存專精。", "Только «Повелитель зверей» и «Выживание»." },
+    SUPPORT_WARLOCK = { "Available for all Warlock specializations.", "术士所有专精均支持。", "術士所有專精均支援。", "Доступно всем специализациям чернокнижника." },
+    SUPPORT_MAGE = { "Frost only. Requires the configured Water Elemental ability by default.", "仅冰霜专精。默认要求已学会设定的水元素召唤技能或天赋。", "僅冰霜專精。預設需學會設定的水元素召喚技能或天賦。", "Только «Лёд». По умолчанию нужна указанная способность призыва элементаля воды." },
+    SUPPORT_DEATHKNIGHT = { "Unholy only.", "仅邪恶专精。", "僅穢邪專精。", "Только «Нечестивость»." },
+    SUPPORT_WARRIOR = { "Arms and Fury only.", "仅武器和狂怒专精。", "僅武器和狂怒專精。", "Только «Оружие» и «Неистовство»." },
+    SUPPORT_FOREVER = { "Learn a pet summon ability to enable pet alerts.", "学会宠物召唤技能后生效。", "學會寵物召喚技能後生效。", "Для предупреждений нужна изученная способность призыва питомца." },
+    SUPPORT_FOREVER_MAGE = { "Requires the configured Water Elemental ability by default.", "默认要求学会设定的水元素召唤技能。", "預設需學會設定的水元素召喚技能。", "По умолчанию нужна указанная способность призыва элементаля воды." },
+}
+
+local settingsLocales = { "enUS", "zhCN", "zhTW", "ruRU" }
+for key, translations in pairs(SETTINGS_STRINGS) do
+    for i, locale in ipairs(settingsLocales) do
+        UI_LOCALE[locale][key] = translations[i]
+    end
+end
 
 local RAW_CLIENT_LOCALE = type(GetLocale) == "function" and GetLocale() or "enUS"
 local SUPPORTED_LOCALES = {
@@ -426,6 +589,8 @@ local function RefreshLocaleTables()
         DEFENSIVE = UI.DEFENSIVE,
         AGGRESSIVE = UI.AGGRESSIVE,
         UNKNOWN = UI.UNKNOWN,
+        WARRIOR_DEFENSIVE_STANCE = UI.WARRIOR_DEFENSIVE_STANCE,
+        WARLOCK_WRONG_PET = UI.WARLOCK_WRONG_PET,
     }
     PSA.UI = UI
     PSA.STATUS_LABEL = STATUS_LABEL
@@ -440,33 +605,62 @@ local function GetDefaultMessage(statusKey)
     return L[statusKey] or LOCALIZED_MESSAGES.enUS[statusKey] or ""
 end
 
-local function GetCustomMessage(statusKey)
-    InitDB()
-    local value = PetStatusAlertDB.customMessages[statusKey]
-    value = Trim(value)
+function PSA.GetAlertClassLabel(classFile, forever)
+    if forever ~= nil then
+        local key = forever and classFile == "MAGE" and "FOREVER_MAGE" or classFile
+        return UI.ALERT_CLASS_VARIANTS[key] or UI.ALERT_CLASSES[classFile]
+    end
+    return UI.ALERT_CLASSES[classFile]
+end
+
+function PSA.GetClassSupportNote(classFile, forever)
+    if not PSA.GetClassAlertStatuses(classFile, forever) then return UI.CLASS_UNSUPPORTED end
+    if forever then return classFile == "MAGE" and UI.SUPPORT_FOREVER_MAGE or UI.SUPPORT_FOREVER end
+    return UI["SUPPORT_" .. classFile]
+end
+
+function PSA.GetWarlockPetLabel(familyID, useClientLocale)
+    if not useClientLocale and familyID == 17 then
+        return UI.WARLOCK_SAYAAD
+    end
+    local locale = useClientLocale and UI_LOCALE[CLIENT_LOCALE] or UI
+    return locale.WARLOCK_PETS[familyID]
+end
+
+function PSA.GetAlertClientName(forever)
+    return forever and UI.FOREVER_CLIENT or UI.RETAIL_CLIENT
+end
+
+local function GetCustomMessage(statusKey, classFile)
+    return PSA.GetStatusSetting("customMessages", statusKey, classFile) or ""
+end
+
+local function SetCustomMessage(statusKey, value, classFile)
+    PSA.SetStatusSetting("customMessages", statusKey, value or "", classFile)
+end
+
+local function GetDisplayMessage(statusKey, classFile)
+    local value = Trim(GetCustomMessage(statusKey, classFile))
     if value ~= "" then
         return value
     end
-    return nil
+    return GetDefaultMessage(statusKey)
 end
 
-local function GetDisplayMessage(statusKey)
-    return GetCustomMessage(statusKey) or GetDefaultMessage(statusKey)
+function PSA.GetDefaultStatusEnabled(statusKey)
+    return statusKey ~= "UNKNOWN" and statusKey ~= "AGGRESSIVE" and statusKey ~= PSA.WRONG_PET_STATUS_KEY
 end
 
-local function IsStatusEnabled(statusKey)
-    InitDB()
-    -- UNKNOWN 状态默认关闭（1.4.0 起），其余状态默认开启
-    local defaultEnabled = statusKey ~= "UNKNOWN"
-    if PetStatusAlertDB.statusEnabled[statusKey] == nil then
-        PetStatusAlertDB.statusEnabled[statusKey] = defaultEnabled
+local function IsStatusEnabled(statusKey, classFile)
+    local enabled = PSA.GetStatusSetting("statusEnabled", statusKey, classFile)
+    if enabled == nil then
+        return PSA.GetDefaultStatusEnabled(statusKey)
     end
-    return PetStatusAlertDB.statusEnabled[statusKey] ~= false
+    return enabled ~= false
 end
 
-local function SetStatusEnabled(statusKey, enabled)
-    InitDB()
-    PetStatusAlertDB.statusEnabled[statusKey] = enabled and true or false
+local function SetStatusEnabled(statusKey, enabled, classFile)
+    PSA.SetStatusSetting("statusEnabled", statusKey, not not enabled, classFile)
 end
 
 local DEFAULT_TEXT_COLOR = {
@@ -475,6 +669,10 @@ local DEFAULT_TEXT_COLOR = {
     b = 0.08,
     a = 1,
 }
+
+function PSA.GetDefaultStatusColor()
+    return DEFAULT_TEXT_COLOR.r, DEFAULT_TEXT_COLOR.g, DEFAULT_TEXT_COLOR.b, DEFAULT_TEXT_COLOR.a
+end
 
 local function ClampColor(value, fallback)
     value = tonumber(value)
@@ -490,39 +688,26 @@ local function ClampColor(value, fallback)
     return value
 end
 
-local function EnsureStatusColor(statusKey)
-    InitDB()
-    PetStatusAlertDB.textColors[statusKey] = type(PetStatusAlertDB.textColors[statusKey]) == "table" and PetStatusAlertDB.textColors[statusKey] or {}
-    local color = PetStatusAlertDB.textColors[statusKey]
-    color.r = ClampColor(color.r, DEFAULT_TEXT_COLOR.r)
-    color.g = ClampColor(color.g, DEFAULT_TEXT_COLOR.g)
-    color.b = ClampColor(color.b, DEFAULT_TEXT_COLOR.b)
-    color.a = ClampColor(color.a, DEFAULT_TEXT_COLOR.a)
-    return color
+local function GetStatusColor(statusKey, classFile)
+    local color = PSA.GetStatusSetting("textColors", statusKey or "UNKNOWN", classFile)
+    if type(color) ~= "table" then
+        return PSA.GetDefaultStatusColor()
+    end
+    return ClampColor(color.r, DEFAULT_TEXT_COLOR.r), ClampColor(color.g, DEFAULT_TEXT_COLOR.g),
+        ClampColor(color.b, DEFAULT_TEXT_COLOR.b), ClampColor(color.a, DEFAULT_TEXT_COLOR.a)
 end
 
-local function GetStatusColor(statusKey)
-    local color = EnsureStatusColor(statusKey or "UNKNOWN")
-    return color.r, color.g, color.b, color.a
+local function SetStatusColor(statusKey, r, g, b, a, classFile)
+    PSA.SetStatusSetting("textColors", statusKey, {
+        r = ClampColor(r, DEFAULT_TEXT_COLOR.r),
+        g = ClampColor(g, DEFAULT_TEXT_COLOR.g),
+        b = ClampColor(b, DEFAULT_TEXT_COLOR.b),
+        a = ClampColor(a, DEFAULT_TEXT_COLOR.a),
+    }, classFile)
 end
 
-local function SetStatusColor(statusKey, r, g, b, a)
-    InitDB()
-    local color = EnsureStatusColor(statusKey)
-    color.r = ClampColor(r, DEFAULT_TEXT_COLOR.r)
-    color.g = ClampColor(g, DEFAULT_TEXT_COLOR.g)
-    color.b = ClampColor(b, DEFAULT_TEXT_COLOR.b)
-    color.a = ClampColor(a, DEFAULT_TEXT_COLOR.a)
-end
-
-local function ResetStatusColor(statusKey)
-    InitDB()
-    PetStatusAlertDB.textColors[statusKey] = {
-        r = DEFAULT_TEXT_COLOR.r,
-        g = DEFAULT_TEXT_COLOR.g,
-        b = DEFAULT_TEXT_COLOR.b,
-        a = DEFAULT_TEXT_COLOR.a,
-    }
+local function ResetStatusColor(statusKey, classFile)
+    SetStatusColor(statusKey, nil, nil, nil, nil, classFile)
 end
 
 
@@ -539,6 +724,8 @@ PSA.GetSavedLanguageMode = GetSavedLanguageMode
 PSA.GetActiveLocale = GetActiveLocale
 PSA.RefreshLocaleTables = RefreshLocaleTables
 PSA.GetDefaultMessage = GetDefaultMessage
+PSA.GetCustomMessage = GetCustomMessage
+PSA.SetCustomMessage = SetCustomMessage
 PSA.GetDisplayMessage = GetDisplayMessage
 PSA.IsStatusEnabled = IsStatusEnabled
 PSA.SetStatusEnabled = SetStatusEnabled

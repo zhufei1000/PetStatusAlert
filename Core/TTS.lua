@@ -10,8 +10,8 @@ local Trim = PSA.Trim
 local addonFrame = PSA.addonFrame
 local text = PSA.alertText
 local DEFAULT_COMBAT_TTS_RATE = PSA.DEFAULT_COMBAT_TTS_RATE or 3
-local COMBAT_TTS_INTERVAL = 3
-local combatTTSTicker
+local DEFAULT_COMBAT_TTS_INTERVAL = 3
+local combatTTSTicker, spokenKey, spokenClass, spokenText
 
 local UI = setmetatable({}, {
     __index = function(_, key)
@@ -55,6 +55,22 @@ local function GetCombatTTSRateDisplayText()
     return string.format(UI.COMBAT_TTS_RATE_VALUE or "Speed: %s", tostring(GetCombatTTSRate()))
 end
 
+local function NormalizeRepeatInterval(value)
+    value = tonumber(value)
+    if not value or value ~= value then return DEFAULT_COMBAT_TTS_INTERVAL end
+    return math.max(2, math.min(15, math.floor(value + 0.5)))
+end
+
+local function GetCombatTTSInterval()
+    local value = tonumber(InitDB().combatTTSInterval)
+    return value == 0 and 0 or NormalizeRepeatInterval(value)
+end
+
+local function GetCombatTTSRepeatInterval()
+    local interval = GetCombatTTSInterval()
+    return interval > 0 and interval or NormalizeRepeatInterval(InitDB().combatTTSLastRepeatInterval)
+end
+
 local function IsPlayerInCombatForTTS()
     return type(InCombatLockdown) == "function" and InCombatLockdown() == true
 end
@@ -76,6 +92,9 @@ local function GetCurrentAlertSpeechText()
     if not addonFrame:IsShown() or PSA.currentStatusKey == nil then
         return nil
     end
+    if PSA.currentStatusForce then
+        return nil
+    end
 
     -- 纯图标模式下文字是隐藏的，设置页文案也说明只朗读“可见”的提示文字。
     if text.IsShown and not text:IsShown() then
@@ -90,11 +109,16 @@ local function GetCurrentAlertSpeechText()
     return value
 end
 
-local function StopCombatTTSReminder()
+local function CancelTicker()
     if combatTTSTicker then
         combatTTSTicker:Cancel()
         combatTTSTicker = nil
     end
+end
+
+local function StopCombatTTSReminder()
+    CancelTicker()
+    spokenKey, spokenClass, spokenText = nil, nil, nil
 end
 
 local function SpeakLocalTTS(spokenText)
@@ -111,17 +135,29 @@ local function SpeakCurrentAlertText()
         return
     end
 
-    local spokenText = GetCurrentAlertSpeechText()
-    if not spokenText then
+    local message = GetCurrentAlertSpeechText()
+    if not message then
         return
     end
 
-    SpeakLocalTTS(spokenText)
+    if SpeakLocalTTS(message) then
+        spokenKey, spokenClass, spokenText = PSA.currentStatusKey, PSA.currentStatusClass, message
+    end
 end
 
 local function RefreshCombatTTSReminder(playImmediately)
-    if not IsCombatTTSEnabled() or not IsPlayerInCombatForTTS() or not GetCurrentAlertSpeechText() then
+    local message = GetCurrentAlertSpeechText()
+    if not IsCombatTTSEnabled() or not IsPlayerInCombatForTTS() or not message then
         StopCombatTTSReminder()
+        return
+    end
+
+    local interval = GetCombatTTSInterval()
+    if interval == 0 then
+        CancelTicker()
+        if spokenKey ~= PSA.currentStatusKey or spokenClass ~= PSA.currentStatusClass or spokenText ~= message then
+            SpeakCurrentAlertText()
+        end
         return
     end
 
@@ -134,7 +170,7 @@ local function RefreshCombatTTSReminder(playImmediately)
     end
 
     if type(C_Timer) == "table" and type(C_Timer.NewTicker) == "function" then
-        combatTTSTicker = C_Timer.NewTicker(COMBAT_TTS_INTERVAL, function()
+        combatTTSTicker = C_Timer.NewTicker(interval, function()
             if not IsCombatTTSEnabled() or not IsPlayerInCombatForTTS() or not GetCurrentAlertSpeechText() then
                 StopCombatTTSReminder()
                 return
@@ -142,6 +178,21 @@ local function RefreshCombatTTSReminder(playImmediately)
             SpeakCurrentAlertText()
         end)
     end
+end
+
+local function SetCombatTTSInterval(value)
+    value = tonumber(value)
+    if not value or value ~= value then return GetCombatTTSInterval() end
+    value = value == 0 and 0 or NormalizeRepeatInterval(value)
+    local previous = GetCombatTTSInterval()
+    if value ~= previous then
+        local db = InitDB()
+        if value == 0 then db.combatTTSLastRepeatInterval = previous end
+        db.combatTTSInterval = value
+        CancelTicker()
+        RefreshCombatTTSReminder(false)
+    end
+    return value
 end
 
 
@@ -152,5 +203,9 @@ end
 PSA.GetCombatTTSRate = GetCombatTTSRate
 PSA.SetCombatTTSRate = SetCombatTTSRate
 PSA.GetCombatTTSRateDisplayText = GetCombatTTSRateDisplayText
+PSA.GetCombatTTSInterval = GetCombatTTSInterval
+PSA.GetCombatTTSRepeatInterval = GetCombatTTSRepeatInterval
+PSA.SetCombatTTSInterval = SetCombatTTSInterval
+PSA.PlayCombatTTSSample = function() return SpeakLocalTTS(UI.PREVIEW_SAMPLE) end
 PSA.StopCombatTTSReminder = StopCombatTTSReminder
 PSA.RefreshCombatTTSReminder = RefreshCombatTTSReminder

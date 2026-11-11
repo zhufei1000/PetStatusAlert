@@ -16,6 +16,15 @@ function PSA.IsAccessibleValue(value)
     return type(issecretvalue) ~= "function" or not issecretvalue(value)
 end
 
+function PSA.GetPlayerClassFile()
+    if type(UnitClass) == "function" then
+        local _, classFile = UnitClass("player")
+        if PSA.IsAccessibleValue(classFile) then
+            return classFile
+        end
+    end
+end
+
 local rangedSlot, ammoSlot, emptyAmmoTexture
 local PROJECTILE_ARROW, PROJECTILE_BULLET = 2, 3
 local ammoItemInfo = {}
@@ -112,11 +121,13 @@ end
 
 local foreverPetSpells = {
     HUNTER = { 883 }, -- Call Pet: do not warn before the player can summon a pet.
-    WARLOCK = { 688, 697, 712, 691, 30146 },
-    MAGE = { 31687 }, -- Enable only if this client actually grants Water Elemental.
+    WARLOCK = { 688, 697, 712, 713, 691, 30146 },
 }
 
 function PSA.SupportsForeverPetClass(classFile, isKnownSpell)
+    if classFile == "MAGE" then
+        return not PSA.GetClassOption("mageRequireSummon") or isKnownSpell(PSA.GetClassOption("mageSummonID"))
+    end
     for _, spellID in ipairs(foreverPetSpells[classFile] or {}) do
         if isKnownSpell(spellID) then
             return true
@@ -129,8 +140,83 @@ function PSA.IsNormalPetMode(mode)
     return mode == "ASSIST"
 end
 
-PSA.PET_STATUS_ORDER = { "NO_PET", "PET_DEAD", "PASSIVE", "DEFENSIVE" }
-if isForever then
-    PSA.PET_STATUS_ORDER[#PSA.PET_STATUS_ORDER + 1] = "AGGRESSIVE"
+local retailPetStatuses = { "NO_PET", "PET_DEAD", "PASSIVE", "DEFENSIVE", "UNKNOWN" }
+local foreverPetStatuses = { "NO_PET", "PET_DEAD", "PASSIVE", "DEFENSIVE", "AGGRESSIVE", "UNKNOWN" }
+PSA.PET_STATUS_ORDER = isForever and foreverPetStatuses or retailPetStatuses
+
+local retailClasses = { "HUNTER", "WARLOCK", "MAGE", "DEATHKNIGHT", "WARRIOR" }
+local foreverClasses = { "HUNTER", "WARLOCK", "MAGE" }
+PSA.WARRIOR_STATUS_KEY = "WARRIOR_DEFENSIVE_STANCE"
+PSA.WRONG_PET_STATUS_KEY = "WARLOCK_WRONG_PET"
+PSA.WARLOCK_SPECS = { 265, 266, 267 }
+local warriorStatuses = { PSA.WARRIOR_STATUS_KEY }
+local function WarlockStatuses(petStatuses)
+    local statuses = {}
+    for index, statusKey in ipairs(petStatuses) do
+        statuses[index] = statusKey
+    end
+    statuses[#statuses + 1] = PSA.WRONG_PET_STATUS_KEY
+    return statuses
 end
-PSA.PET_STATUS_ORDER[#PSA.PET_STATUS_ORDER + 1] = "UNKNOWN"
+local retailWarlockStatuses = WarlockStatuses(retailPetStatuses)
+local foreverWarlockStatuses = WarlockStatuses(foreverPetStatuses)
+
+local retailDemonFamilies = { 23, 16, 15, 17, 29 }
+local foreverDemonFamilies = { 23, 16, 15, 17 }
+-- Incubus (302) and Succubus (17) share the Sayaad rule on both clients.
+-- The other aliases are alternate appearances in the Retail CreatureFamily table.
+local demonFamilyAliases = { [100] = 23, [101] = 16, [102] = 17, [103] = 15, [104] = 29, [302] = 17 }
+local demonFamilyNames
+
+function PSA.GetWarlockPetFamilies(forever)
+    return forever and foreverDemonFamilies or retailDemonFamilies
+end
+
+function PSA.GetActiveWarlockPetFamily()
+    if type(UnitCreatureFamily) ~= "function" then return end
+    local name, familyID = UnitCreatureFamily("pet")
+    if not PSA.IsAccessibleValue(familyID) then return end
+    if type(familyID) == "number" and familyID > 0 then
+        return demonFamilyAliases[familyID] or familyID
+    end
+    if not PSA.IsAccessibleValue(name) or type(name) ~= "string" then return end
+    if not demonFamilyNames then
+        demonFamilyNames = { [PSA.GetWarlockPetLabel(302, true)] = demonFamilyAliases[302] }
+        local getInfo = C_CreatureInfo and C_CreatureInfo.GetCreatureFamilyInfo
+        for _, id in ipairs(PSA.GetWarlockPetFamilies(isForever)) do
+            demonFamilyNames[PSA.GetWarlockPetLabel(id, true)] = id
+            local info = getInfo and getInfo(id)
+            if info and info.name then demonFamilyNames[info.name] = id end
+        end
+        if getInfo then
+            for alias, id in pairs(demonFamilyAliases) do
+                if not isForever or alias == 302 then
+                    local info = getInfo(alias)
+                    if info and info.name then demonFamilyNames[info.name] = id end
+                end
+            end
+        end
+    end
+    return demonFamilyNames[name]
+end
+
+function PSA.GetAlertClasses(forever)
+    return forever and foreverClasses or retailClasses
+end
+
+function PSA.GetClassAlertStatuses(classFile, forever)
+    if forever == nil then
+        forever = isForever
+    end
+    for _, supported in ipairs(PSA.GetAlertClasses(forever)) do
+        if supported == classFile then
+            if classFile == "WARRIOR" then
+                return warriorStatuses
+            end
+            if classFile == "WARLOCK" then
+                return forever and foreverWarlockStatuses or retailWarlockStatuses
+            end
+            return forever and foreverPetStatuses or retailPetStatuses
+        end
+    end
+end

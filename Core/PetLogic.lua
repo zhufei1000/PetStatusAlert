@@ -13,26 +13,13 @@ local GetPlayerSpecId = PSA.GetPlayerSpecId
 local SPEC_HUNTER_MARKSMANSHIP = 254
 local SPEC_DEATHKNIGHT_UNHOLY = 252
 local SPEC_MAGE_FROST = 64
-local SPEC_WARLOCK_AFFLICTION = 265
-local SPEC_WARLOCK_DESTRUCTION = 267
-local SPELL_SUMMON_WATER_ELEMENTAL = 31687
+local WRONG_PET = PSA.WRONG_PET_STATUS_KEY
 local PET_MODE_TOKENS = {
     { "PET_MODE_ASSIST", "ASSIST" },
     { "PET_MODE_DEFENSIVE", "DEFENSIVE" },
     { "PET_MODE_DEFENSIVEASSIST", "DEFENSIVE" },
     { "PET_MODE_PASSIVE", "PASSIVE" },
     { "PET_MODE_AGGRESSIVE", "AGGRESSIVE" },
-}
-
--- Retail talent-definition IDs supplied by the user.
--- Do not use spellID fallback here: spell queries can be unsafe or unstable in combat.
-local WARLOCK_GRIMOIRE_OF_SACRIFICE_TALENTS = {
-    [SPEC_WARLOCK_AFFLICTION] = {
-        [124691] = true,
-    },
-    [SPEC_WARLOCK_DESTRUCTION] = {
-        [125618] = true,
-    },
 }
 
 local grimoireOfSacrificeCache = {
@@ -123,6 +110,7 @@ local function TraitRecordMatches(record, matchIDs)
             if TraitValueMatches(definitionInfo.ID, matchIDs)
                 or TraitValueMatches(definitionInfo.id, matchIDs)
                 or TraitValueMatches(definitionInfo.definitionID, matchIDs)
+                or TraitValueMatches(definitionInfo.spellID, matchIDs)
             then
                 return true
             end
@@ -297,19 +285,18 @@ local function IsTalentActiveByAnyKnownID(matchIDs, specId)
     return false
 end
 
-local function IsWarlockGrimoireOfSacrificeActive()
+local function IsWarlockGrimoireOfSacrificeActive(specId)
     -- Retail trait definition IDs do not describe Forever's talent system.
-    if PSA.IsForeverClient() then
+    if PSA.IsForeverClient() or not PSA.GetClassOption("warlockIgnoreSacrifice") then
         return false
     end
-    local _, classFile = UnitClass("player")
-    if classFile ~= "WARLOCK" then
+    if PSA.GetPlayerClassFile() ~= "WARLOCK" then
         return false
     end
 
-    local specId = GetPlayerSpecId()
-    local matchIDs = WARLOCK_GRIMOIRE_OF_SACRIFICE_TALENTS[specId]
-    if not matchIDs then
+    specId = specId or GetPlayerSpecId()
+    local talentID = PSA.GetWarlockSacrificeID(specId)
+    if not talentID then
         return false
     end
 
@@ -319,7 +306,7 @@ local function IsWarlockGrimoireOfSacrificeActive()
         return grimoireOfSacrificeCache.value
     end
 
-    local active = IsTalentActiveByAnyKnownID(matchIDs, specId)
+    local active = IsTalentActiveByAnyKnownID({ [talentID] = true }, specId)
 
     grimoireOfSacrificeCache.specId = specId
     grimoireOfSacrificeCache.value = active and true or false
@@ -328,8 +315,21 @@ local function IsWarlockGrimoireOfSacrificeActive()
     return grimoireOfSacrificeCache.value
 end
 
+local function HasWrongWarlockPet()
+    if PSA.GetPlayerClassFile() ~= "WARLOCK" or not PSA.IsStatusEnabled(WRONG_PET, "WARLOCK") then
+        return false
+    end
+    local specID = GetPlayerSpecId()
+    local blocked = PSA.GetWarlockBlockedPets(specID)
+    if not blocked or not next(blocked) then
+        return false
+    end
+    local familyID = PSA.GetActiveWarlockPetFamily()
+    return familyID and blocked[familyID] == true and not IsWarlockGrimoireOfSacrificeActive(specID)
+end
+
 local function SupportsPetStatusPrompt()
-    local _, classFile = UnitClass("player")
+    local classFile = PSA.GetPlayerClassFile()
     local specId = GetPlayerSpecId()
 
     if supportsPetStatusCache.valid
@@ -348,7 +348,9 @@ local function SupportsPetStatusPrompt()
     elseif classFile == "WARLOCK" then
         supports = true
     elseif classFile == "MAGE" then
-        supports = specId == SPEC_MAGE_FROST and IsKnownPlayerSpell(SPELL_SUMMON_WATER_ELEMENTAL)
+        local summonID = PSA.GetClassOption("mageSummonID")
+        supports = specId == SPEC_MAGE_FROST and (not PSA.GetClassOption("mageRequireSummon")
+            or IsKnownPlayerSpell(summonID) or IsTalentActiveByAnyKnownID({ [summonID] = true }, specId))
     elseif classFile == "DEATHKNIGHT" then
         supports = specId == SPEC_DEATHKNIGHT_UNHOLY
     end
@@ -445,8 +447,7 @@ local function RefreshPetStatusText()
     end
 
     if not petExists then
-        -- Grimoire of Sacrifice only suppresses the missing-pet warning.
-        -- If a real pet exists, Warlocks must still be checked for Passive/Defensive/Dead states.
+        -- Sacrifice can explain the missing pet. It leaves stance and death checks active.
         local okSacrifice, hasSacrificeTalent = pcall(IsWarlockGrimoireOfSacrificeActive)
         if okSacrifice and hasSacrificeTalent then
             HideStatus()
@@ -465,6 +466,11 @@ local function RefreshPetStatusText()
 
     if petDead then
         ShowStatus("PET_DEAD")
+        return
+    end
+
+    if HasWrongWarlockPet() then
+        ShowStatus(WRONG_PET)
         return
     end
 
@@ -525,6 +531,18 @@ end
 -------------------------------------------------
 
 PSA.ClearPetStatusCaches = ClearPetStatusCaches
+function PSA.GetCurrentPetAlertEligibility(classFile)
+    if PSA.GetPlayerClassFile() ~= classFile then return end
+    local ok, eligible = pcall(SupportsPetStatusPrompt)
+    if ok then return eligible end
+end
+
+function PSA.RefreshClassPetSettings(classFile)
+    if PSA.GetPlayerClassFile() == classFile then
+        ClearPetStatusCaches()
+        RefreshPetStatusText()
+    end
+end
 -- IsKnownPlayerSpell 供 AlertFrame 在显示图标时动态查询术士召唤技能，需保留导出。
 PSA.IsKnownPlayerSpell = IsKnownPlayerSpell
 -- GetPlayerSpecId / IsPlayerMountedOrInVehicle 供 WarriorLogic 复用，需保留导出。

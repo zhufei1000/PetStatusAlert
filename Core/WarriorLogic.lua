@@ -6,21 +6,28 @@
 local _, PSA = ...
 PSA = PSA or _G.PetStatusAlert
 
--- Forever has no specializations. Do not initialize Retail stance detection,
--- register stance events, or expose stance previews/settings on this client.
+-- Forever skips Retail stance detection and events. The settings UI can still
+-- display Retail stance defaults without starting the runtime alert.
 if PSA.IsForeverClient() then
-    local _, classFile = UnitClass("player")
-    if classFile == "WARRIOR" then
+    if PSA.GetPlayerClassFile() == "WARRIOR" then
         for index = #PSA.STATUS_ORDER, 1, -1 do
             PSA.STATUS_ORDER[index] = nil
         end
-        PSA.PreviewStatus = function() PSA.HideStatus() end
-        PSA.GetDisplayMessage = function() return "" end
+        local PreviewStatus, GetDisplayMessage = PSA.PreviewStatus, PSA.GetDisplayMessage
+        PSA.PreviewStatus = function(statusKey, classFile)
+            if classFile and PSA.GetClassAlertStatuses(classFile) then
+                return PreviewStatus(statusKey, classFile)
+            end
+            PSA.HideStatus()
+        end
+        PSA.GetDisplayMessage = function(statusKey, classFile)
+            return classFile and GetDisplayMessage(statusKey, classFile) or ""
+        end
     end
     return
 end
 
-local STATUS_KEY = "WARRIOR_DEFENSIVE_STANCE"
+local STATUS_KEY = PSA.WARRIOR_STATUS_KEY
 local SPEC_WARRIOR_ARMS = 71
 local SPEC_WARRIOR_FURY = 72
 local SPELL_DEFENSIVE_STANCE = 386208
@@ -35,42 +42,22 @@ local PET_STATUS_ORDER = PSA.PET_STATUS_ORDER
 -------------------------------------------------
 
 local function ExtendLocalization()
-    local messages = PSA.LOCALIZED_MESSAGES
     local uiLocales = PSA.UI_LOCALE
-
-    if type(messages) == "table" then
-        if messages.enUS then
-            messages.enUS[STATUS_KEY] = "Defensive Stance active!"
-        end
-        if messages.zhCN then
-            messages.zhCN[STATUS_KEY] = "当前处于：防御姿态"
-        end
-        if messages.zhTW then
-            messages.zhTW[STATUS_KEY] = "目前處於：防禦姿態"
-        end
-        if messages.ruRU then
-            messages.ruRU[STATUS_KEY] = "Сейчас включена защитная стойка"
-        end
-    end
 
     if type(uiLocales) == "table" then
         if uiLocales.enUS then
-            uiLocales.enUS[STATUS_KEY] = "Warrior: Defensive Stance"
             uiLocales.enUS.SUBTITLE = "Customize warning text for supported pet states and class states. Leave blank to use the localized default."
             uiLocales.enUS.SUPPORT = "Supported: Hunter, Warlock, Unholy Death Knight, Frost Mage with Summon Water Elemental, Arms Warrior, Fury Warrior"
         end
         if uiLocales.zhCN then
-            uiLocales.zhCN[STATUS_KEY] = "战士：防御姿态"
             uiLocales.zhCN.SUBTITLE = "自定义受支持的宠物状态和职业状态提醒文字。留空时自动使用当前语言的默认文字。"
             uiLocales.zhCN.SUPPORT = "支持：猎人、术士、邪恶死亡骑士、点出召唤水元素的冰霜法师、武器战士、狂暴战士"
         end
         if uiLocales.zhTW then
-            uiLocales.zhTW[STATUS_KEY] = "戰士：防禦姿態"
             uiLocales.zhTW.SUBTITLE = "自訂受支援的寵物狀態與職業狀態提醒文字。留空時自動使用目前語言的預設文字。"
             uiLocales.zhTW.SUPPORT = "支援：獵人、術士、邪惡死亡騎士、點出召喚水元素的冰霜法師、武器戰士、狂怒戰士"
         end
         if uiLocales.ruRU then
-            uiLocales.ruRU[STATUS_KEY] = "Воин: Защитная стойка"
             uiLocales.ruRU.SUBTITLE = "Настройте предупреждения для поддерживаемых состояний питомца и класса. Пустое поле использует локализованный текст по умолчанию."
             uiLocales.ruRU.SUPPORT = "Поддерживается: Охотник, Чернокнижник, Рыцарь смерти «Нечестивости», Маг «Льда» с элементалем воды, Воин «Оружие», Воин «Неистовство»"
         end
@@ -95,11 +82,7 @@ local function GetPlayerSpecId()
 end
 
 local function IsWarrior()
-    if type(UnitClass) ~= "function" then
-        return false
-    end
-    local _, classFile = UnitClass("player")
-    return classFile == "WARRIOR"
+    return PSA.GetPlayerClassFile() == "WARRIOR"
 end
 
 local function SupportsWarriorStanceAlert()
@@ -148,16 +131,10 @@ if type(PSA.RegisterStatusIcon) == "function" then
     PSA.RegisterStatusIcon("WARRIOR", STATUS_KEY, SPELL_DEFENSIVE_STANCE)
 end
 
--- RefreshLocaleTables replaces PSA.STATUS_LABEL with a new table each time.
--- Wrap it so the Warrior status label is restored after language changes.
 local OriginalRefreshLocaleTables = PSA.RefreshLocaleTables
 if type(OriginalRefreshLocaleTables) == "function" then
     PSA.RefreshLocaleTables = function(...)
         OriginalRefreshLocaleTables(...)
-        local ui = PSA.UI
-        if type(PSA.STATUS_LABEL) == "table" and type(ui) == "table" then
-            PSA.STATUS_LABEL[STATUS_KEY] = ui[STATUS_KEY] or STATUS_KEY
-        end
         RefreshStatusOrderForPlayer()
     end
 end
@@ -173,21 +150,21 @@ end
 -- so the preview and status line never show unrelated pet text.
 local OriginalGetDisplayMessage = PSA.GetDisplayMessage
 if type(OriginalGetDisplayMessage) == "function" then
-    PSA.GetDisplayMessage = function(statusKey, ...)
-        if IsWarrior() and statusKey ~= STATUS_KEY then
+    PSA.GetDisplayMessage = function(statusKey, classFile)
+        if not classFile and IsWarrior() then
             statusKey = STATUS_KEY
         end
-        return OriginalGetDisplayMessage(statusKey, ...)
+        return OriginalGetDisplayMessage(statusKey, classFile)
     end
 end
 
 local OriginalPreviewStatus = PSA.PreviewStatus
 if type(OriginalPreviewStatus) == "function" then
-    PSA.PreviewStatus = function(statusKey, ...)
-        if IsWarrior() then
+    PSA.PreviewStatus = function(statusKey, classFile)
+        if not classFile and IsWarrior() then
             statusKey = STATUS_KEY
         end
-        return OriginalPreviewStatus(statusKey, ...)
+        return OriginalPreviewStatus(statusKey, classFile)
     end
 end
 

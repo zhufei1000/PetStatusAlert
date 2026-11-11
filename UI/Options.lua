@@ -18,7 +18,6 @@ local SetStatusEnabled = PSA.SetStatusEnabled
 local GetStatusColor = PSA.GetStatusColor
 local SetStatusColor = PSA.SetStatusColor
 local ResetStatusColor = PSA.ResetStatusColor
-local ApplyAlertTextColor = PSA.ApplyAlertTextColor
 local ApplyAlertPosition = PSA.ApplyAlertPosition
 local SetAlertPositionLocked = PSA.SetAlertPositionLocked
 local PreviewStatus = PSA.PreviewStatus
@@ -46,7 +45,6 @@ local SetAlertIconSize = PSA.SetAlertIconSize
 local GetAlertIconGap = PSA.GetAlertIconGap
 local SetAlertIconGap = PSA.SetAlertIconGap
 
-local STATUS_ORDER = PSA.STATUS_ORDER
 local SUPPORTED_LOCALES = PSA.SUPPORTED_LOCALES
 
 local UI = setmetatable({}, {
@@ -73,6 +71,7 @@ local ApplyLanguageSelection
 
 local statusLine
 local moveToggleButton
+local classResetDialog
 
 local DEFAULT_ALERT_FONT_SIZE = PSA.DEFAULT_ALERT_FONT_SIZE or 28
 local DEFAULT_ALERT_FLOAT_AMPLITUDE = PSA.DEFAULT_ALERT_FLOAT_AMPLITUDE or 8
@@ -90,6 +89,9 @@ local LAYOUT = {
     contentWidth = 650,
     buttonHeight = 28,
     sliderWidth = 306,
+    statusCardHeight = 60,
+    statusCardGap = 6,
+    statusActionHeight = 22,
 }
 
 local STYLE = {
@@ -101,7 +103,6 @@ local STYLE = {
     muted = { 0.64, 0.63, 0.58, 0.95 },
     white = { 1.00, 1.00, 1.00, 1.00 },
     gold = { 1.00, 0.82, 0.00, 1.00 },
-    green = { 0.35, 0.90, 0.40, 1.00 },
 }
 
 local TEXT = {}
@@ -141,42 +142,15 @@ local function GetNativeProxyDescription()
 end
 
 local function RefreshStaticText()
-    TEXT.NAV_HEADER = LocaleText("SETTINGS", "设置", "設定", "НАСТРОЙКИ")
-    TEXT.SUPPORT_CLASSES = PSA.IsForeverClient() and LocaleText(
-        "Hunter\nWarlock\nMage (Water Elemental)",
-        "猎人\n术士\n法师（召唤水元素）",
-        "獵人\n術士\n法師（召喚水元素）",
-        "Охотник\nЧернокнижник\nМаг (элементаль воды)"
-    ) or LocaleText(
-        "Hunter\nWarlock\nUnholy DK\nFrost Mage\nArms / Fury Warrior",
-        "猎人\n术士\n邪恶死亡骑士\n冰霜法师\n武器 / 狂暴战士",
-        "獵人\n術士\n邪惡死亡騎士\n冰霜法師\n武器 / 狂怒戰士",
-        "Охотник\nЧернокнижник\nНечестивый Рыцарь смерти\nМаг льда\nВоин: Оружие / Неистовство"
-    )
-    TEXT.NAV_ALERTS = LocaleText("Alerts", "提醒设置", "提醒設定", "Предупреждения")
     TEXT.NAV_DISPLAY = LocaleText("Display", "显示样式", "顯示樣式", "Отображение")
     TEXT.NAV_VOICE = LocaleText("Voice", "语音提醒", "語音提醒", "Озвучивание")
     TEXT.NAV_GENERAL = LocaleText("General", "通用", "一般", "Общие")
 
-    TEXT.ALERTS_TITLE = LocaleText("Alert rules and messages", "提醒规则与文字", "提醒規則與文字", "Правила и тексты предупреждений")
-    TEXT.ALERTS_DESC = LocaleText(
-        "Choose which states should trigger alerts. Each state can use its own text and color.",
-        "选择哪些状态需要提醒；每种状态都可以单独设置文字和颜色。",
-        "選擇哪些狀態需要提醒；每種狀態都可以單獨設定文字與顏色。",
-        "Выберите состояния для предупреждений. Для каждого можно настроить текст и цвет."
-    )
     TEXT.CUSTOM_TEXT = LocaleText("Custom text", "自定义文字", "自訂文字", "Свой текст")
     TEXT.USE_DEFAULT = LocaleText("Default", "默认文字", "預設文字", "По умолчанию")
     TEXT.COLOR_HINT = LocaleText("Color: left-click to choose, right-click to reset.", "颜色：左键选择，右键恢复默认。", "顏色：左鍵選擇，右鍵恢復預設。", "Цвет: ЛКМ — выбрать, ПКМ — сбросить.")
 
     TEXT.DISPLAY_TITLE = LocaleText("On-screen alert appearance", "屏幕提醒外观", "螢幕提醒外觀", "Внешний вид предупреждения")
-    TEXT.DISPLAY_DESC = LocaleText(
-        "Position, icon/text mode, size, movement and glow are grouped here.",
-        "位置、图标/文字模式、大小、浮动和流光统一在这里设置。",
-        "位置、圖示/文字模式、大小、浮動和流光統一在這裡設定。",
-        "Здесь находятся позиция, режим значка/текста, размер, движение и свечение."
-    )
-    TEXT.SECTION_POSITION = LocaleText("Position & preview", "位置与预览", "位置與預覽", "Позиция и предпросмотр")
     TEXT.SECTION_PRESENTATION = LocaleText("Icon & text", "图标与文字", "圖示與文字", "Значок и текст")
     TEXT.SECTION_MOTION = LocaleText("Text & movement", "文字与动画", "文字與動畫", "Текст и движение")
     TEXT.SECTION_EFFECTS = LocaleText("Effects", "特效", "特效", "Эффекты")
@@ -194,12 +168,6 @@ local function RefreshStaticText()
     TEXT.POSITION_RESET_DONE = LocaleText("Alert position reset", "提示位置已恢复默认", "提示位置已恢復預設", "Позиция предупреждения сброшена")
 
     TEXT.VOICE_TITLE = LocaleText("Combat voice reminder", "战斗语音提醒", "戰鬥語音提醒", "Голосовое напоминание в бою")
-    TEXT.VOICE_DESC = LocaleText(
-        "TTS is independent from the visual style. Keep it disabled if you only want on-screen alerts.",
-        "TTS 与屏幕样式独立；如果只需要屏幕提醒，保持关闭即可。",
-        "TTS 與螢幕樣式獨立；如果只需要螢幕提醒，保持關閉即可。",
-        "TTS не зависит от визуального оформления. Оставьте выключенным, если нужен только экранный текст."
-    )
 
     TEXT.GENERAL_TITLE = LocaleText("General settings", "通用设置", "一般設定", "Общие настройки")
     TEXT.GENERAL_DESC = LocaleText(
@@ -222,8 +190,8 @@ end
 
 RefreshStaticText()
 
-local function GetPlayerClassColor()
-    local _, classToken = UnitClass("player")
+local function GetPlayerClassColor(classToken)
+    classToken = classToken or PSA.GetPlayerClassFile()
     local colors = CUSTOM_CLASS_COLORS or RAID_CLASS_COLORS
     local color = colors and colors[classToken]
     if color then
@@ -341,11 +309,12 @@ local function CreatePageHeader(parent, titleText, descText)
     return title, desc
 end
 
-local function CreateScrollablePage(parent)
+local function CreateScrollablePage(parent, topInset)
     local scroll = CreateFrame("ScrollFrame", nil, parent, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
+    scroll:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -(topInset or 0))
     scroll:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -24, 0)
     scroll:EnableMouseWheel(true)
+    parent.psaScroll = scroll
 
     local child = CreateFrame("Frame", nil, scroll)
     child:SetSize(LAYOUT.contentWidth, 1)
@@ -409,16 +378,27 @@ local function FormatOneDecimal(value)
     return string.format("%.1f", tonumber(value) or 0)
 end
 
+local function AddTooltip(frame, message)
+    if not message or message == "" then return end
+    frame:SetScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(message, 1, 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    frame:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+end
+
 local function CreateSliderRow(parent, labelText, hintText, yOffset, minValue, maxValue, stepValue, value, valueText, onChanged)
     local label = CreateText(parent, "GameFontNormal", labelText, 14, STYLE.gold)
     label:SetPoint("TOPLEFT", parent, "TOPLEFT", 18, yOffset)
     label:SetWidth(270)
 
-    local hint = CreateText(parent, "GameFontDisableSmall", hintText or "", 11, STYLE.muted)
-    hint:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -4)
-    hint:SetWidth(270)
-    if hint.SetWordWrap then
-        hint:SetWordWrap(true)
+    if hintText and hintText ~= "" then
+        local hitArea = CreateFrame("Frame", nil, parent)
+        hitArea:SetAllPoints(label)
+        hitArea:EnableMouse(true)
+        AddTooltip(hitArea, hintText)
     end
 
     local slider = CreateFrame("Slider", nil, parent, "OptionsSliderTemplate")
@@ -432,6 +412,7 @@ local function CreateSliderRow(parent, labelText, hintText, yOffset, minValue, m
     end
     slider:SetValue(value)
     HideSliderTemplateLabels(slider)
+    AddTooltip(slider, hintText)
 
     local minText = CreateText(parent, "GameFontDisableSmall", tostring(minValue), 10, STYLE.muted)
     minText:SetPoint("TOPLEFT", slider, "BOTTOMLEFT", 0, -3)
@@ -493,24 +474,73 @@ end
 -- Color picker
 -------------------------------------------------
 
-local function UpdateColorSwatch(swatch, statusKey)
+local function RefreshConfiguredAlert(statusKey, classFile)
+    if PSA.currentStatusForce then
+        if PSA.currentStatusKey == statusKey and PSA.currentStatusClass == classFile then
+            PreviewStatus(statusKey, classFile)
+        end
+    elseif PSA.GetPlayerClassFile() == classFile then
+        RefreshPetStatusText()
+    end
+end
+
+local function StopSettingsPreview()
+    if PSA.currentStatusForce then
+        PSA.HideStatus(true)
+        RefreshPetStatusText()
+    end
+end
+
+local function ConfirmClassReset(classFile, onReset)
+    local title = UI.CLASS_RESET_TITLE:format(PSA.GetAlertClassLabel(classFile))
+    local body = UI.CLASS_RESET_BODY
+    if isForever and classFile == "HUNTER" then body = body .. "\n" .. UI.CLASS_RESET_KEEP_FOOD end
+    local function Reset()
+        StopSettingsPreview()
+        if PSA.ResetClassSettings(classFile) then
+            PSA.RefreshClassPetSettings(classFile)
+            if PSA.GetPlayerClassFile() == classFile then
+                RefreshPetStatusText()
+                if PSA.RefreshPetCare then PSA.RefreshPetCare() end
+            end
+            if onReset then onReset() end
+        end
+    end
+    local widgets = rawget(_G, "QFXWidgets")
+    if widgets and type(widgets.Confirm) == "function" then
+        classResetDialog = widgets:Confirm({ reuse = classResetDialog, title = title, text = body,
+            acceptText = UI.RESET_ACTION, cancelText = UI.CANCEL, danger = true, onAccept = Reset })
+        return classResetDialog
+    end
+    if StaticPopupDialogs and StaticPopup_Show then
+        local key = "PETSTATUSALERT_RESET_CLASS"
+        StaticPopupDialogs[key] = {
+            text = "%s\n\n%s", button1 = UI.RESET_ACTION, button2 = UI.CANCEL,
+            OnAccept = function(_, callback) callback() end, timeout = 0, hideOnEscape = true,
+        }
+        return StaticPopup_Show(key, title, body, Reset)
+    end
+end
+
+PSA.ConfirmClassReset = ConfirmClassReset
+
+local function UpdateColorSwatch(swatch, statusKey, classFile)
     if not swatch then
         return
     end
-    local r, g, b, a = GetStatusColor(statusKey)
+    local r, g, b, a = GetStatusColor(statusKey, classFile)
     swatch:SetColorTexture(r, g, b, a or 1)
 end
 
-local function CreateColorButton(parent, statusKey)
+local function CreateColorButton(parent)
     local button = CreateFrame("Button", nil, parent, "BackdropTemplate")
-    button:SetSize(28, 26)
+    button:SetSize(LAYOUT.statusActionHeight, LAYOUT.statusActionHeight)
     button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     ApplyBackdrop(button, { 0.03, 0.03, 0.03, 0.95 }, STYLE.frameBorder)
 
     local swatch = button:CreateTexture(nil, "ARTWORK")
-    swatch:SetPoint("TOPLEFT", button, "TOPLEFT", 4, -4)
-    swatch:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -4, 4)
-    UpdateColorSwatch(swatch, statusKey)
+    swatch:SetPoint("TOPLEFT", button, "TOPLEFT", 3, -3)
+    swatch:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -3, 3)
     button.swatch = swatch
 
     local hover = button:CreateTexture(nil, "HIGHLIGHT")
@@ -520,31 +550,27 @@ local function CreateColorButton(parent, statusKey)
     return button
 end
 
-local function OpenStatusColorPicker(statusKey, swatch)
+local function OpenStatusColorPicker(statusKey, classFile, swatch)
     if not ColorPickerFrame then
         return
     end
 
-    local oldR, oldG, oldB, oldA = GetStatusColor(statusKey)
+    local oldR, oldG, oldB, oldA = GetStatusColor(statusKey, classFile)
 
     local function ApplyPickedColor()
         local r, g, b = ColorPickerFrame:GetColorRGB()
-        SetStatusColor(statusKey, r, g, b, oldA or 1)
-        UpdateColorSwatch(swatch, statusKey)
-        if PSA.currentStatusKey == statusKey then
-            ApplyAlertTextColor(statusKey)
-        end
+        SetStatusColor(statusKey, r, g, b, oldA or 1, classFile)
+        UpdateColorSwatch(swatch, statusKey, classFile)
+        RefreshConfiguredAlert(statusKey, classFile)
         if statusLine then
             statusLine:SetText(UI.COLOR_SAVED or "Color saved")
         end
     end
 
     local function CancelPickedColor()
-        SetStatusColor(statusKey, oldR, oldG, oldB, oldA)
-        UpdateColorSwatch(swatch, statusKey)
-        if PSA.currentStatusKey == statusKey then
-            ApplyAlertTextColor(statusKey)
-        end
+        SetStatusColor(statusKey, oldR, oldG, oldB, oldA, classFile)
+        UpdateColorSwatch(swatch, statusKey, classFile)
+        RefreshConfiguredAlert(statusKey, classFile)
     end
 
     if ColorPickerFrame.SetupColorPickerAndShow then
@@ -569,69 +595,82 @@ end
 -- Alerts page
 -------------------------------------------------
 
-local function CreateStatusCard(parent, statusKey, yOffset)
-    InitDB()
-
+local function CreateStatusCard(parent, statusKey, classFile, yOffset, readOnly, embedded, onToggle)
     local card = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    card:SetSize(LAYOUT.contentWidth, 112)
+    card:SetSize(LAYOUT.contentWidth, LAYOUT.statusCardHeight)
     card:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, yOffset)
-    ApplyBackdrop(card, STYLE.panelBg, STYLE.frameBorder)
+    if not embedded then ApplyBackdrop(card, STYLE.panelBg, STYLE.frameBorder) end
 
-    local r, g, b = GetPlayerClassColor()
-    local accent = card:CreateTexture(nil, "ARTWORK")
-    accent:SetPoint("TOPLEFT", card, "TOPLEFT", 0, -1)
-    accent:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 0, 1)
-    accent:SetWidth(3)
-    accent:SetColorTexture(r, g, b, 0.72)
+    local r, g, b = GetPlayerClassColor(classFile)
+    if readOnly then
+        r, g, b = ColorRGBA(STYLE.muted)
+    end
+    if not embedded then
+        local accent = card:CreateTexture(nil, "ARTWORK")
+        accent:SetPoint("TOPLEFT", card, "TOPLEFT", 0, -1)
+        accent:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 0, 1)
+        accent:SetWidth(3)
+        accent:SetColorTexture(r, g, b, 0.72)
+    end
 
     local check = CreateFrame("CheckButton", nil, card, "UICheckButtonTemplate")
-    check:SetSize(22, 22)
-    check:SetPoint("TOPLEFT", card, "TOPLEFT", 12, -10)
-    check:SetChecked(IsStatusEnabled(statusKey))
+    check:SetSize(20, 20)
+    check:SetPoint("LEFT", card, "TOPLEFT", 12, -16)
 
-    local title = CreateText(card, "GameFontNormal", STATUS_LABEL[statusKey] or statusKey, 15, STYLE.white)
-    title:SetPoint("LEFT", check, "RIGHT", 3, 0)
-    title:SetWidth(190)
+    local title = CreateText(card, "GameFontNormal", STATUS_LABEL[statusKey] or statusKey, 14, STYLE.white)
+    title:SetPoint("LEFT", check, "RIGHT", 4, 0)
+    title:SetWidth(230)
+    title:SetWordWrap(false)
 
-    local keyText = CreateText(card, "GameFontDisableSmall", statusKey, 10, STYLE.muted)
-    keyText:SetPoint("LEFT", title, "RIGHT", 6, 0)
-    keyText:SetWidth(90)
+    local defaultText = CreateText(card, "GameFontDisableSmall", (UI.DEFAULT_PREFIX or "Default:") .. " " .. GetDefaultMessage(statusKey), 11, STYLE.muted, "RIGHT")
+    defaultText:SetPoint("RIGHT", card, "TOPRIGHT", -14, -16)
+    defaultText:SetWidth(LAYOUT.contentWidth - 294)
+    defaultText:SetWordWrap(false)
 
-    local enabledText = CreateText(card, "GameFontDisableSmall", UI.ENABLE_ALERT or "Enable this alert", 11, STYLE.muted)
-    enabledText:SetPoint("TOPRIGHT", card, "TOPRIGHT", -14, -13)
-    enabledText:SetWidth(190)
-    enabledText:SetJustifyH("RIGHT")
+    local customLabel = CreateText(card, "GameFontDisableSmall", TEXT.CUSTOM_TEXT, 12, readOnly and STYLE.muted or STYLE.gold)
+    customLabel:SetWidth(92)
+
+    local editBox = CreateFrame("EditBox", nil, card, "InputBoxTemplate")
+    editBox:SetHeight(24)
+    editBox:SetPoint("LEFT", customLabel, "RIGHT", 4, 0)
+    SkinEditBox(editBox)
+
+    local colorButton = CreateColorButton(card)
+    editBox:SetPoint("RIGHT", colorButton, "LEFT", -8, 0)
+
+    local previewButton = CreateButton(card, UI.PREVIEW or "Preview", 70, LAYOUT.statusActionHeight)
+    local defaultButton = CreateButton(card, TEXT.USE_DEFAULT, 92, LAYOUT.statusActionHeight)
+    defaultButton:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -14, 6)
+    previewButton:SetPoint("RIGHT", defaultButton, "LEFT", -7, 0)
+    colorButton:SetPoint("RIGHT", previewButton, "LEFT", -7, 0)
+    customLabel:SetPoint("LEFT", card, "BOTTOMLEFT", 16, 6 + LAYOUT.statusActionHeight / 2)
+
+    if readOnly then
+        check:SetChecked(PSA.GetDefaultStatusEnabled(statusKey))
+        colorButton.swatch:SetColorTexture(PSA.GetDefaultStatusColor())
+        for _, control in ipairs({ check, editBox, colorButton, previewButton, defaultButton }) do
+            control:Disable()
+            control:SetAlpha(0.5)
+        end
+        return
+    end
 
     check:SetScript("OnClick", function(self)
         local enabled = self:GetChecked() and true or false
-        SetStatusEnabled(statusKey, enabled)
-        RefreshPetStatusText()
+        SetStatusEnabled(statusKey, enabled, classFile)
+        RefreshConfiguredAlert(statusKey, classFile)
+        if onToggle then onToggle() end
         if statusLine then
             local formatText = enabled and UI.ALERT_ENABLED or UI.ALERT_DISABLED
             statusLine:SetText(string.format(formatText or "%s", STATUS_LABEL[statusKey] or statusKey))
         end
     end)
 
-    local defaultText = CreateText(card, "GameFontDisableSmall", (UI.DEFAULT_PREFIX or "Default:") .. " " .. GetDefaultMessage(statusKey), 11, STYLE.muted)
-    defaultText:SetPoint("TOPLEFT", card, "TOPLEFT", 16, -39)
-    defaultText:SetWidth(LAYOUT.contentWidth - 32)
-
-    local customLabel = CreateText(card, "GameFontDisableSmall", TEXT.CUSTOM_TEXT, 11, STYLE.gold)
-    customLabel:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 16, 17)
-    customLabel:SetWidth(80)
-
-    local editBox = CreateFrame("EditBox", nil, card, "InputBoxTemplate")
-    editBox:SetSize(296, 28)
-    editBox:SetPoint("LEFT", customLabel, "RIGHT", 2, 0)
-    SkinEditBox(editBox)
-    editBox:SetText(PetStatusAlertDB.customMessages[statusKey] or "")
-
     editBox:SetScript("OnEscapePressed", function(self)
         self:ClearFocus()
     end)
     editBox:SetScript("OnEnterPressed", function(self)
         self:ClearFocus()
-        RefreshPetStatusText()
     end)
     editBox:SetScript("OnEditFocusGained", function(self)
         if self.HighlightText then
@@ -639,78 +678,363 @@ local function CreateStatusCard(parent, statusKey, yOffset)
         end
     end)
     editBox:SetScript("OnEditFocusLost", function()
-        RefreshPetStatusText()
+        RefreshConfiguredAlert(statusKey, classFile)
     end)
     editBox:SetScript("OnTextChanged", function(self, userInput)
         if not userInput then
             return
         end
-        InitDB()
-        PetStatusAlertDB.customMessages[statusKey] = self:GetText() or ""
+        PSA.SetCustomMessage(statusKey, self:GetText(), classFile)
         if statusLine then
             statusLine:SetText(UI.SAVED or "Saved automatically")
         end
-        if PSA.currentStatusKey == statusKey then
-            PreviewStatus(statusKey)
+        if PSA.currentStatusKey == statusKey and PSA.currentStatusClass == classFile then
+            RefreshConfiguredAlert(statusKey, classFile)
         end
     end)
 
-    local colorButton = CreateColorButton(card, statusKey)
-    colorButton:SetPoint("LEFT", editBox, "RIGHT", 8, 0)
     colorButton:SetScript("OnClick", function(self, mouseButton)
         if mouseButton == "RightButton" then
-            ResetStatusColor(statusKey)
-            UpdateColorSwatch(self.swatch, statusKey)
-            PreviewStatus(statusKey)
+            ResetStatusColor(statusKey, classFile)
+            UpdateColorSwatch(self.swatch, statusKey, classFile)
+            PreviewStatus(statusKey, classFile)
             if statusLine then
                 statusLine:SetText(UI.COLOR_RESET or "Color reset")
             end
         else
-            OpenStatusColorPicker(statusKey, self.swatch)
+            OpenStatusColorPicker(statusKey, classFile, self.swatch)
         end
     end)
 
-    local previewButton = CreateButton(card, UI.PREVIEW or "Preview", 70, 26)
-    previewButton:SetPoint("LEFT", colorButton, "RIGHT", 7, 0)
     previewButton:SetScript("OnClick", function()
-        PreviewStatus(statusKey)
+        PreviewStatus(statusKey, classFile)
         if statusLine then
-            statusLine:SetText((STATUS_LABEL[statusKey] or statusKey) .. " - " .. GetDisplayMessage(statusKey))
+            statusLine:SetText((STATUS_LABEL[statusKey] or statusKey) .. " - " .. GetDisplayMessage(statusKey, classFile))
         end
     end)
 
-    local defaultButton = CreateButton(card, TEXT.USE_DEFAULT, 108, 26)
-    defaultButton:SetPoint("LEFT", previewButton, "RIGHT", 7, 0)
     defaultButton:SetScript("OnClick", function()
-        InitDB()
-        PetStatusAlertDB.customMessages[statusKey] = ""
+        PSA.SetCustomMessage(statusKey, "", classFile)
         editBox:SetText("")
-        if PSA.currentStatusKey == statusKey then
-            PreviewStatus(statusKey)
-        end
+        RefreshConfiguredAlert(statusKey, classFile)
         if statusLine then
             statusLine:SetText(UI.CLEARED or "Custom text cleared")
         end
     end)
 
-    return card
+    return function()
+        check:SetChecked(IsStatusEnabled(statusKey, classFile))
+        editBox:SetText(PSA.GetCustomMessage(statusKey, classFile))
+        UpdateColorSwatch(colorButton.swatch, statusKey, classFile)
+    end
 end
 
-local function DrawAlertsPage(parent)
-    local page, finish = CreateScrollablePage(parent)
-    local _, desc = CreatePageHeader(page, TEXT.ALERTS_TITLE, TEXT.ALERTS_DESC)
+local function CreateRuleCheck(parent, label, x, y, width, setValue)
+    local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+    check:SetSize(20, 20)
+    check:SetPoint("LEFT", parent, "TOPLEFT", x, y)
+    local text = CreateText(parent, "GameFontNormal", label, 12, setValue and STYLE.text or STYLE.muted)
+    text:SetPoint("LEFT", check, "RIGHT", 5, 0)
+    text:SetWidth(width)
+    if setValue then
+        if check.SetHitRectInsets then check:SetHitRectInsets(0, -width - 5, 0, 0) end
+        check:SetScript("OnClick", function(self) setValue(not not self:GetChecked()) end)
+    else
+        check:Disable()
+        check:SetAlpha(0.5)
+    end
+    return check
+end
 
-    local colorHint = CreateText(page, "GameFontDisableSmall", TEXT.COLOR_HINT, 11, STYLE.gold)
-    colorHint:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -8)
-    colorHint:SetWidth(LAYOUT.contentWidth)
+local function CreateRuleID(parent, label, y, getValue, setValue)
+    local text = CreateText(parent, "GameFontNormal", label, 12, setValue and STYLE.text or STYLE.muted)
+    text:SetPoint("LEFT", parent, "TOPLEFT", 16, y)
+    text:SetWidth(LAYOUT.contentWidth - 136)
+    local input = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
+    input:SetSize(96, 24)
+    input:SetPoint("RIGHT", parent, "TOPRIGHT", -16, y)
+    SkinEditBox(input)
+    input:SetNumeric(true)
+    input:SetMaxLetters(10)
+    input:SetJustifyH("RIGHT")
+    local function Refresh()
+        input:SetText(tostring(getValue() or ""))
+    end
+    if setValue then
+        input:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+        input:SetScript("OnEditFocusLost", function(self)
+            setValue(self:GetText())
+            Refresh()
+        end)
+        input:SetScript("OnEscapePressed", function(self)
+            Refresh()
+            self:ClearFocus()
+        end)
+    else
+        input:Disable()
+        input:SetAlpha(0.5)
+    end
+    return input, Refresh
+end
 
-    local startY = -76
-    local step = 122
-    for index, statusKey in ipairs(STATUS_ORDER) do
-        CreateStatusCard(page, statusKey, startY - ((index - 1) * step))
+local function DrawWarlockRules(page, y, forever, readOnly)
+    local key = PSA.WRONG_PET_STATUS_KEY
+    local box = CreateFrame("Frame", nil, page, "BackdropTemplate")
+    box:SetWidth(LAYOUT.contentWidth)
+    box:SetPoint("TOPLEFT", page, "TOPLEFT", 0, y)
+    ApplyBackdrop(box, STYLE.panelBg, STYLE.frameBorder)
+    local hint = CreateText(box, "GameFontDisableSmall", UI.WARLOCK_PET_RULES_HINT, 12, STYLE.muted)
+    hint:SetPoint("TOPLEFT", box, "TOPLEFT", 16, -62)
+    hint:SetWidth(LAYOUT.contentWidth - 32)
+    hint:SetWordWrap(true)
+    local spec = forever and 0 or PSA.WARLOCK_SPECS[1]
+    local function RefreshHint()
+        if readOnly then
+            hint:SetText(UI.WARLOCK_PET_RULES_HINT)
+        elseif not IsStatusEnabled(key, "WARLOCK") then
+            hint:SetText(UI.WRONG_PET_OFF)
+        else
+            local blocked = PSA.GetWarlockBlockedPets(spec)
+            hint:SetText(blocked and next(blocked) and UI.WARLOCK_PET_RULES_HINT or UI.WRONG_PET_NONE)
+        end
+    end
+    if not forever and not readOnly and PSA.GetPlayerClassFile() == "WARLOCK" then
+        local current = PSA.GetPlayerSpecId()
+        if UI.WARLOCK_SPECS[current] then spec = current end
+    end
+    local petChecks, specButtons = {}, {}
+    local refreshCard
+    local sacrifice, idInput, refreshID
+    local function Refresh()
+        if refreshCard then refreshCard() end
+        local blocked = not readOnly and PSA.GetWarlockBlockedPets(spec)
+        for familyID, check in pairs(petChecks) do
+            check:SetChecked(blocked and blocked[familyID] == true or false)
+        end
+        for specID, button in pairs(specButtons) do
+            local selected = specID == spec
+            button:SetButtonState(selected and "PUSHED" or "NORMAL", selected)
+            button:SetAlpha(selected and 1 or 0.72)
+        end
+        if sacrifice then
+            sacrifice:SetChecked(PSA.GetClassOption("warlockIgnoreSacrifice", readOnly))
+            refreshID()
+        end
+        RefreshHint()
+    end
+    refreshCard = CreateStatusCard(box, key, "WARLOCK", 0, readOnly, true, RefreshHint)
+    local specY = -62 - math.max(26, hint:GetStringHeight()) - 13
+    local gridY = specY
+    if not forever then
+        local label = CreateText(box, "GameFontNormal", UI.WARLOCK_SPEC, 12, STYLE.text)
+        label:SetPoint("LEFT", box, "TOPLEFT", 16, specY)
+        local previous
+        for _, specID in ipairs(PSA.WARLOCK_SPECS) do
+            local button = CreateButton(box, UI.WARLOCK_SPECS[specID], 112, 22)
+            if previous then
+                button:SetPoint("LEFT", previous, "RIGHT", 6, 0)
+            else
+                button:SetPoint("LEFT", box, "TOPLEFT", 170, specY)
+            end
+            specButtons[specID], previous = button, button
+            button:SetScript("OnClick", function()
+                if idInput and idInput:HasFocus() then idInput:ClearFocus() end
+                spec = specID
+                Refresh()
+            end)
+        end
+        gridY = specY - 26
     end
 
-    finish(76 + (#STATUS_ORDER * step) + 12)
+    local gridLabel = CreateText(box, "GameFontNormal", UI.WARLOCK_BLOCKED_PETS, 12, readOnly and STYLE.muted or STYLE.white)
+    gridLabel:SetPoint("LEFT", box, "TOPLEFT", 16, gridY)
+    local familyIDs = PSA.GetWarlockPetFamilies(forever)
+    for index, familyID in ipairs(familyIDs) do
+        local column, row = (index - 1) % 2, math.floor((index - 1) / 2)
+        petChecks[familyID] = CreateRuleCheck(box, PSA.GetWarlockPetLabel(familyID), 16 + column * 308, gridY - 23 - row * 23, 274,
+            not readOnly and function(blocked)
+                PSA.SetWarlockBlockedPet(spec, familyID, blocked)
+                PSA.RefreshClassPetSettings("WARLOCK")
+                RefreshHint()
+            end)
+    end
+
+    local endY = gridY - 23 * math.ceil(#familyIDs / 2) - 23
+    if not forever then
+        sacrifice = CreateRuleCheck(box, UI.WARLOCK_IGNORE_SACRIFICE, 16, endY, LAYOUT.contentWidth - 56,
+            not readOnly and function(on)
+                PSA.SetClassOption("warlockIgnoreSacrifice", on)
+                PSA.RefreshClassPetSettings("WARLOCK")
+            end)
+        local advanced = CreateFrame("Frame", nil, box)
+        advanced:SetSize(LAYOUT.contentWidth, 60)
+        advanced:SetPoint("TOPLEFT", box, "TOPLEFT", 0, endY - 48)
+        advanced:Hide()
+        idInput, refreshID = CreateRuleID(advanced, UI.WARLOCK_SACRIFICE_ID, -13, function()
+            return PSA.GetWarlockSacrificeID(spec, readOnly)
+        end, not readOnly and function(value)
+            PSA.SetWarlockSacrificeID(spec, value)
+            PSA.RefreshClassPetSettings("WARLOCK")
+        end)
+        local idHint = CreateText(advanced, "GameFontDisableSmall", UI.WARLOCK_SACRIFICE_HINT, 11, STYLE.muted)
+        idHint:SetPoint("TOPLEFT", advanced, "TOPLEFT", 16, -30)
+        idHint:SetWidth(LAYOUT.contentWidth - 32)
+        local button = CreateButton(box, "+ " .. UI.ADVANCED, 112, 22)
+        button:SetPoint("LEFT", box, "TOPLEFT", 16, endY - 28)
+        local collapsedHeight = -endY + 48
+        box:SetHeight(collapsedHeight)
+        button:SetScript("OnClick", function(self)
+            local expanded = not advanced:IsShown()
+            if not expanded and idInput:HasFocus() then idInput:ClearFocus() end
+            advanced:SetShown(expanded)
+            self:SetText((expanded and "- " or "+ ") .. UI.ADVANCED)
+            box:SetHeight(collapsedHeight + (expanded and 60 or 0))
+            if box.OnLayout then box.OnLayout() end
+        end)
+    else
+        box:SetHeight(-endY)
+    end
+    return box, Refresh
+end
+
+local function DrawMageRules(page, y, readOnly)
+    local height = 122
+    local box = CreateSection(page, UI.MAGE_SUMMON_SETTINGS, UI.MAGE_SUMMON_HINT, y, height)
+    local check = CreateRuleCheck(box, UI.MAGE_REQUIRE_SUMMON, 16, -66, LAYOUT.contentWidth - 56,
+        not readOnly and function(on)
+            PSA.SetClassOption("mageRequireSummon", on)
+            PSA.RefreshClassPetSettings("MAGE")
+            if PSA.RefreshOpenClassEligibility then PSA.RefreshOpenClassEligibility() end
+        end)
+    local _, refreshID = CreateRuleID(box, UI.MAGE_SUMMON_ID, -96, function()
+        return PSA.GetClassOption("mageSummonID", readOnly)
+    end, not readOnly and function(value)
+        PSA.SetClassOption("mageSummonID", value)
+        PSA.RefreshClassPetSettings("MAGE")
+        if PSA.RefreshOpenClassEligibility then PSA.RefreshOpenClassEligibility() end
+    end)
+    return height, function()
+        check:SetChecked(PSA.GetClassOption("mageRequireSummon", readOnly))
+        refreshID()
+    end
+end
+
+local function DrawFeedingRules(page, y, readOnly)
+    local height = 154
+    local hint = UI.FEED_SETTINGS_HINT
+    local openMenu = not readOnly and PSA.OpenPetFoodSettingsMenu
+    if not readOnly and not openMenu then hint = UI.FEED_REQUIRES_HUNTER end
+    local box = CreateSection(page, UI.FEED_SETTINGS, hint, y, height)
+    local check = CreateRuleCheck(box, UI.FEED_ENABLED, 16, -72, LAYOUT.contentWidth - 56,
+        not readOnly and function(on)
+            PSA.SetClassOption("petFeedEnabled", on)
+            if PSA.RefreshPetCare then PSA.RefreshPetCare() end
+        end)
+    local unhappy = CreateRuleCheck(box, UI.PET_UNHAPPY_ENABLED, 16, -96, LAYOUT.contentWidth - 56,
+        not readOnly and function(on)
+            PSA.SetClassOption("petUnhappyAlertEnabled", on)
+            if PSA.RefreshPetCare then PSA.RefreshPetCare() end
+        end)
+    local label = CreateText(box, "GameFontNormal", UI.FEED_CHOOSE_TITLE, 12, openMenu and STYLE.text or STYLE.muted)
+    label:SetPoint("LEFT", box, "TOPLEFT", 16, -125)
+    label:SetWidth(LAYOUT.contentWidth - 302)
+    local button = CreateButton(box, UI.FEED_CHOOSE_AUTO, 260, 22)
+    button:SetPoint("RIGHT", box, "TOPRIGHT", -16, -125)
+    local function Refresh()
+        check:SetChecked(PSA.GetClassOption("petFeedEnabled", readOnly))
+        unhappy:SetChecked(PSA.GetClassOption("petUnhappyAlertEnabled", readOnly))
+        button:SetText(openMenu and PSA.GetPetFeedFoodLabel() or UI.FEED_CHOOSE_AUTO)
+    end
+    if openMenu then
+        local menu
+        button:SetScript("OnClick", function(self)
+            if InCombatLockdown() then
+                statusLine:SetText(UI.SETTING_OUT_OF_COMBAT)
+            else
+                menu = openMenu(self, Refresh)
+            end
+        end)
+        button:SetScript("OnHide", function()
+            if menu then menu:Close(); menu = nil end
+        end)
+    else
+        button:Disable()
+        button:SetAlpha(0.5)
+    end
+    return height, Refresh
+end
+
+local function DrawAlertsPage(parent, classFile, forever)
+    local page, finish = CreateScrollablePage(parent)
+    local readOnly = forever ~= isForever
+    local statuses = PSA.GetClassAlertStatuses(classFile, forever)
+    local description = PSA.GetClassSupportNote(classFile, forever)
+    if statuses then
+        description = description .. "\n" .. (readOnly and UI.OTHER_CLIENT_SETTINGS or TEXT.COLOR_HINT)
+    end
+    local title = statuses and PSA.GetAlertClassLabel(classFile, forever) or PSA.GetAlertClassLabel(classFile)
+    local _, desc = CreatePageHeader(page, title, description)
+    local startY = 36 + desc:GetStringHeight()
+    local updateEligibility
+    if statuses and not readOnly and (forever or classFile == "MAGE") and PSA.GetPlayerClassFile() == classFile then
+        local eligibility = CreateText(page, "GameFontDisableSmall", "", 12, STYLE.text)
+        eligibility:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -4)
+        eligibility:SetWidth(LAYOUT.contentWidth - 10)
+        updateEligibility = function()
+            local eligible = PSA.GetCurrentPetAlertEligibility(classFile)
+            eligibility:SetText(eligible == nil and "" or (eligible and UI.ELIGIBILITY_MET or UI.ELIGIBILITY_UNMET))
+        end
+        startY = startY + 20
+    end
+
+    local refreshes = {}
+    local step = LAYOUT.statusCardHeight + LAYOUT.statusCardGap
+    local height = startY
+    for _, statusKey in ipairs(statuses or {}) do
+        if statusKey ~= PSA.WRONG_PET_STATUS_KEY then
+            local refresh = CreateStatusCard(page, statusKey, classFile, -height, readOnly)
+            if refresh then refreshes[#refreshes + 1] = refresh end
+            height = height + step
+        end
+    end
+
+    local rulesHeight, refreshRules, rulesBox
+    if classFile == "WARLOCK" then
+        rulesBox, refreshRules = DrawWarlockRules(page, -height, forever, readOnly)
+    elseif classFile == "MAGE" then
+        rulesHeight, refreshRules = DrawMageRules(page, -height, readOnly)
+    elseif forever and classFile == "HUNTER" then
+        rulesHeight, refreshRules = DrawFeedingRules(page, -height, readOnly)
+    end
+    local function Refresh()
+        for _, refresh in ipairs(refreshes) do
+            refresh()
+        end
+        if refreshRules then refreshRules() end
+        if updateEligibility then updateEligibility() end
+    end
+    local resetButton
+    if statuses and not readOnly then
+        resetButton = CreateButton(page, UI.CLASS_RESET, 160, 24)
+        resetButton:SetScript("OnClick", function()
+            ConfirmClassReset(classFile, function()
+                Refresh()
+                if statusLine then statusLine:SetText(UI.CLASS_RESET_DONE) end
+            end)
+        end)
+    end
+    local function LayoutPage()
+        local bottom = height + (rulesBox and rulesBox:GetHeight() or rulesHeight or 0)
+        if resetButton then
+            resetButton:ClearAllPoints()
+            resetButton:SetPoint("TOPRIGHT", page, "TOPRIGHT", -2, -bottom - 10)
+            bottom = bottom + 34
+        end
+        finish(bottom + 12)
+    end
+    if rulesBox then rulesBox.OnLayout = LayoutPage end
+    LayoutPage()
+    return Refresh, updateEligibility
 end
 
 -------------------------------------------------
@@ -745,32 +1069,27 @@ local function SetIconModeButtonState(button, active)
 end
 
 local function DrawDisplayPage(parent)
-    local page, finish = CreateScrollablePage(parent)
-    CreatePageHeader(page, TEXT.DISPLAY_TITLE, TEXT.DISPLAY_DESC)
+    local page, finish = CreateScrollablePage(parent, 63)
+    local title = CreateText(parent, "GameFontNormal", TEXT.DISPLAY_TITLE, 18, STYLE.white)
+    title:SetPoint("TOPLEFT")
 
-    local y = -72
-
-    -------------------------------------------------
-    -- Position
-    -------------------------------------------------
-    local positionBox = CreateSection(page, TEXT.SECTION_POSITION, LocaleText(
-        "Preview the alert, unlock it to drag, or restore the default screen position.",
-        "先预览提醒；需要移动时解锁后直接拖动屏幕提醒，也可恢复默认位置。",
-        "先預覽提醒；需要移動時解鎖後直接拖動螢幕提醒，也可恢復預設位置。",
-        "Покажите предупреждение, разблокируйте его для перетаскивания или верните позицию по умолчанию."
-    ), y, 104)
-
-    local previewButton = CreateButton(positionBox, UI.PREVIEW or "Preview", 96, 28)
-    previewButton:SetPoint("BOTTOMLEFT", positionBox, "BOTTOMLEFT", 18, 15)
+    local previewButton = CreateButton(parent, UI.STOP_PREVIEW, 96, 26)
+    previewButton:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -28)
+    local function RefreshPreviewButton()
+        previewButton:SetText(PSA.IsDisplayPreviewActive() and UI.STOP_PREVIEW or UI.PREVIEW)
+    end
+    RefreshPreviewButton()
     previewButton:SetScript("OnClick", function()
-        PreviewStatus("PASSIVE")
+        if PSA.IsDisplayPreviewActive() then StopSettingsPreview() else PSA.PreviewDisplay() end
+        RefreshPreviewButton()
         if statusLine then
-            statusLine:SetText(GetDisplayMessage("PASSIVE"))
+            statusLine:SetText(PSA.IsDisplayPreviewActive() and UI.PREVIEW_SAMPLE or UI.FOOTER)
         end
     end)
 
-    moveToggleButton = CreateButton(positionBox, GetMoveButtonText(), 112, 28)
+    moveToggleButton = CreateButton(parent, GetMoveButtonText(), 112, 26)
     moveToggleButton:SetPoint("LEFT", previewButton, "RIGHT", 10, 0)
+    AddTooltip(moveToggleButton, UI.MOVE_HINT)
     moveToggleButton:SetScript("OnClick", function()
         InitDB()
         local locked = not PetStatusAlertDB.alertLocked
@@ -778,14 +1097,15 @@ local function DrawDisplayPage(parent)
         moveToggleButton:SetText(GetMoveButtonText())
         AutoFitButton(moveToggleButton, 112)
         if not locked then
-            PreviewStatus("PASSIVE")
+            PSA.PreviewDisplay()
+            RefreshPreviewButton()
         end
         if statusLine then
             statusLine:SetText(locked and (UI.LOCKED_STATUS or TEXT.LOCK) or (UI.UNLOCKED_STATUS or TEXT.UNLOCK))
         end
     end)
 
-    local resetButton = CreateButton(positionBox, TEXT.RESET_POSITION, 130, 28)
+    local resetButton = CreateButton(parent, TEXT.RESET_POSITION, 130, 26)
     resetButton:SetPoint("LEFT", moveToggleButton, "RIGHT", 10, 0)
     resetButton:SetScript("OnClick", function()
         InitDB()
@@ -796,26 +1116,28 @@ local function DrawDisplayPage(parent)
             y = 220,
         }
         ApplyAlertPosition()
-        PreviewStatus("PASSIVE")
+        PSA.PreviewDisplay()
+        RefreshPreviewButton()
         if statusLine then
             statusLine:SetText(TEXT.POSITION_RESET_DONE)
         end
     end)
 
-    y = y - 114
+    local y = 0
 
     -------------------------------------------------
     -- Icon + text presentation
     -------------------------------------------------
-    local presentationBox = CreateSection(page, TEXT.SECTION_PRESENTATION, UI.ANIMATION_ICON_MODE_HINT or "", y, 258)
+    local presentationBox = CreateSection(page, TEXT.SECTION_PRESENTATION, nil, y, 183)
 
     local modeLabel = CreateText(presentationBox, "GameFontNormal", UI.ANIMATION_ICON_MODE or "Icon mode", 14, STYLE.gold)
-    modeLabel:SetPoint("TOPLEFT", presentationBox, "TOPLEFT", 18, -70)
+    modeLabel:SetPoint("TOPLEFT", presentationBox, "TOPLEFT", 18, -47)
 
     local modeButtons = {}
     local previous
     for _, mode in ipairs({ "text", "icon", "both" }) do
         local button = CreateButton(presentationBox, GetIconModeLabel(mode), 112, 28)
+        AddTooltip(button, UI.ANIMATION_ICON_MODE_HINT)
         if previous then
             button:SetPoint("LEFT", previous, "RIGHT", 8, 0)
         else
@@ -826,7 +1148,6 @@ local function DrawDisplayPage(parent)
             for key, modeButton in pairs(modeButtons) do
                 SetIconModeButtonState(modeButton, key == newMode)
             end
-            PreviewStatus("NO_PET")
             if statusLine then
                 statusLine:SetText(string.format(UI.ANIMATION_ICON_MODE_CHANGED or "Icon mode set to: %s", GetIconModeLabel(newMode)))
             end
@@ -844,7 +1165,7 @@ local function DrawDisplayPage(parent)
         presentationBox,
         UI.ANIMATION_ICON_SIZE or "Icon size",
         UI.ANIMATION_ICON_SIZE_HINT or "Default: 48.",
-        -120,
+        -88,
         24,
         96,
         1,
@@ -852,7 +1173,6 @@ local function DrawDisplayPage(parent)
         string.format(UI.ANIMATION_ICON_SIZE_VALUE or "Icon size: %s", tostring(GetAlertIconSize and GetAlertIconSize() or DEFAULT_ALERT_ICON_SIZE)),
         function(value)
             local newValue = SetAlertIconSize(value)
-            PreviewStatus("NO_PET")
             return string.format(UI.ANIMATION_ICON_SIZE_VALUE or "Icon size: %s", tostring(newValue))
         end
     )
@@ -861,7 +1181,7 @@ local function DrawDisplayPage(parent)
         presentationBox,
         TEXT.ICON_GAP,
         TEXT.ICON_GAP_HINT,
-        -188,
+        -134,
         0,
         40,
         1,
@@ -869,28 +1189,22 @@ local function DrawDisplayPage(parent)
         string.format(TEXT.ICON_GAP_VALUE, tostring(GetAlertIconGap and GetAlertIconGap() or DEFAULT_ALERT_ICON_GAP)),
         function(value)
             local newValue = SetAlertIconGap and SetAlertIconGap(value) or DEFAULT_ALERT_ICON_GAP
-            PreviewStatus("NO_PET")
             return string.format(TEXT.ICON_GAP_VALUE, tostring(newValue))
         end
     )
 
-    y = y - 268
+    y = y - 193
 
     -------------------------------------------------
     -- Text and movement
     -------------------------------------------------
-    local motionBox = CreateSection(page, TEXT.SECTION_MOTION, LocaleText(
-        "Adjust the text size and vertical floating animation.",
-        "调整提示文字大小以及上下浮动的幅度和速度。",
-        "調整提示文字大小以及上下浮動的幅度和速度。",
-        "Настройте размер текста и вертикальную анимацию."
-    ), y, 278)
+    local motionBox = CreateSection(page, TEXT.SECTION_MOTION, nil, y, 190)
 
     CreateSliderRow(
         motionBox,
         UI.ANIMATION_FONT_SIZE or "Alert font size",
         UI.ANIMATION_FONT_SIZE_HINT or "Default: 28.",
-        -72,
+        -45,
         12,
         72,
         1,
@@ -898,7 +1212,6 @@ local function DrawDisplayPage(parent)
         string.format(UI.ANIMATION_FONT_SIZE_VALUE or "Font size: %s", tostring(GetAlertFontSize and GetAlertFontSize() or DEFAULT_ALERT_FONT_SIZE)),
         function(value)
             local newValue = SetAlertFontSize(value)
-            PreviewStatus("PASSIVE")
             return string.format(UI.ANIMATION_FONT_SIZE_VALUE or "Font size: %s", tostring(newValue))
         end
     )
@@ -907,7 +1220,7 @@ local function DrawDisplayPage(parent)
         motionBox,
         UI.ANIMATION_AMPLITUDE or "Up/down float amplitude",
         UI.ANIMATION_AMPLITUDE_HINT or "Default: 8.",
-        -140,
+        -91,
         0,
         24,
         1,
@@ -915,7 +1228,6 @@ local function DrawDisplayPage(parent)
         string.format(UI.ANIMATION_AMPLITUDE_VALUE or "Amplitude: %s", tostring(GetAlertFloatAmplitude and GetAlertFloatAmplitude() or DEFAULT_ALERT_FLOAT_AMPLITUDE)),
         function(value)
             local newValue = SetAlertFloatAmplitude(value)
-            PreviewStatus("PASSIVE")
             return string.format(UI.ANIMATION_AMPLITUDE_VALUE or "Amplitude: %s", tostring(newValue))
         end
     )
@@ -924,7 +1236,7 @@ local function DrawDisplayPage(parent)
         motionBox,
         UI.ANIMATION_SPEED or "Up/down float speed",
         UI.ANIMATION_SPEED_HINT or "1.0x = default.",
-        -208,
+        -137,
         0.1,
         3,
         0.1,
@@ -932,21 +1244,21 @@ local function DrawDisplayPage(parent)
         string.format(UI.ANIMATION_SPEED_VALUE or "Speed: %sx", FormatOneDecimal(GetAlertFloatSpeed and GetAlertFloatSpeed() or DEFAULT_ALERT_FLOAT_SPEED)),
         function(value)
             local newValue = SetAlertFloatSpeed(value)
-            PreviewStatus("PASSIVE")
             return string.format(UI.ANIMATION_SPEED_VALUE or "Speed: %sx", FormatOneDecimal(newValue))
         end
     )
 
-    y = y - 288
+    y = y - 200
 
     -------------------------------------------------
     -- Effects
     -------------------------------------------------
-    local effectsBox = CreateSection(page, TEXT.SECTION_EFFECTS, UI.ANIMATION_GLOW_ENABLE_HINT or "", y, 176)
+    local effectsBox = CreateSection(page, TEXT.SECTION_EFFECTS, nil, y, 134)
 
     local glowCheck = CreateFrame("CheckButton", nil, effectsBox, "UICheckButtonTemplate")
     glowCheck:SetSize(22, 22)
-    glowCheck:SetPoint("TOPLEFT", effectsBox, "TOPLEFT", 14, -68)
+    glowCheck:SetPoint("TOPLEFT", effectsBox, "TOPLEFT", 14, -41)
+    AddTooltip(glowCheck, UI.ANIMATION_GLOW_ENABLE_HINT)
     local glowEnabled = GetAlertGlowEnabled and GetAlertGlowEnabled()
     if glowEnabled == nil then
         glowEnabled = DEFAULT_ALERT_GLOW_ENABLED
@@ -959,7 +1271,6 @@ local function DrawDisplayPage(parent)
     glowCheck:SetScript("OnClick", function(self)
         local enabled = SetAlertGlowEnabled(self:GetChecked() and true or false)
         self:SetChecked(enabled)
-        PreviewStatus("PASSIVE")
         if statusLine then
             statusLine:SetText(enabled and (UI.ANIMATION_GLOW_ON or "Pixel glow enabled") or (UI.ANIMATION_GLOW_OFF or "Pixel glow disabled"))
         end
@@ -969,7 +1280,7 @@ local function DrawDisplayPage(parent)
         effectsBox,
         UI.ANIMATION_GLOW_SPEED or "Pixel glow speed",
         UI.ANIMATION_GLOW_SPEED_HINT or "1.0x = default.",
-        -112,
+        -81,
         0.2,
         3,
         0.1,
@@ -977,12 +1288,11 @@ local function DrawDisplayPage(parent)
         string.format(UI.ANIMATION_GLOW_SPEED_VALUE or "Glow speed: %sx", FormatOneDecimal(GetAlertGlowSpeed and GetAlertGlowSpeed() or DEFAULT_ALERT_GLOW_SPEED)),
         function(value)
             local newValue = SetAlertGlowSpeed(value)
-            PreviewStatus("PASSIVE")
             return string.format(UI.ANIMATION_GLOW_SPEED_VALUE or "Glow speed: %sx", FormatOneDecimal(newValue))
         end
     )
 
-    finish(math.abs(y) + 188)
+    finish(math.abs(y) + 146)
 end
 
 -------------------------------------------------
@@ -991,26 +1301,23 @@ end
 
 local function DrawVoicePage(parent)
     local page, finish = CreateScrollablePage(parent)
-    CreatePageHeader(page, TEXT.VOICE_TITLE, TEXT.VOICE_DESC)
+    CreatePageHeader(page, TEXT.VOICE_TITLE, UI.TTS_BEHAVIOR_HINT)
 
-    local voiceBox = CreateSection(page, UI.COMBAT_TTS or TEXT.VOICE_TITLE, UI.COMBAT_TTS_HINT or "", -78, 220)
+    local voiceBox = CreateSection(page, UI.COMBAT_TTS or TEXT.VOICE_TITLE, nil, -70, 222)
 
     local check = CreateFrame("CheckButton", nil, voiceBox, "UICheckButtonTemplate")
     check:SetSize(24, 24)
-    check:SetPoint("TOPLEFT", voiceBox, "TOPLEFT", 14, -74)
+    check:SetPoint("TOPLEFT", voiceBox, "TOPLEFT", 14, -49)
     check:SetChecked(PetStatusAlertDB.combatTTSEnabled == true)
 
     local label = CreateText(voiceBox, "GameFontNormal", UI.COMBAT_TTS or TEXT.VOICE_TITLE, 14, STYLE.gold)
     label:SetPoint("LEFT", check, "RIGHT", 3, 0)
 
-    local stateText = CreateText(voiceBox, "GameFontDisableSmall", "", 11, STYLE.muted)
-    stateText:SetPoint("LEFT", label, "RIGHT", 10, 0)
-
-    local function RefreshVoiceStateText()
-        stateText:SetText(PetStatusAlertDB.combatTTSEnabled and (UI.COMBAT_TTS_ON or "Enabled") or (UI.COMBAT_TTS_OFF or "Disabled"))
-        stateText:SetTextColor(ColorRGBA(PetStatusAlertDB.combatTTSEnabled and STYLE.green or STYLE.muted))
-    end
-    RefreshVoiceStateText()
+    local listen = CreateButton(voiceBox, UI.TTS_SAMPLE, 104, 24)
+    listen:SetPoint("RIGHT", voiceBox, "TOPRIGHT", -20, -61)
+    listen:SetScript("OnClick", function()
+        if not PSA.PlayCombatTTSSample() and statusLine then statusLine:SetText(UI.TTS_UNAVAILABLE) end
+    end)
 
     check:SetScript("OnClick", function(self)
         InitDB()
@@ -1024,7 +1331,6 @@ local function DrawVoicePage(parent)
                 StopCombatTTSReminder()
             end
         end
-        RefreshVoiceStateText()
         if statusLine then
             statusLine:SetText(PetStatusAlertDB.combatTTSEnabled and (UI.COMBAT_TTS_ON or "Enabled") or (UI.COMBAT_TTS_OFF or "Disabled"))
         end
@@ -1034,7 +1340,7 @@ local function DrawVoicePage(parent)
         voiceBox,
         UI.COMBAT_TTS_RATE or "TTS speech speed",
         UI.COMBAT_TTS_RATE_HINT or "0 = WoW default speed.",
-        -132,
+        -94,
         -10,
         10,
         1,
@@ -1046,7 +1352,34 @@ local function DrawVoicePage(parent)
         end
     )
 
-    finish(320)
+    local repeatButton = CreateButton(voiceBox, UI.TTS_REPEAT, 118, 24)
+    repeatButton:SetPoint("TOPRIGHT", voiceBox, "TOPRIGHT", -24, -140)
+    local onceButton = CreateButton(voiceBox, UI.TTS_ONCE, 118, 24)
+    onceButton:SetPoint("RIGHT", repeatButton, "LEFT", -8, 0)
+    local intervalRow = CreateFrame("Frame", nil, voiceBox)
+    intervalRow:SetSize(LAYOUT.contentWidth, 42)
+    intervalRow:SetPoint("TOPLEFT", voiceBox, "TOPLEFT", 0, -181)
+    local function FormatInterval(value) return UI.TTS_INTERVAL_VALUE:format(value) end
+    local interval = PSA.GetCombatTTSRepeatInterval()
+    CreateSliderRow(intervalRow, UI.TTS_INTERVAL, nil, -2, 2, 15, 1, interval,
+        FormatInterval(interval), function(value) return FormatInterval(PSA.SetCombatTTSInterval(value)) end)
+    local function RefreshMode()
+        local repeatOn = PSA.GetCombatTTSInterval() > 0
+        SetIconModeButtonState(onceButton, not repeatOn)
+        SetIconModeButtonState(repeatButton, repeatOn)
+        intervalRow:SetShown(repeatOn)
+        voiceBox:SetHeight(repeatOn and 232 or 178)
+        finish(82 + voiceBox:GetHeight())
+    end
+    onceButton:SetScript("OnClick", function()
+        PSA.SetCombatTTSInterval(0)
+        RefreshMode()
+    end)
+    repeatButton:SetScript("OnClick", function()
+        PSA.SetCombatTTSInterval(PSA.GetCombatTTSRepeatInterval())
+        RefreshMode()
+    end)
+    RefreshMode()
 end
 
 -------------------------------------------------
@@ -1132,8 +1465,13 @@ end
 
 local function DrawForeverPage(parent)
     local page, finish = CreateScrollablePage(parent)
-    CreatePageHeader(page, UI.FOREVER_SETTINGS, "")
-    local section = CreateSection(page, UI.AMMO_SETTINGS, UI.AMMO_THRESHOLD_HINT, -52, 124)
+    CreatePageHeader(page, UI.FOREVER_CLIENT, "")
+    local hint = UI.AMMO_WEAPON_HINT .. "\n" .. UI.AMMO_THRESHOLD_HINT
+    if not isForever then
+        hint = UI.OTHER_CLIENT_SETTINGS .. "\n" .. hint
+    end
+    local section = CreateSection(page, UI.AMMO_SETTINGS, hint, -52, 124)
+    section:SetHeight(math.max(124, 90 + section.sectionDesc:GetStringHeight()))
 
     local label = CreateText(section, "GameFontNormal", UI.AMMO_THRESHOLD, 14, STYLE.gold)
     label:SetPoint("BOTTOMLEFT", section, "BOTTOMLEFT", 18, 24)
@@ -1145,7 +1483,13 @@ local function DrawForeverPage(parent)
     SkinEditBox(input)
     input:SetNumeric(true)
     input:SetJustifyH("RIGHT")
-    input:SetText(tostring(PSA.GetAmmoThreshold()))
+    input:SetText(tostring(isForever and PSA.GetAmmoThreshold() or PSA.DEFAULT_AMMO_THRESHOLD))
+    finish(66 + section:GetHeight())
+    if not isForever then
+        input:Disable()
+        input:SetAlpha(0.5)
+        return
+    end
     input:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
     input:SetScript("OnEditFocusLost", function(self)
         self:SetText(tostring(PSA.SetAmmoThreshold(self:GetText())))
@@ -1154,7 +1498,6 @@ local function DrawForeverPage(parent)
         self:SetText(tostring(PSA.GetAmmoThreshold()))
         self:ClearFocus()
     end)
-    finish(190)
 end
 
 -------------------------------------------------
@@ -1174,10 +1517,10 @@ local function SetNavButtonActive(button, active)
     end
 end
 
-local function CreateNavButton(parent, labelText, yOffset)
+local function CreateNavButton(parent, labelText, indent)
     local button = CreateFrame("Button", nil, parent)
     button:SetSize(LAYOUT.navWidth - 8, 34)
-    button:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, yOffset)
+    indent = indent or 0
 
     local r, g, b = GetPlayerClassColor()
 
@@ -1196,8 +1539,8 @@ local function CreateNavButton(parent, labelText, yOffset)
     button.hover = hover
 
     local text = CreateText(button, "GameFontNormal", labelText, 14, STYLE.gold)
-    text:SetPoint("LEFT", button, "LEFT", 18, 0)
-    text:SetWidth(LAYOUT.navWidth - 26)
+    text:SetPoint("LEFT", button, "LEFT", 18 + indent, 0)
+    text:SetWidth(LAYOUT.navWidth - 26 - indent)
     button.text = text
 
     button:SetScript("OnEnter", function(self)
@@ -1235,17 +1578,7 @@ local function CreateOptionsFrame()
     frame:SetScript("OnDragStart", frame.StartMoving)
     frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
     frame:Hide()
-    frame:SetScript("OnHide", function()
-        -- 预览中关闭面板时恢复真实状态，避免告警一直停留在预览文本。
-        if PSA.currentStatusForce then
-            if PSA.HideStatus then
-                PSA.HideStatus()
-            end
-            if PSA.RefreshPetStatusText then
-                PSA.RefreshPetStatusText()
-            end
-        end
-    end)
+    frame:SetScript("OnHide", StopSettingsPreview)
     ApplyBackdrop(frame, STYLE.frameBg, STYLE.frameBorder)
 
     local title = CreateText(frame, "GameFontNormalLarge", UI.TITLE, 21, STYLE.gold, "CENTER")
@@ -1273,72 +1606,172 @@ local function CreateOptionsFrame()
     navDivider:SetPoint("TOPRIGHT", leftPanel, "TOPRIGHT", 0, 0)
     navDivider:SetPoint("BOTTOMRIGHT", leftPanel, "BOTTOMRIGHT", 0, 0)
 
-    local navHeader = CreateText(leftPanel, "GameFontDisableSmall", TEXT.NAV_HEADER, 10, STYLE.muted)
-    navHeader:SetPoint("TOPLEFT", leftPanel, "TOPLEFT", 18, -2)
-    frame.psaNavHeader = navHeader
-
     local content = CreateFrame("Frame", nil, frame)
     content:SetPoint("TOPLEFT", leftPanel, "TOPRIGHT", 14, -2)
     content:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -20, 56)
 
-    frame.activePage = "alerts"
+    frame.activePage = "general"
+    frame.viewForever = isForever
+    local classes = PSA.GetAlertClasses(false)
+    local classesExpanded = false
     frame.navButtons = {}
-    frame.currentPage = nil
+    local alertPages = {}
+    local scrollOffsets = {}
+    local navLabels = {}
+    local navOrder = {}
+
+    local clientTabs = CreateFrame("Frame", nil, content)
+    clientTabs:SetPoint("TOPLEFT")
+    clientTabs:SetPoint("TOPRIGHT")
+    clientTabs:SetHeight(36)
+    local function GetClientTabLabel(forever)
+        local label = PSA.GetAlertClientName(forever)
+        return forever == isForever and label or (label .. " · " .. UI.READ_ONLY_TAB)
+    end
+    frame.clientButtons = {
+        retail = CreateButton(clientTabs, GetClientTabLabel(false), 96),
+        forever = CreateButton(clientTabs, GetClientTabLabel(true), 96),
+    }
+    frame.clientButtons.retail:SetPoint("TOPLEFT")
+    frame.clientButtons.forever:SetPoint("LEFT", frame.clientButtons.retail, "RIGHT", 8, 0)
+
+    local function RefreshClientTabs(classPage)
+        clientTabs:SetShown(classPage)
+        for key, button in pairs(frame.clientButtons) do
+            local forever = key == "forever"
+            local selected = forever == frame.viewForever
+            SetIconModeButtonState(button, selected)
+            button:SetButtonState(selected and "PUSHED" or "NORMAL", selected)
+            if forever ~= isForever then
+                button:GetFontString():SetTextColor(ColorRGBA(STYLE.muted))
+            end
+        end
+    end
 
     local function RefreshNavButtons()
-        for key, button in pairs(frame.navButtons) do
-            SetNavButtonActive(button, key == frame.activePage)
+        local navY = -2
+        for _, key in ipairs(navOrder) do
+            local button = frame.navButtons[key]
+            local shown = classesExpanded or not button.isClass
+            button:SetShown(shown)
+            if shown then
+                button:ClearAllPoints()
+                button:SetPoint("TOPLEFT", leftPanel, "TOPLEFT", 0, navY)
+                navY = navY - button:GetHeight()
+            end
+            local active = key == frame.activePage
+            if key == "classes" and not classesExpanded then
+                active = frame.navButtons[frame.activePage].isClass
+            end
+            SetNavButtonActive(button, active)
         end
     end
 
     local function DrawPage()
-        if frame.currentPage then
+        local key = frame.activePage
+        local classPage = frame.navButtons[key].isClass == true
+        local cacheKey = classPage and (GetActiveLocale() .. ":" .. key .. ":" .. tostring(frame.viewForever))
+        local pageHolder = cacheKey and alertPages[cacheKey]
+        if frame.currentPage and frame.currentPage ~= pageHolder then
+            local oldScroll = frame.currentPage.psaScroll
+            if oldScroll and oldScroll.GetVerticalScroll then
+                scrollOffsets[frame.currentPage.psaPageKey] = oldScroll:GetVerticalScroll()
+            end
             frame.currentPage:Hide()
-            frame.currentPage:SetParent(nil)
-            frame.currentPage = nil
+            if not frame.currentPage.refreshAlerts then
+                frame.currentPage:SetParent(nil)
+            end
         end
 
-        local pageHolder = CreateFrame("Frame", nil, content)
-        pageHolder:SetAllPoints(content)
+        if not pageHolder then
+            pageHolder = CreateFrame("Frame", nil, content)
+            pageHolder.psaPageKey = cacheKey or key
+            pageHolder:SetPoint("TOPLEFT", content, "TOPLEFT", 0, classPage and -36 or 0)
+            pageHolder:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT")
+            if key == "display" then
+                DrawDisplayPage(pageHolder)
+            elseif key == "voice" then
+                DrawVoicePage(pageHolder)
+            elseif key == "general" then
+                DrawGeneralPage(pageHolder)
+            elseif key == "forever" then
+                DrawForeverPage(pageHolder)
+            else
+                pageHolder.refreshAlerts, pageHolder.refreshEligibility = DrawAlertsPage(pageHolder, key, frame.viewForever)
+                alertPages[cacheKey] = pageHolder
+            end
+        end
+        if pageHolder.refreshAlerts then
+            pageHolder.refreshAlerts()
+        end
         frame.currentPage = pageHolder
-
-        if frame.activePage == "display" then
-            DrawDisplayPage(pageHolder)
-        elseif frame.activePage == "voice" then
-            DrawVoicePage(pageHolder)
-        elseif frame.activePage == "general" then
-            DrawGeneralPage(pageHolder)
-        elseif frame.activePage == "forever" then
-            DrawForeverPage(pageHolder)
-        else
-            DrawAlertsPage(pageHolder)
+        pageHolder:Show()
+        local scroll = pageHolder.psaScroll
+        local offset = scrollOffsets[pageHolder.psaPageKey]
+        if offset and scroll and scroll.GetVerticalScrollRange then
+            scroll:SetVerticalScroll(math.min(offset, scroll:GetVerticalScrollRange() or 0))
         end
-
+        RefreshClientTabs(classPage)
         RefreshNavButtons()
     end
 
-    local function AddNav(key, label, yOffset)
-        local button = CreateNavButton(leftPanel, label, yOffset)
-        frame.navButtons[key] = button
+    for key, button in pairs(frame.clientButtons) do
+        local forever = key == "forever"
         button:SetScript("OnClick", function()
-            frame.activePage = key
-            DrawPage()
+            if frame.viewForever ~= forever then
+                StopSettingsPreview()
+                frame.viewForever = forever
+                statusLine:SetText(UI.FOOTER or "/psa")
+                DrawPage()
+            end
         end)
     end
 
-    AddNav("alerts", TEXT.NAV_ALERTS, -28)
-    AddNav("display", TEXT.NAV_DISPLAY, -66)
-    AddNav("voice", TEXT.NAV_VOICE, -104)
-    AddNav("general", TEXT.NAV_GENERAL, -142)
-    if isForever then
-        AddNav("forever", UI.FOREVER_SETTINGS, -180)
+    local function AddNav(key, getLabel, classPage)
+        local button = CreateNavButton(leftPanel, getLabel(), classPage and 14)
+        button.isClass = classPage
+        navOrder[#navOrder + 1] = key
+        frame.navButtons[key] = button
+        navLabels[button.text] = getLabel
+        button:SetScript("OnClick", function()
+            if frame.activePage ~= key then
+                StopSettingsPreview()
+                frame.activePage = key
+                frame.viewForever = isForever
+                statusLine:SetText(UI.FOOTER or "/psa")
+                DrawPage()
+            end
+        end)
+        return button
     end
 
-    local support = CreateText(leftPanel, "GameFontDisableSmall", TEXT.SUPPORT_CLASSES, 10, STYLE.muted)
-    support:SetPoint("BOTTOMLEFT", leftPanel, "BOTTOMLEFT", 18, 12)
-    support:SetWidth(LAYOUT.navWidth - 28)
-    support:SetSpacing(3)
-    frame.psaSupportClasses = support
+    local function ClassGroupLabel()
+        return (classesExpanded and "- " or "+ ") .. UI.CLASS_SETTINGS
+    end
+    local classGroup = AddNav("classes", ClassGroupLabel)
+    classGroup:SetScript("OnClick", function()
+        classesExpanded = not classesExpanded
+        classGroup.text:SetText(ClassGroupLabel())
+        RefreshNavButtons()
+    end)
+    for _, classFile in ipairs(classes) do
+        AddNav(classFile, function() return PSA.GetAlertClassLabel(classFile) end, true)
+    end
+    local ammoButton = AddNav("forever", function() return UI.AMMO_SETTINGS end)
+    ammoButton:SetAlpha(isForever and 1 or 0.6)
+    AddNav("display", function() return TEXT.NAV_DISPLAY end)
+    AddNav("voice", function() return TEXT.NAV_VOICE end)
+    AddNav("general", function() return TEXT.NAV_GENERAL end)
+
+    frame.RefreshNavLabels = function()
+        for label, getLabel in pairs(navLabels) do
+            label:SetText(getLabel())
+        end
+        for key, button in pairs(frame.clientButtons) do
+            button:SetText(GetClientTabLabel(key == "forever"))
+            AutoFitButton(button, 96)
+        end
+    end
 
     statusLine = CreateText(frame, "GameFontHighlightSmall", UI.FOOTER or "/psa", 12, STYLE.text)
     statusLine:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 20, 18)
@@ -1355,6 +1788,11 @@ local function CreateOptionsFrame()
     frame.DrawPage = DrawPage
 
     return frame
+end
+
+function PSA.RefreshOpenClassEligibility()
+    local page = optionsFrame and optionsFrame:IsShown() and optionsFrame.currentPage
+    if page and page.refreshEligibility then page.refreshEligibility() end
 end
 
 local function OpenOptionsFrame()
@@ -1383,28 +1821,8 @@ local function RefreshOptionsFrameLocale()
     if frame.psaSubtitle then
         frame.psaSubtitle:SetText(UI.SUBTITLE or "")
     end
-    if frame.psaNavHeader then
-        frame.psaNavHeader:SetText(TEXT.NAV_HEADER)
-    end
-    if frame.psaSupportClasses then
-        frame.psaSupportClasses:SetText(TEXT.SUPPORT_CLASSES)
-    end
-    if frame.navButtons then
-        if frame.navButtons.alerts and frame.navButtons.alerts.text then
-            frame.navButtons.alerts.text:SetText(TEXT.NAV_ALERTS)
-        end
-        if frame.navButtons.display and frame.navButtons.display.text then
-            frame.navButtons.display.text:SetText(TEXT.NAV_DISPLAY)
-        end
-        if frame.navButtons.voice and frame.navButtons.voice.text then
-            frame.navButtons.voice.text:SetText(TEXT.NAV_VOICE)
-        end
-        if frame.navButtons.general and frame.navButtons.general.text then
-            frame.navButtons.general.text:SetText(TEXT.NAV_GENERAL)
-        end
-        if frame.navButtons.forever then
-            frame.navButtons.forever.text:SetText(UI.FOREVER_SETTINGS)
-        end
+    if frame.RefreshNavLabels then
+        frame.RefreshNavLabels()
     end
     if frame.psaCloseButton then
         frame.psaCloseButton:SetText(UI.CLOSE or "Close")
@@ -1482,8 +1900,10 @@ ApplyLanguageSelection = function(languageMode)
     RefreshOptionsFrameLocale()
     RefreshNativeProxyPanelLocale()
 
-    if PSA.currentStatusKey then
-        ShowStatus(PSA.currentStatusKey, PSA.currentStatusForce)
+    if PSA.IsDisplayPreviewActive() then
+        PSA.PreviewDisplay()
+    elseif PSA.currentStatusKey then
+        ShowStatus(PSA.currentStatusKey, PSA.currentStatusForce, PSA.currentStatusClass)
     else
         RefreshPetStatusText()
     end
@@ -1521,6 +1941,8 @@ end
 -------------------------------------------------
 
 PSA.OpenOptionsFrame = OpenOptionsFrame
+PSA.RefreshConfiguredAlert = RefreshConfiguredAlert
+PSA.StopSettingsPreview = StopSettingsPreview
 PSA.RefreshLocaleState = RefreshAllLocaleState
 PSA.RefreshOptionsFrameLocale = RefreshOptionsFrameLocale
 PSA.RegisterNativeOptionsCategory = RegisterNativeOptionsCategory

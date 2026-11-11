@@ -9,6 +9,7 @@ local InitDB = PSA.InitDB
 local GetStatusColor = PSA.GetStatusColor
 local GetDisplayMessage = PSA.GetDisplayMessage
 local IsStatusEnabled = PSA.IsStatusEnabled
+local GetPlayerClassFile = PSA.GetPlayerClassFile
 local isForever = PSA.IsForeverClient()
 local DEFAULT_ALERT_FLOAT_AMPLITUDE = PSA.DEFAULT_ALERT_FLOAT_AMPLITUDE or 8
 local DEFAULT_ALERT_FLOAT_SPEED = PSA.DEFAULT_ALERT_FLOAT_SPEED or 1
@@ -22,6 +23,8 @@ local VALID_ALERT_ICON_MODES = PSA.VALID_ALERT_ICON_MODES or { text = true, icon
 local ALERT_GLOW_KEY = "PetStatusAlert_Glow"
 local ALERT_ROW_GAP = 8
 local ALERT_ROW_EDGE_PADDING = 3
+local DISPLAY_SAMPLE = "DISPLAY_SAMPLE"
+local displayPreview
 
 local LCG = LibStub and LibStub("LibCustomGlow-1.0", true)
 
@@ -89,14 +92,6 @@ local WARLOCK_SUMMON_SPELL_PRIORITY = {
     688,    -- Summon Imp（兜底）
 }
 
-local function GetPlayerClassFile()
-    if type(UnitClass) ~= "function" then
-        return nil
-    end
-    local _, classFile = UnitClass("player")
-    return classFile
-end
-
 -- spellID → 纹理路径 缓存。spellID 固定、图标不变，只查询一次即可。
 local SPELL_TEXTURE_CACHE = {}
 
@@ -151,11 +146,12 @@ end
 
 -- 返回当前状态对应的技能图标 spellID；没有合适图标时返回 nil。
 local function GetStatusIconSpellID(statusKey)
+    if statusKey == DISPLAY_SAMPLE then return -1 end
     if not statusKey then
         return nil
     end
 
-    local classFile = GetPlayerClassFile()
+    local classFile = PSA.currentStatusClass
     if not classFile then
         return nil
     end
@@ -174,6 +170,9 @@ local function GetStatusIconSpellID(statusKey)
     end
 
     if value == "WARLOCK_SUMMON" then
+        if PSA.currentStatusForce and classFile ~= GetPlayerClassFile() then
+            return WARLOCK_SUMMON_SPELL_PRIORITY[#WARLOCK_SUMMON_SPELL_PRIORITY]
+        end
         return ResolveWarlockSummonSpellID()
     end
 
@@ -358,7 +357,12 @@ end
 local function ApplyAlertTextColor(statusKey)
     -- 无参调用时同步当前显示中的状态；管理器里改其他状态的颜色时，
     -- 不会把当前告警误染成 UNKNOWN 的颜色。
-    local r, g, b, a = GetStatusColor(statusKey or PSA.currentStatusKey or "UNKNOWN")
+    statusKey = statusKey or PSA.currentStatusKey
+    if statusKey == DISPLAY_SAMPLE then
+        text:SetTextColor(PSA.GetDefaultStatusColor())
+        return
+    end
+    local r, g, b, a = GetStatusColor(statusKey or "UNKNOWN", PSA.currentStatusClass)
     text:SetTextColor(r, g, b, a)
 end
 
@@ -691,7 +695,7 @@ end
 
 local function StartAlertGlow()
     local setting = InitDB().alertGlowEnabled
-    local enabled = setting == true or (setting == nil and (lastStatusKey == "PASSIVE" or lastStatusKey == "DEFENSIVE"))
+    local enabled = setting == true or (setting == nil and (lastStatusKey == "PASSIVE" or lastStatusKey == "DEFENSIVE" or lastStatusKey == DISPLAY_SAMPLE))
 
     StopAlertGlow()
     if not enabled or not lastStatusKey or text:GetText() == "" or not currentLayoutShowsIcon
@@ -985,12 +989,13 @@ end)
 ApplyAlertPosition()
 SetAlertPositionLocked(PetStatusAlertDB.alertLocked)
 
-local function SetMessage(message, statusKey)
+local function SetMessage(message, statusKey, classFile)
     message = tostring(message or "")
+    local changed = message ~= lastMessage or statusKey ~= lastStatusKey or classFile ~= PSA.currentStatusClass
     PSA.currentStatusKey = statusKey
+    PSA.currentStatusClass = classFile
     ApplyAlertTextColor(statusKey)
 
-    local changed = message ~= lastMessage or statusKey ~= lastStatusKey
     -- 图标尚未就绪时，同一状态也需要重新布局；加载成功后恢复快速路径。
     local retryIconTexture = iconTexturePending
     if changed or retryIconTexture then
@@ -1004,8 +1009,11 @@ end
 
 local HideStatus
 
-local function ShowStatus(statusKey, force)
-    if not force and not IsStatusEnabled(statusKey) then
+local function ShowStatus(statusKey, force, classFile)
+    if displayPreview and not force then return end
+    displayPreview = nil
+    classFile = (force and classFile) or GetPlayerClassFile()
+    if not force and not IsStatusEnabled(statusKey, classFile) then
         HideStatus()
         return
     end
@@ -1014,7 +1022,7 @@ local function ShowStatus(statusKey, force)
     SetAlertStrata(force and ALERT_STRATA_PREVIEW or ALERT_STRATA_DEFAULT)
 
     PSA.currentStatusForce = force and true or false
-    local changed = SetMessage(GetDisplayMessage(statusKey), statusKey)
+    local changed = SetMessage(GetDisplayMessage(statusKey, classFile), statusKey, classFile)
 
     UpdateFloatingScript()
     if changed then
@@ -1026,11 +1034,22 @@ local function ShowStatus(statusKey, force)
     end
 end
 
-local function PreviewStatus(statusKey)
-    ShowStatus(statusKey, true)
+local function PreviewStatus(statusKey, classFile)
+    if classFile then
+        for _, key in ipairs(PSA.GetClassAlertStatuses(classFile) or {}) do
+            if key == statusKey then
+                ShowStatus(statusKey, true, classFile)
+                return
+            end
+        end
+    else
+        ShowStatus(statusKey, true)
+    end
 end
 
-HideStatus = function()
+HideStatus = function(force)
+    if displayPreview and not force then return end
+    displayPreview = nil
     SetAlertStrata(ALERT_STRATA_DEFAULT)
 
     if not lastStatusKey and lastMessage == "" then
@@ -1049,6 +1068,20 @@ HideStatus = function()
     if PSA.StopCombatTTSReminder then
         PSA.StopCombatTTSReminder()
     end
+end
+
+function PSA.PreviewDisplay()
+    displayPreview = true
+    PSA.currentStatusForce = true
+    SetAlertStrata(ALERT_STRATA_PREVIEW)
+    SetMessage(PSA.UI.PREVIEW_SAMPLE, DISPLAY_SAMPLE)
+    UpdateFloatingScript()
+    StartAlertGlow()
+    if PSA.StopCombatTTSReminder then PSA.StopCombatTTSReminder() end
+end
+
+function PSA.IsDisplayPreviewActive()
+    return displayPreview == true
 end
 
 

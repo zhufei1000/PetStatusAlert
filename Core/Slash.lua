@@ -24,8 +24,10 @@ SlashCmdList.PETSTATUSALERT = function(msg)
     msg = Trim(msg):lower()
     if msg == "reset" then
         InitDB()
-        for _, statusKey in ipairs(STATUS_ORDER) do
-            PetStatusAlertDB.customMessages[statusKey] = ""
+        local classFile = PSA.GetPlayerClassFile()
+        local statuses = classFile == "WARLOCK" and PSA.GetClassAlertStatuses(classFile) or STATUS_ORDER
+        for _, statusKey in ipairs(statuses) do
+            PSA.SetCustomMessage(statusKey, "")
         end
         print("|cff3aa6ffPetStatusAlert:|r " .. UI.RESET_DONE)
         RefreshPetStatusText()

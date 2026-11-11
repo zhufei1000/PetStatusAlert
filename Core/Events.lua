@@ -246,6 +246,7 @@ addonFrame:SetScript("OnEvent", function(_, event, unit, slot)
 
     if CACHE_INVALIDATE_EVENTS[event] and ClearPetStatusCaches then
         ClearPetStatusCaches()
+        if PSA.RefreshOpenClassEligibility then PSA.RefreshOpenClassEligibility() end
     end
 
     if event == "PLAYER_REGEN_ENABLED" then
