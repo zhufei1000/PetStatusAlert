@@ -427,6 +427,10 @@ end
 
 local function RefreshPetStatusText()
     InitDB()
+    if not PSA.GetPetAlertsEnabled() then
+        HideStatus(true)
+        return
+    end
 
     local okSupports, supports = pcall(SupportsPetStatusPrompt)
     if not okSupports or not supports then
@@ -503,6 +507,9 @@ end
 local queuedRefreshTimers = {}
 
 local function QueueRefresh(delaySeconds)
+    if not PSA.GetPetAlertsEnabled() then
+        return
+    end
     delaySeconds = tonumber(delaySeconds) or 0.05
     if delaySeconds < 0 then
         delaySeconds = 0

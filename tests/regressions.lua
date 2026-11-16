@@ -806,7 +806,7 @@ Test("Forever ammo warns below 100 after every combat and only updates outside c
     GetInventoryItemCount = function(_, slot) assert(slot == 0); reads = reads + 1; return count end
     GetInventoryItemTexture = function(_, slot) assert(slot == 0); return 45678 end
 
-    local session = LoadLanguageSession({language = "enUS"})
+    local session = LoadLanguageSession({language = "enUS", buffAlertsEnabled = true})
     local events = session.addonFrame.events
     assert(events.BAG_UPDATE_DELAYED and events.UNIT_INVENTORY_CHANGED and events.PLAYER_EQUIPMENT_CHANGED)
     local function Event(event, ...)
@@ -994,6 +994,7 @@ Test("Forever food reminder handles gains and removals without polling", functio
     UnitLevel = function() return level end
     IsResting = function() return resting end
     UnitIsDeadOrGhost = function() return dead end
+    UnitUsesAmmo, C_PaperDollInfo = nil, nil
     C_Secrets = {
         ShouldAurasBeSecret = function() return restricted end,
         ShouldSpellAuraBeSecret = function(id) return restrictedFoodID == id end,
@@ -1013,7 +1014,7 @@ Test("Forever food reminder handles gains and removals without polling", functio
             if id == 18192 then return otherFood end
         end,
     }
-    local session = LoadLanguageSession({ language = "enUS", foodBuffAlertEnabled = true })
+    local session = LoadLanguageSession({ language = "enUS", buffAlertsEnabled = true, foodBuffAlertEnabled = true })
     local events, pet = session.addonFrame.events, session.addonFrame
     local row = Upvalue(session.SetAmmoAlert, "supplyFrame")
     local function Event(event, ...)
@@ -1041,6 +1042,7 @@ Test("Forever food reminder handles gains and removals without polling", functio
     session.SetAmmoAlert("LOW_ARROWS", 12, 12345)
     local ammo = row.children[#row.children]
     assert(ammo:IsVisible() and food:IsVisible() and ammo.point[2] == row and food.point[4] > ammo.point[4])
+    session.SetAmmoAlert()
     session.SetAmmoAlert()
 
     aura = { isHelpful = true, spellId = 999, name = "Well Fed", auraInstanceID = 30 }
@@ -1198,7 +1200,7 @@ Test("Forever player food picker saves a character's valid choice and only scans
         return FindNode(row, function(node) return node.template == "InsecureActionButtonTemplate" end)
     end
 
-    local saved = {language = "enUS", foodBuffAlertEnabled = true, foodPickerEnabled = true}
+    local saved = {language = "enUS", buffAlertsEnabled = true, foodBuffAlertEnabled = true, foodPickerEnabled = true}
     local session = LoadLanguageSession(saved)
     session.SetFoodBuffAlert(true, true)
     local picker = assert(FindPicker(session))
@@ -1639,7 +1641,7 @@ local function WithRetailSupply(playerClass, stat, test)
         return timer
     end
     local ok, err = pcall(function()
-        local session = LoadLanguageSession({ language = "enUS" })
+        local session = LoadLanguageSession({ language = "enUS", buffAlertsEnabled = true })
         local row = Upvalue(session.SetAmmoAlert, "supplyFrame")
         local frame = Upvalue(session.RefreshRetailBuffAlerts, "eventFrame")
         local function Event(event, ...)
@@ -2118,6 +2120,121 @@ Test("Retail shaman imbues follow specialization, weapon/shield slots, and known
         end
         assert(sections[s.session.UI.AURA_TAB_CONSUMABLES].labels[s.session.UI.RETAIL_FOOD_LEAD])
     end)
+end)
+
+Test("alert master switches default to pet alerts on and buff alerts off", function()
+    local session = LoadLanguageSession()
+    assert(session.GetPetAlertsEnabled() == true)
+    assert(session.GetBuffAlertsEnabled() == false)
+    assert(session.addonFrame.events.UNIT_PET)
+    assert(not session.addonFrame.events.UNIT_AURA)
+end)
+
+Test("pet master switch unregisters pet events and hides alerts", function()
+    local after = C_Timer.After
+    local pending = {}
+    C_Timer.After = function(_, callback) pending[#pending + 1] = callback end
+    local ok, err = pcall(function()
+        local session = LoadLanguageSession({language = "enUS", petAlertsEnabled = false, buffAlertsEnabled = false})
+        local events = session.addonFrame.events
+        assert(not events.UNIT_PET and not events.PLAYER_REGEN_ENABLED and not events.UNIT_FLAGS)
+        session.ShowStatus("PASSIVE")
+        assert(not session.addonFrame:IsShown(), "pet alerts must stay hidden while the master switch is off")
+        session.SetPetAlertsEnabled(true)
+        assert(events.UNIT_PET and events.PLAYER_REGEN_ENABLED)
+        session.ShowStatus("PASSIVE")
+        assert(session.addonFrame:IsShown())
+        session.SetPetAlertsEnabled(false)
+        assert(not session.addonFrame:IsShown() and not events.UNIT_PET)
+        assert(#pending == 1, "only the explicit re-enable may queue a pet refresh")
+    end)
+    C_Timer.After = after
+    assert(ok, err)
+end)
+
+Test("buff master switch unregisters buff events and stays idle by default", function()
+    local priorBuild, after = GetBuildInfo, C_Timer.After
+    local priorAuras, priorSpec, priorEnum = C_UnitAuras, C_SpecializationInfo, Enum
+    GetBuildInfo = function() return "12.1.5", "70783", "", 120105 end
+    C_UnitAuras = {GetUnitAuras = function() return {} end}
+    C_SpecializationInfo = {GetSpecialization = function() return 1 end,
+        GetSpecializationInfo = function() return 1, nil, nil, nil, nil, 4 end}
+    Enum = {ChatWhisperTargetStatus = {}}
+    local pending = {}
+    C_Timer.After = function(_, callback) pending[#pending + 1] = callback end
+    local ok, err = pcall(function()
+        local session = LoadLanguageSession({language = "enUS", buffAlertsEnabled = false,
+            retailSupply = {FOOD = true, WEAPON = true, CLASS = true, SHIELD = true}})
+        local frame = Upvalue(session.RefreshRetailBuffAlerts, "eventFrame")
+        assert(not next(frame.events or {}), "buff events must start idle")
+        assert(not session.addonFrame.events.UNIT_AURA)
+        session.SetBuffAlertsEnabled(true)
+        assert(frame.events.PLAYER_ENTERING_WORLD and frame.events.PLAYER_EQUIPMENT_CHANGED)
+        assert(session.addonFrame.events.UNIT_PET, "pet events must be independent")
+        session.SetBuffAlertsEnabled(false)
+        assert(not next(frame.events or {}), "disabled buff alerts must unregister every event")
+        assert(not session.addonFrame.events.UNIT_AURA)
+    end)
+    C_Timer.After, GetBuildInfo = after, priorBuild
+    C_UnitAuras, C_SpecializationInfo, Enum = priorAuras, priorSpec, priorEnum
+    assert(ok, err)
+end)
+
+Test("general settings expose both alert master switches", function()
+    local after = C_Timer.After
+    local pending = {}
+    C_Timer.After = function(_, callback) pending[#pending + 1] = callback end
+    local ok, err = pcall(function()
+        local session = LoadLanguageSession({language = "enUS"})
+        session.OpenOptionsFrame()
+        local frame = Upvalue(session.RefreshOptionsFrameLocale, "optionsFrame")
+        frame.navButtons.general.scripts.OnClick()
+        assert(FindText(frame.currentPage, session.UI.MASTER_SWITCHES))
+        assert(FindText(frame.currentPage, session.UI.MASTER_PET_ENABLED))
+        assert(FindText(frame.currentPage, session.UI.MASTER_BUFF_ENABLED))
+        local check = FindNode(frame.currentPage, function(node)
+            return node.template == "UICheckButtonTemplate"
+        end)
+        assert(check and check:GetChecked() == true)
+        check:SetChecked(false)
+        check.scripts.OnClick(check)
+        assert(session.GetPetAlertsEnabled() == false)
+        check:SetChecked(true)
+        check.scripts.OnClick(check)
+        assert(session.GetPetAlertsEnabled() == true)
+
+        local general
+        for _, tab in ipairs(session.GetSettingsDefinition({}).tabs) do
+            if tab.key == "general" then general = tab end
+        end
+        assert(general)
+        local labels = {}
+        general.build({
+            NewSection = function(_, title)
+                return {
+                    Check = function(_, label, get, set)
+                        labels[#labels + 1] = label
+                        assert(type(get) == "function" and type(set) == "function")
+                    end,
+                    Dropdown = noop,
+                }
+            end,
+            AddSection = noop,
+        })
+        assert(labels[1] == session.UI.MASTER_PET_ENABLED)
+        assert(labels[2] == session.UI.MASTER_BUFF_ENABLED)
+    end)
+    C_Timer.After = after
+    assert(ok, err)
+end)
+
+Test("turning both alert masters off leaves only the addon load event", function()
+    local session = LoadLanguageSession({language = "enUS", petAlertsEnabled = false,
+        buffAlertsEnabled = false, foodBuffAlertEnabled = true, ammoThreshold = 100})
+    local events = session.addonFrame.events
+    assert(events.ADDON_LOADED)
+    assert(not events.PLAYER_ENTERING_WORLD and not events.UNIT_PET and not events.BAG_UPDATE_DELAYED
+        and not events.UNIT_AURA and not events.PLAYER_EQUIPMENT_CHANGED and not events.UNIT_INVENTORY_CHANGED)
 end)
 
 print(string.format("RESULT: %d passed, %d failed", passed, failed))

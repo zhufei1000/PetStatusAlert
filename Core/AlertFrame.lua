@@ -884,6 +884,9 @@ local function ApplyRetailSupplyCountdown(button, expiration, lead)
 end
 
 function PSA.RenderRetailSupplyAlerts(alerts, enabled)
+    if not PSA.GetBuffAlertsEnabled() then
+        alerts, enabled = {}, false
+    end
     local layoutChanged = retailSupplyEnabled ~= enabled
     retailSupplyEnabled = enabled
     for _, key in ipairs(retailSupplyOrder) do
@@ -925,6 +928,9 @@ local function UpdateAmmoText()
 end
 
 function PSA.SetAmmoAlert(kind, count, texture)
+    if not PSA.GetBuffAlertsEnabled() then
+        kind, count, texture = nil, nil, nil
+    end
     if not supplyFrame or (kind == ammoKind and count == ammoCount and texture == ammoTexture) then
         return
     end
@@ -983,11 +989,15 @@ end
 
 function PSA.RefreshFoodPicker()
     if PSA.SetFoodPickerOwner then
-        PSA.SetFoodPickerOwner(foodMissing and PetStatusAlertDB.alertLocked and foodFrame or nil)
+        PSA.SetFoodPickerOwner(foodMissing and PSA.GetBuffAlertsEnabled()
+            and PetStatusAlertDB.alertLocked and foodFrame or nil)
     end
 end
 
 function PSA.SetFoodBuffAlert(missing, showXP)
+    if not PSA.GetBuffAlertsEnabled() then
+        missing, showXP = nil, nil
+    end
     if not supplyFrame or (foodMissing == missing and foodXP == showXP) then return end
     foodMissing, foodXP = missing, showXP
     if missing then
@@ -1031,6 +1041,10 @@ function PSA.GetPetCareFrame()
 end
 
 function PSA.SetPetCareAlert(kind, texture, desaturated)
+    if not PSA.GetPetAlertsEnabled() then
+        kind, texture, desaturated = nil, nil, false
+    end
+    if kind == nil and not petCareFrame then return end
     desaturated = not not desaturated
     if kind == petCareKind and texture == petCareTexture and desaturated == petCareDesaturated then
         return
@@ -1243,6 +1257,10 @@ end
 local HideStatus
 
 local function ShowStatus(statusKey, force, classFile)
+    if not PSA.GetPetAlertsEnabled() then
+        HideStatus(true)
+        return
+    end
     if displayPreview and not force then return end
     displayPreview = nil
     classFile = (force and classFile) or GetPlayerClassFile()
@@ -1304,6 +1322,7 @@ HideStatus = function(force)
 end
 
 function PSA.PreviewDisplay()
+    if not PSA.GetPetAlertsEnabled() then return end
     displayPreview = true
     PSA.currentStatusForce = true
     SetAlertStrata(ALERT_STRATA_PREVIEW)

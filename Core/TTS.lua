@@ -25,7 +25,7 @@ local UI = setmetatable({}, {
 
 local function IsCombatTTSEnabled()
     InitDB()
-    return PetStatusAlertDB.combatTTSEnabled == true
+    return PetStatusAlertDB.combatTTSEnabled == true and PSA.GetPetAlertsEnabled()
 end
 
 local function GetCombatTTSRate()

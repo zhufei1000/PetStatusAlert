@@ -1400,7 +1400,25 @@ local function DrawGeneralPage(parent)
     local page, finish = CreateScrollablePage(parent)
     CreatePageHeader(page, TEXT.GENERAL_TITLE, TEXT.GENERAL_DESC)
 
-    local languageBox = CreateSection(page, TEXT.SECTION_LANGUAGE, UI.LANGUAGE_DESC or "", -72, 188)
+    local masterBox = CreateSection(page, UI.MASTER_SWITCHES, UI.MASTER_SWITCHES_HINT, -72, 160)
+    local function AddMasterCheck(y, label, hint, getter, setter)
+        local check = CreateRuleCheck(masterBox, label, 18, y, LAYOUT.contentWidth - 76, setter)
+        check:SetChecked(getter())
+        local text = CreateText(masterBox, "GameFontDisableSmall", hint, 12, STYLE.muted)
+        text:SetPoint("TOPLEFT", masterBox, "TOPLEFT", 43, y - 20)
+        text:SetWidth(LAYOUT.contentWidth - 63)
+        if text.SetWordWrap then text:SetWordWrap(true) end
+        return y - 20 - math.ceil(text:GetStringHeight()) - 14
+    end
+    local masterY = -44 - math.ceil((masterBox.sectionDesc and masterBox.sectionDesc:GetStringHeight()) or 0)
+    masterY = AddMasterCheck(masterY, UI.MASTER_PET_ENABLED, UI.MASTER_PET_HINT,
+        PSA.GetPetAlertsEnabled, PSA.SetPetAlertsEnabled)
+    masterY = AddMasterCheck(masterY, UI.MASTER_BUFF_ENABLED, UI.MASTER_BUFF_HINT,
+        PSA.GetBuffAlertsEnabled, PSA.SetBuffAlertsEnabled)
+    masterBox:SetHeight(-masterY + 4)
+
+    local languageY = -72 - masterBox:GetHeight() - 12
+    local languageBox = CreateSection(page, TEXT.SECTION_LANGUAGE, UI.LANGUAGE_DESC or "", languageY, 188)
 
     local current = CreateText(languageBox, "GameFontNormal", GetCurrentLanguageModeText(), 13, STYLE.text)
     current:SetPoint("TOPLEFT", languageBox, "TOPLEFT", 18, -72)
@@ -1433,7 +1451,8 @@ local function DrawGeneralPage(parent)
         end)
     end
 
-    local aboutBox = CreateSection(page, TEXT.SECTION_ABOUT, UI.SUPPORT or "", -270, 220)
+    local aboutY = languageY - 188 - 12
+    local aboutBox = CreateSection(page, TEXT.SECTION_ABOUT, UI.SUPPORT or "", aboutY, 220)
 
     local version = GetAddonVersion()
 
@@ -1452,7 +1471,7 @@ local function DrawGeneralPage(parent)
         end
     end
 
-    finish(510)
+    finish(-aboutY + 240)
 end
 
 function PSA.GetAuraSettingsTabs()

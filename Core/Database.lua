@@ -74,6 +74,16 @@ local function InitDB(force)
         PetStatusAlertDB.alertLocked = true
     end
 
+    -- 模块总开关：宠物提醒默认开启；增益提醒默认关闭。
+    if PetStatusAlertDB.petAlertsEnabled == nil then
+        PetStatusAlertDB.petAlertsEnabled = true
+    end
+    PetStatusAlertDB.petAlertsEnabled = PetStatusAlertDB.petAlertsEnabled ~= false
+    if PetStatusAlertDB.buffAlertsEnabled == nil then
+        PetStatusAlertDB.buffAlertsEnabled = false
+    end
+    PetStatusAlertDB.buffAlertsEnabled = PetStatusAlertDB.buffAlertsEnabled == true
+
     -- 默认关闭：战斗中 TTS 语音提醒。
     if PetStatusAlertDB.combatTTSEnabled == nil then
         PetStatusAlertDB.combatTTSEnabled = false
@@ -322,6 +332,24 @@ end
 
 function PSA.GetAmmoThreshold()
     return NormalizeAmmoThreshold(InitDB().ammoThreshold) or DEFAULT_AMMO_THRESHOLD
+end
+
+function PSA.GetPetAlertsEnabled()
+    return InitDB().petAlertsEnabled ~= false
+end
+
+function PSA.SetPetAlertsEnabled(enabled)
+    InitDB().petAlertsEnabled = enabled ~= false
+    if PSA.ApplyAlertMasterSwitches then PSA.ApplyAlertMasterSwitches() end
+end
+
+function PSA.GetBuffAlertsEnabled()
+    return InitDB().buffAlertsEnabled == true
+end
+
+function PSA.SetBuffAlertsEnabled(enabled)
+    InitDB().buffAlertsEnabled = enabled == true
+    if PSA.ApplyAlertMasterSwitches then PSA.ApplyAlertMasterSwitches() end
 end
 
 function PSA.GetFoodBuffAlertEnabled()

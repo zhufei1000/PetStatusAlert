@@ -5,6 +5,8 @@ Forever (Interface 16001): pet alerts use learned summon abilities rather than s
 
 Open `/psa` or the settings button in QFXAddonManager. Expand **Class Settings**, select a class, then switch between **Retail** and **Forever**. The active client saves alert switches, custom messages, and colors per class and uses existing shared values until a class setting is edited. The other client tab shows its read-only defaults.
 
+**General → Alert master switches** separates the two modules. Pet alerts are on by default; Buff alerts are off by default. Turning one off unregisters its game events, cancels its timers, hides its alerts, and stops its scans until it is turned back on.
+
 The **Warlock** page groups the wrong-summon switch and demon choices together. Sayaad covers both Succubus and Incubus. Retail saves a list for each specialization and suppresses the warning by default when the configured Grimoire of Sacrifice talent is active. Its talent ID is under **Advanced**. Forever uses one list. The **Mage** page lets you change or disable the Water Elemental requirement. Its default ID is 31687. The bottom of each editable class page has a class-only reset for alert switches, text, colors, and rules.
 
 **Display** has a preview you can start or stop while adjusting the settings, on any class. **Voice** lets you listen outside combat and choose between a single announcement and repeating every 2–15 seconds. The default remains every 3 seconds. Alerts without visible text are silent.

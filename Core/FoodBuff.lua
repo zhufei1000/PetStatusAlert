@@ -39,7 +39,7 @@ local function StandDown()
 end
 
 local function Refresh()
-    if not Eligible() or not PSA.CanReadFoodAuras() then
+    if not enabled or not Eligible() or not PSA.CanReadFoodAuras() then
         StandDown()
         return
     end
@@ -52,12 +52,13 @@ local function QueueRefresh()
     queued = true
     C_Timer.After(0, function()
         queued = false
+        if not enabled then return end
         Refresh()
     end)
 end
 
-function PSA.RefreshFoodBuffAlert()
-    local wanted = PSA.GetFoodBuffAlertEnabled()
+function PSA.RefreshFoodBuffAlert(skipRefresh)
+    local wanted = PSA.GetFoodBuffAlertEnabled() and PSA.GetBuffAlertsEnabled()
     if enabled ~= wanted then
         enabled = wanted
         for _, event in ipairs({
@@ -70,7 +71,7 @@ function PSA.RefreshFoodBuffAlert()
     end
     if enabled then
         showXP = PSA.IsBelowForeverLevelCap()
-        QueueRefresh()
+        if not skipRefresh then QueueRefresh() end
     else
         StandDown()
     end

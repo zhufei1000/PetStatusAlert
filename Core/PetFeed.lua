@@ -298,6 +298,11 @@ local function CreateFeedButton()
 end
 
 function PSA.RefreshPetCare(refreshFoodMenu)
+    if not PSA.GetPetAlertsEnabled() then
+        if feedButton then feedButton:Hide() end
+        PSA.SetPetCareAlert(nil)
+        return
+    end
     local happiness = GetHappiness()
     local inCombat = InCombatLockdown()
     local preferredID, preferredCount = ResolvePreferredFood()

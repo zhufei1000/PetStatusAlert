@@ -145,6 +145,7 @@ local tracked, eligible, roster, permissions, lastWhisper = {}, {}, {}, {}, {}
 local instances, counts, foodExpirations = {}, {}, {}
 local aurasKnown, weaponStates, expectedImbues = false, {}, {}
 local shieldPlan = {}
+local masterEnabled = false
 local foodLead, weaponLead = 0, 0
 local wakeAt, wakeTimer
 local wellFedName, foodHasOpaqueAura
@@ -489,6 +490,7 @@ local function QueueRefresh(plan, group, auras, gear)
     pending = true
     C_Timer.After(0, function()
         pending = false
+        if not masterEnabled then return end
         if dirtyPlan then
             if BuildAuraPlan() then dirtyAuras = true end
             if UpdateShieldPlan() then dirtyAuras = true end
@@ -630,6 +632,7 @@ local function SetEvents(events, active)
 end
 
 eventFrame:SetScript("OnEvent", function(_, event, value, status)
+    if not masterEnabled then return end
     if event == "CAN_LOCAL_WHISPER_TARGET_RESPONSE" then
         local info = IsAccessible(value) and permissions[value]
         if info and IsAccessible(status) then
@@ -665,6 +668,27 @@ eventFrame:SetScript("OnEvent", function(_, event, value, status)
 end)
 
 function PSA.RefreshRetailBuffAlerts()
+    masterEnabled = PSA.GetBuffAlertsEnabled()
+    if not masterEnabled then
+        foodEnabled, weaponEnabled, classEnabled, shieldEnabled = false, false, false, false
+        foodLead, weaponLead = 0, 0
+        watching, watchAuras = false, false
+        SetEvents(commonEvents, false)
+        SetEvents(classEvents, false)
+        SetEvents(talentEvents, false)
+        SetEvents(weaponEvents, false)
+        eventFrame:UnregisterEvent("ADDON_RESTRICTION_STATE_CHANGED")
+        PSA.SetRetailSupplyAuraWatch(false)
+        SetReminderWake(nil)
+        displayed = {}
+        instances, counts, foodExpirations = {}, {}, {}
+        tracked, eligible, expectedImbues, shieldPlan = {}, {}, {}, {}
+        weaponStates = {}
+        roster, permissions = {}, {}
+        aurasKnown = false
+        PSA.RenderRetailSupplyAlerts(displayed, false)
+        return
+    end
     foodEnabled = PSA.GetRetailSupplySetting("FOOD")
     weaponEnabled = PSA.GetRetailSupplySetting("WEAPON")
     classEnabled = PSA.GetRetailSupplySetting("CLASS")
