@@ -325,7 +325,10 @@ end
 
 local FLOAT_PERIOD = 1.5
 local FLOAT_UPDATE_INTERVAL = 0.05
-local CLASS_GLOW_INTERVAL = 1 / 30
+-- 所有像素流光共用同一个 20 FPS 调度器。LibCustomGlow 默认会给每个图标挂一个
+-- 每帧 OnUpdate；提醒图标一多（补给、职业增益、宠物护理）时，每帧的 SetPoint
+-- 调用会成倍增长。集中调度后每帧只跑一次循环，20 FPS 对流光观感几乎没有影响。
+local CLASS_GLOW_INTERVAL = 1 / 20
 local PIXEL_GLOW_FRAME_KEY = "_PixelGlow" .. ALERT_GLOW_KEY
 local classGlowUpdates = {}
 local classGlowTime, classGlowElapsed = 0, 0
@@ -347,7 +350,7 @@ local currentLayoutShowsIcon = false
 local iconTexturePending = false
 local lastMessage = ""
 local lastStatusKey = nil
-local RefreshAlertVisuals, UpdateFloatingScript
+local RefreshAlertVisuals, UpdateFloatingScript, UpdateAlertAnimation
 local petCareFrame, petCareIcon, petCareKind, petCareTexture
 local petCareDesaturated = false
 local supplyFrame, positionLabel
@@ -568,11 +571,29 @@ local function ApplyContentLayout(statusKey)
     return totalW, totalH
 end
 
+local function ForgetGlowUpdate(frame)
+    local glow = frame and frame[PIXEL_GLOW_FRAME_KEY]
+    if glow then
+        classGlowUpdates[glow] = nil
+    end
+end
+
+-- 把库自带的每帧 OnUpdate 摘下来，交给统一的 30 FPS 循环。
+local function ShareGlowUpdate(frame)
+    local glow = frame and frame[PIXEL_GLOW_FRAME_KEY]
+    local update = glow and glow.GetScript and glow:GetScript("OnUpdate")
+    if not update then return end
+    glow:SetScript("OnUpdate", nil)
+    classGlowUpdates[glow] = update
+end
+
 local function StopAlertGlow()
+    ForgetGlowUpdate(glowFrame)
     if LCG and LCG.PixelGlow_Stop then
         LCG.PixelGlow_Stop(glowFrame, ALERT_GLOW_KEY)
     end
     glowFrame:Hide()
+    UpdateAlertAnimation()
 end
 
 local function ApplyFloatOffset(y)
@@ -703,7 +724,7 @@ local function OnAlertUpdate(_, elapsed)
     ApplyFloatOffset(math.sin(phase) * currentFloatAmplitude)
 end
 
-local function UpdateAlertAnimation()
+UpdateAlertAnimation = function()
     local hasClassGlows = next(classGlowUpdates) ~= nil
     if not hasClassGlows then classGlowTime, classGlowElapsed = 0, 0 end
     local active = floatActive or hasClassGlows
@@ -751,32 +772,24 @@ local function StartAlertGlow()
     glowFrame:ClearAllPoints()
     glowFrame:SetPoint("CENTER", icon, "CENTER", 0, 0)
     StartIconGlow(glowFrame, 25)
+    ShareGlowUpdate(glowFrame)
+    UpdateAlertAnimation()
 end
 
 local function RefreshAccessoryGlow(frame, active)
     if not frame or not LCG or not LCG.PixelGlow_Start then
         return
     end
-    local useSharedUpdate = frame.classBuffKey ~= nil or frame.isRetailClassBuff
-    if useSharedUpdate then
-        local glow = frame[PIXEL_GLOW_FRAME_KEY]
-        if glow then classGlowUpdates[glow] = nil end
-    end
+    ForgetGlowUpdate(frame)
     LCG.PixelGlow_Stop(frame, ALERT_GLOW_KEY)
     if active and GetAlertGlowEnabled() then
         StartIconGlow(frame)
         -- The bundled glow library attaches its frame under this key. If a
-        -- different installed version doesn't expose it, let it animate itself.
-        if useSharedUpdate then
-            local glow = frame[PIXEL_GLOW_FRAME_KEY]
-            local update = glow and glow.GetScript and glow:GetScript("OnUpdate")
-            if update then
-                glow:SetScript("OnUpdate", nil)
-                classGlowUpdates[glow] = update
-            end
-        end
+        -- different installed version doesn't expose it, the library keeps its
+        -- own OnUpdate and the glow still animates.
+        ShareGlowUpdate(frame)
     end
-    if useSharedUpdate then UpdateAlertAnimation() end
+    UpdateAlertAnimation()
 end
 
 local function CreateSupplyBadge(frame)
@@ -931,6 +944,7 @@ local function ApplyRetailSupplyCountdown(button, expiration, lead)
 end
 
 function PSA.RenderRetailSupplyAlerts(alerts)
+    if isForever then return end
     if not PSA.GetBuffAlertsEnabled() then
         alerts = {}
     end
@@ -973,6 +987,7 @@ end
 
 -- Personal Forever class alerts are indicators only; food and ammo retain their own behavior.
 function PSA.RenderForeverClassBuffAlerts(alerts)
+    if not isForever then return end
     if #foreverSupplyItems == 0 and #alerts == 0 then return end
     if not PSA.GetBuffAlertsEnabled() then alerts = {} end
     for _, button in ipairs(foreverSupplyItems) do button.pending = false end
@@ -1027,6 +1042,7 @@ local function UpdateAmmoText()
 end
 
 function PSA.SetAmmoAlert(kind, count, texture)
+    if not isForever then return end
     if not PSA.GetBuffAlertsEnabled() then
         kind, count, texture = nil, nil, nil
     end
@@ -1082,6 +1098,7 @@ function PSA.RefreshFoodPicker()
 end
 
 function PSA.SetFoodBuffAlert(missing, showXP)
+    if not isForever then return end
     if not PSA.GetBuffAlertsEnabled() then
         missing, showXP = nil, nil
     end
@@ -1125,6 +1142,7 @@ function PSA.GetPetCareFrame()
 end
 
 function PSA.SetPetCareAlert(kind, texture, desaturated)
+    if not isForever then return end
     if not PSA.GetPetAlertsEnabled() then
         kind, texture, desaturated = nil, nil, false
     end

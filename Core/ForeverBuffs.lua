@@ -4,12 +4,22 @@ if not PSA.IsForeverClient() or not (C_UnitAuras
     and (C_UnitAuras.GetUnitAuras or C_UnitAuras.GetAuraDataByIndex)) then return end
 
 local CHEETAH = 5118
+local PACK = 13159
 local hawkRanks = {13165, 14318, 14319, 14320, 14321, 14322, 25296, 27044}
-local dragonhawkRanks = {61846, 61847}
+-- Forever has no Aspect of the Dragonhawk (the WotLK ranks 61846/61847 are not
+-- in its spellbook). Its level-60 combat aspect is Aspect of the Falcon, which
+-- gives the highest known Hawk rank's melee and ranged attack power.
+local falconRanks = {469145}
 local SPELLCAST_SUCCEEDED = "UNIT_SPELLCAST_SUCCEEDED"
-local hunterAspects = {13159, CHEETAH, 13163, 13161, 1299445, 1299446, 1299447, 20043, 20190}
-for _, group in ipairs({ hawkRanks, {34074, 415423, 469145}, dragonhawkRanks }) do
+local hunterAspects = {PACK, CHEETAH, 13163, 13161, 1299445, 1299446, 1299447, 20043, 20190}
+for _, group in ipairs({ hawkRanks, {34074, 415423}, falconRanks }) do
     for _, id in ipairs(group) do hunterAspects[#hunterAspects + 1] = id end
+end
+
+-- Cheetah and Pack both daze on damage. Pack shares that risk with the whole
+-- party, so it needs the same out-of-combat reminder as Cheetah.
+local function IsTravelAspect(spell)
+    return spell == CHEETAH or spell == PACK
 end
 
 -- Trainable ranks are ordered within each family. Coverage also includes group
@@ -75,8 +85,19 @@ local function HighestKnownSpell(spells)
     end
 end
 
+-- IsKnownPlayerSpell hits the spellbook for every rank. The answer only changes
+-- when spells/talents change, so cache the highest known rank per family.
+local knownSpellCache = {}
+local function InvalidateKnownSpellCache()
+    knownSpellCache = {}
+end
+
 local function KnownSpell(def)
-    return HighestKnownSpell(def.spells)
+    local cached = knownSpellCache[def.key]
+    if cached ~= nil then return cached or nil end
+    local spell = HighestKnownSpell(def.spells)
+    knownSpellCache[def.key] = spell or false
+    return spell
 end
 
 function PSA.GetForeverClassBuffEnabled(key)
@@ -154,7 +175,7 @@ local function SetAspectCastWatch(want)
 end
 
 local function RenderCombatAspect()
-    local show = combatAspect and lastAspect == CHEETAH and CombatActive() and not RestingOrDead()
+    local show = combatAspect and IsTravelAspect(lastAspect) and CombatActive() and not RestingOrDead()
     PSA.RenderForeverClassBuffAlerts(show and {{ key = "ASPECT", spell = combatAspect }} or {})
 end
 
@@ -183,9 +204,9 @@ local function BuildPlan()
         end
     end
     active, bySpell = nextActive, nextBySpell
-    SetAspectCastWatch(bySpell[CHEETAH] ~= nil)
+    SetAspectCastWatch(bySpell[CHEETAH] ~= nil or bySpell[PACK] ~= nil)
     if watchingAspectCasts then
-        combatAspect = HighestKnownSpell(dragonhawkRanks) or HighestKnownSpell(hawkRanks)
+        combatAspect = HighestKnownSpell(falconRanks) or HighestKnownSpell(hawkRanks)
     end
     return changed
 end
@@ -330,9 +351,9 @@ local function OnEvent(_, event, unit, _, spell)
             or not IsAccessible(spell) or type(spell) ~= "number" then return end
         if bySpell[spell] ~= definitions.ASPECT then return end
         if lastAspect ~= spell then
-            local wasCheetah = lastAspect == CHEETAH
+            local wasTravel = IsTravelAspect(lastAspect)
             lastAspect, aspectInstance = spell, nil
-            if wasCheetah ~= (spell == CHEETAH) and CombatActive() then RenderCombatAspect() end
+            if wasTravel ~= IsTravelAspect(spell) and CombatActive() then RenderCombatAspect() end
         end
         return
     end
@@ -344,9 +365,11 @@ local function OnEvent(_, event, unit, _, spell)
         inEncounter = EncounterInProgress()
         inCombat = InCombatLockdown() and true or false
         lastAspect, aspectInstance = nil, nil
+        InvalidateKnownSpellCache()
         StandDown()
         PSA.RefreshForeverClassBuffs()
     elseif event == "SPELLS_CHANGED" or event == "LEARNED_SPELL_IN_SKILL_LINE" or event == "PLAYER_TALENT_UPDATE" then
+        InvalidateKnownSpellCache()
         QueueRefresh(true)
     elseif event == "PLAYER_DEAD" then
         lastAspect = nil
@@ -377,6 +400,9 @@ function PSA.RefreshForeverClassBuffs()
     if want ~= enabled then
         enabled = want
         if want then
+            -- Spell/talent events were not subscribed while the module was
+            -- disabled, so refresh the cached ranks before building the plan.
+            InvalidateKnownSpellCache()
             if not eventFrame then
                 eventFrame = CreateFrame("Frame")
                 eventFrame:SetScript("OnEvent", OnEvent)

@@ -55,6 +55,27 @@ PSA.RETAIL_BUFFS = buffs
 PSA.RETAIL_IMBUES = imbues
 PSA.RETAIL_SHIELDS = shields
 
+-- Spell names and icons are fixed for an expansion. RefreshDisplay runs after
+-- every relevant event, so query them once instead of once per refresh.
+local spellNames, spellTextures = {}, {}
+local function SpellName(spellID)
+    local name = spellNames[spellID]
+    if name == nil then
+        name = C_Spell.GetSpellName(spellID)
+        if name then spellNames[spellID] = name end
+    end
+    return name
+end
+
+local function SpellTexture(spellID)
+    local texture = spellTextures[spellID]
+    if texture == nil then
+        texture = C_Spell.GetSpellTexture(spellID)
+        if texture then spellTextures[spellID] = texture end
+    end
+    return texture or 134400
+end
+
 local function GetSavedSetting(key)
     local settings = PSA.InitDB().retailSupply
     if type(settings) == "table" then return settings[key] end
@@ -81,20 +102,20 @@ function PSA.GetRetailSupplyLeadMinutes(key)
 end
 
 function PSA.GetRetailBuffName(buff)
-    return C_Spell.GetSpellName(buff.id) or PSA.UI["RETAIL_" .. buff.key]
+    return SpellName(buff.id) or PSA.UI["RETAIL_" .. buff.key]
 end
 
 function PSA.GetRetailImbueName(key)
     local imbue = imbuesByKey[key]
     if not imbue then return key end
-    return C_Spell.GetSpellName(imbue.spell) or PSA.UI["RETAIL_" .. key]
+    return SpellName(imbue.spell) or PSA.UI["RETAIL_" .. key]
 end
 
 function PSA.GetRetailShieldName(spellID)
     if spellID == EARTH_SHIELD_SPELL then return PSA.UI.RETAIL_EARTH_SHIELD end
     if spellID == WATER_SHIELD_SPELL then return PSA.UI.RETAIL_WATER_SHIELD end
     if spellID == LIGHTNING_SHIELD_SPELL then return PSA.UI.RETAIL_LIGHTNING_SHIELD end
-    return C_Spell.GetSpellName(spellID) or PSA.UI.RETAIL_SHIELD
+    return SpellName(spellID) or PSA.UI.RETAIL_SHIELD
 end
 
 local function SpecShield()
@@ -375,7 +396,7 @@ local function ReadWeapons()
                                 expiration = now + remaining / 1000
                             end
                         end
-                        if imbue then icon = C_Spell.GetSpellTexture(imbue.spell) end
+                        if imbue then icon = SpellTexture(imbue.spell) end
                         weaponStates[hand.key] = {
                             icon = IsAccessible(icon) and icon or 134400,
                             missing = missing, expiration = expiration, imbue = imbue and imbue.key,
@@ -444,7 +465,7 @@ local function RefreshDisplay()
                         local member, ready
                         if action == "whisper" and CanWhisper() then member, ready = FindProvider(buff) end
                         displayed[buff.key] = {
-                            icon = C_Spell.GetSpellTexture(buff.id) or 134400, action = action,
+                            icon = SpellTexture(buff.id), action = action,
                             member = member, ready = ready,
                         }
                     end
@@ -456,7 +477,7 @@ local function RefreshDisplay()
                 local lightningReadable = CanReadSpell(LIGHTNING_SHIELD_SPELL)
                 if shieldPlan.earth and earthReadable and (counts.EARTH_SHIELD or 0) == 0 then
                     displayed.EARTH_SHIELD = {
-                        icon = C_Spell.GetSpellTexture(EARTH_SHIELD_SPELL) or 134400,
+                        icon = SpellTexture(EARTH_SHIELD_SPELL),
                         action = "shield", spellID = EARTH_SHIELD_SPELL,
                     }
                 end
@@ -465,7 +486,7 @@ local function RefreshDisplay()
                         or (shieldPlan.spec == "LIGHTNING_SHIELD" and lightningReadable)
                     if readable then
                         displayed[shieldPlan.spec] = {
-                            icon = C_Spell.GetSpellTexture(shieldPlan.specID) or 134400,
+                            icon = SpellTexture(shieldPlan.specID),
                             action = "shield", spellID = shieldPlan.specID,
                         }
                     end
@@ -473,7 +494,7 @@ local function RefreshDisplay()
                 if shieldPlan.combined and earthReadable and waterReadable and lightningReadable
                     and (counts.EARTH_SHIELD or 0) + (counts.WATER_SHIELD or 0) + (counts.LIGHTNING_SHIELD or 0) == 0 then
                     displayed.SHIELD = {
-                        icon = C_Spell.GetSpellTexture(shieldPlan.castID) or 134400,
+                        icon = SpellTexture(shieldPlan.castID),
                         action = "shield", spellID = shieldPlan.castID,
                     }
                 end

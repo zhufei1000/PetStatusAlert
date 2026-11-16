@@ -787,13 +787,13 @@ Test("class buff glows share a throttled update and stop when no effects are vis
         session.RenderForeverClassBuffAlerts(alerts)
         local armor, intellect = Glow("MAGE_ARMOR"), Glow("INTELLECT")
         assert(anchor.scripts.OnUpdate and not armor.scripts.OnUpdate and not intellect.scripts.OnUpdate)
-        for _ = 1, 120 do anchor.scripts.OnUpdate(anchor, 1 / 120) end
-        assert(armor.draws == 30 and intellect.draws == 30, "each glow should redraw 30 times at 120 FPS")
-        assert(math.abs(armor.elapsed - 1) < 0.001 and math.abs(intellect.elapsed - 1) < 0.001,
+        for _ = 1, 121 do anchor.scripts.OnUpdate(anchor, 1 / 120) end
+        assert(armor.draws == 20 and intellect.draws == 20, "each glow should redraw 20 times at 120 FPS")
+        assert(math.abs(armor.elapsed - 121 / 120) < 0.001 and math.abs(intellect.elapsed - 121 / 120) < 0.001,
             "throttling must preserve elapsed animation time")
         session.RenderForeverClassBuffAlerts({alerts[2]})
-        anchor.scripts.OnUpdate(anchor, 1 / 30)
-        assert(armor.draws == 30 and intellect.draws == 31, "a removed glow must stop updating")
+        anchor.scripts.OnUpdate(anchor, 1 / 15)
+        assert(armor.draws == 20 and intellect.draws == 21, "a removed glow must stop updating")
         session.SetAlertGlowEnabled(false)
         assert(not anchor.scripts.OnUpdate and anchor:IsShown(), "static icons must not keep an animation handler")
         session.SetAlertGlowEnabled(true)
@@ -806,9 +806,9 @@ Test("class buff glows share a throttled update and stop when no effects are vis
         anchor = session.addonFrame
         session.RenderRetailSupplyAlerts({ ARCANE_INTELLECT = { icon = 123 }, FOOD = { icon = 456 } })
         assert(anchor.scripts.OnUpdate and not Glow("ARCANE_INTELLECT").scripts.OnUpdate
-            and Glow("FOOD").scripts.OnUpdate, "only the class glow uses the shared update")
+            and not Glow("FOOD").scripts.OnUpdate, "every supply glow must use the shared update")
         session.RenderRetailSupplyAlerts({ FOOD = { icon = 456 } })
-        assert(not anchor.scripts.OnUpdate and Glow("FOOD").scripts.OnUpdate)
+        assert(anchor.scripts.OnUpdate and not Glow("FOOD").scripts.OnUpdate)
         session.RenderRetailSupplyAlerts({})
     end)
     LibStub = oldLibStub
@@ -2688,7 +2688,7 @@ Test("Forever Hunter remembers aspects and recommends the best learned combat as
         Combat(false)
         ExpectAspect(nil)
         restricted = false
-        known[61846], known[61847] = true, true
+        known[469145] = true
         local cheetah = {spellId = 5118, auraInstanceID = 2, sourceUnit = "player"}
         auras = {cheetah}
         Event("SPELLS_CHANGED")
@@ -2696,8 +2696,8 @@ Test("Forever Hunter remembers aspects and recommends the best learned combat as
         assert(reads == 2)
         ExpectAspect(nil)
         Combat(true)
-        ExpectAspect(61847)
-        Cast(61847)
+        ExpectAspect(469145)
+        Cast(469145)
         ExpectAspect(nil)
 
         Combat(false)
@@ -2713,11 +2713,11 @@ Test("Forever Hunter remembers aspects and recommends the best learned combat as
         Flush()
         Cast(5118)
         Combat(true)
-        ExpectAspect(61847)
+        ExpectAspect(469145)
         Event("PLAYER_DEAD")
         ExpectAspect(nil)
         Cast(5118)
-        ExpectAspect(61847)
+        ExpectAspect(469145)
         resting = true
         Event("PLAYER_UPDATE_RESTING")
         Flush()
@@ -2725,7 +2725,26 @@ Test("Forever Hunter remembers aspects and recommends the best learned combat as
         resting = false
         Event("PLAYER_UPDATE_RESTING")
         Flush()
-        ExpectAspect(61847)
+        ExpectAspect(469145)
+
+        -- Pack shares Cheetah's daze risk with the whole party, so an active
+        -- Pack must produce the same combat-aspect recommendation.
+        known[13159] = true
+        local pack = {spellId = 13159, auraInstanceID = 3, sourceUnit = "player"}
+        auras = {pack}
+        Combat(false)
+        Flush()
+        ExpectAspect(nil)
+        Combat(true)
+        ExpectAspect(469145)
+        Cast(469145)
+        ExpectAspect(nil)
+        Cast(13159)
+        ExpectAspect(469145)
+        Combat(false)
+        Flush()
+        ExpectAspect(nil)
+
         session.SetForeverClassBuffEnabled("ASPECT", false)
         ExpectAspect(nil)
         assert(not listener.events.UNIT_SPELLCAST_SUCCEEDED, "disabling aspects must remove the cast watcher")
@@ -2811,6 +2830,48 @@ Test("turning both alert masters off leaves no central event subscriptions after
         buffAlertsEnabled = false, foodBuffAlertEnabled = true, ammoThreshold = 100})
     local events = session.addonFrame.events
     assert(not next(events))
+end)
+
+Test("Retail and Forever runtime modules stay isolated", function()
+    local oldBuild, oldClass, oldAuras = GetBuildInfo, UnitClass, C_UnitAuras
+    local oldSpec, oldSpell, oldSecrets, oldResting = C_SpecializationInfo, C_Spell, C_Secrets, IsResting
+    local oldEnum = Enum
+    local ok, err = pcall(function()
+        GetBuildInfo = function() return "12.1.5", "70783", "", 120105 end
+        UnitClass = function() return "Hunter", "HUNTER" end
+        C_UnitAuras = {GetUnitAuras = function() return {} end}
+        C_SpecializationInfo = {
+            GetSpecialization = function() return 1 end,
+            GetSpecializationInfo = function() return 1, nil, nil, nil, nil, 4 end,
+        }
+        C_Spell = {GetSpellName = function() return "Well Fed" end, GetSpellTexture = function() return 123 end}
+        C_Secrets = {ShouldAurasBeSecret = function() return false end}
+        Enum = {ChatWhisperTargetStatus = {CanWhisper = 1, CanWhisperGuild = 2}}
+        IsResting = function() return false end
+
+        local retail = LoadLanguageSession({language = "enUS"})
+        assert(retail.RETAIL_BUFFS and retail.GetRetailSupplySetting
+            and retail.HandleRetailSupplyAuraUpdate and retail.SetRetailSupplyAuraWatch)
+        assert(not retail.GetForeverClassBuffOptions and not retail.HandleForeverClassAuraUpdate
+            and not retail.SetForeverClassAuraWatch and not retail.SetForeverFoodAuraWatch
+            and not retail.GetForeverAmmo and not retail.ReadFoodBuff)
+        assert(not retail.HandleWarriorAuraChanged and not retail.WantsWarriorAuraWatch)
+        assert(not retail.addonFrame.events.UNIT_AURA and not retail.addonFrame.events.UNIT_INVENTORY_CHANGED
+            and not retail.addonFrame.events.UNIT_SPELLCAST_SUCCEEDED)
+
+        GetBuildInfo = function() return "1.60.1", "70888", "", 16001 end
+        local forever = LoadLanguageSession({language = "enUS"})
+        assert(not forever.RETAIL_BUFFS and not forever.GetRetailSupplySetting
+            and not forever.HandleRetailSupplyAuraUpdate and not forever.SetRetailSupplyAuraWatch)
+        assert(forever.GetForeverClassBuffOptions and forever.HandleForeverClassAuraUpdate
+            and forever.SetForeverClassAuraWatch and forever.SetForeverFoodAuraWatch)
+        assert(not forever.HandleWarriorAuraChanged and not forever.WantsWarriorAuraWatch)
+        assert(not forever.addonFrame.events.UNIT_AURA and not forever.addonFrame.events.UNIT_INVENTORY_CHANGED
+            and not forever.addonFrame.events.UNIT_SPELLCAST_SUCCEEDED)
+    end)
+    GetBuildInfo, UnitClass, C_UnitAuras, C_SpecializationInfo, C_Spell, C_Secrets, IsResting, Enum =
+        oldBuild, oldClass, oldAuras, oldSpec, oldSpell, oldSecrets, oldResting, oldEnum
+    assert(ok, err)
 end)
 
 print(string.format("RESULT: %d passed, %d failed", passed, failed))

@@ -97,33 +97,56 @@ local function GetHappiness()
     end
 end
 
+-- Reuse a per-bag summary when only the current happiness changed. Without it
+-- every UNIT_HAPPINESS tick walked every bag slot even though no bag event had
+-- invalidated the cached contents.
 local function FindFood(preferredID, visitFood, useCache)
     local hasFood = false
     for bag = 0, LAST_BAG do
         local cachedBag = useCache and foodBags[bag] or nil
-        local size = cachedBag and cachedBag.size or C_Container.GetContainerNumSlots(bag)
-        if useCache and not cachedBag then
-            cachedBag = { size = size }
-            foodBags[bag] = cachedBag
-        end
-
-        for slot = 1, size do
-            local item = cachedBag and cachedBag[slot]
-            if item == nil then
-                item = C_Container.GetContainerItemInfo(bag, slot)
-                local edible = item and item.stackCount > 0 and C_PetInfo.CanPetEatItem(item.itemID)
-                if cachedBag then
-                    cachedBag[slot] = edible and item or false
-                end
-                item = edible and item
+        if useCache and cachedBag and not visitFood then
+            hasFood = hasFood or cachedBag.hasFood
+            local entry
+            if preferredID then
+                entry = cachedBag.byID and cachedBag.byID[preferredID]
+            else
+                entry = cachedBag.first
             end
-            if item then
-                hasFood = true
-                if not item.isLocked then
-                    if visitFood then
-                        visitFood(item)
-                    elseif not preferredID or item.itemID == preferredID then
-                        return item, bag, slot, true
+            if entry then return entry.item, bag, entry.slot, true end
+        else
+            local size = cachedBag and cachedBag.size or C_Container.GetContainerNumSlots(bag)
+            if useCache and not cachedBag then
+                cachedBag = { size = size, byID = {} }
+                foodBags[bag] = cachedBag
+            end
+
+            for slot = 1, size do
+                local item = cachedBag and cachedBag[slot]
+                if item == nil then
+                    item = C_Container.GetContainerItemInfo(bag, slot)
+                    local edible = item and item.stackCount > 0 and C_PetInfo.CanPetEatItem(item.itemID)
+                    if cachedBag then
+                        cachedBag[slot] = edible and item or false
+                    end
+                    item = edible and item
+                end
+                if item then
+                    hasFood = true
+                    if cachedBag then
+                        cachedBag.hasFood = true
+                        if not item.isLocked then
+                            local entry = { item = item, slot = slot }
+                            cachedBag.byID = cachedBag.byID or {}
+                            cachedBag.first = cachedBag.first or entry
+                            cachedBag.byID[item.itemID] = cachedBag.byID[item.itemID] or entry
+                        end
+                    end
+                    if not item.isLocked then
+                        if visitFood then
+                            visitFood(item)
+                        elseif not preferredID or item.itemID == preferredID then
+                            return item, bag, slot, true
+                        end
                     end
                 end
             end
