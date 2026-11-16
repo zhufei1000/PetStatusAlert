@@ -171,6 +171,10 @@ local function InitDB(force)
     PetStatusAlertDB.alertPosition.x = tonumber(PetStatusAlertDB.alertPosition.x) or 0
     PetStatusAlertDB.alertPosition.y = tonumber(PetStatusAlertDB.alertPosition.y) or 220
 
+    if type(PetStatusAlertDB.supplyAlertPosition) ~= "table" then
+        PetStatusAlertDB.supplyAlertPosition = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 130 }
+    end
+
     PSA.dbInitialized = true
     return PetStatusAlertDB
 end
@@ -318,6 +322,24 @@ end
 
 function PSA.GetAmmoThreshold()
     return NormalizeAmmoThreshold(InitDB().ammoThreshold) or DEFAULT_AMMO_THRESHOLD
+end
+
+function PSA.GetFoodBuffAlertEnabled()
+    return InitDB().foodBuffAlertEnabled == true
+end
+
+function PSA.SetFoodBuffAlertEnabled(enabled)
+    InitDB().foodBuffAlertEnabled = enabled == true
+    if PSA.RefreshFoodBuffAlert then PSA.RefreshFoodBuffAlert() end
+end
+
+function PSA.GetFoodPickerEnabled()
+    return InitDB().foodPickerEnabled == true
+end
+
+function PSA.SetFoodPickerEnabled(enabled)
+    InitDB().foodPickerEnabled = enabled == true
+    if PSA.RefreshFoodPicker then PSA.RefreshFoodPicker() end
 end
 
 function PSA.SetAmmoThreshold(value)

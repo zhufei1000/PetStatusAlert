@@ -16,6 +16,120 @@ function PSA.IsAccessibleValue(value)
     return type(issecretvalue) ~= "function" or not issecretvalue(value)
 end
 
+if isForever and C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName
+    and C_UnitAuras.GetPlayerAuraBySpellID and C_Spell and C_Spell.GetSpellName then
+    local WELL_FED = 19705
+    -- Some foods also have older effects with a separate aura ID.
+    local foodAuraByItem = {
+        [13810] = 18125, -- Blessed Sunfruit
+        [13813] = 18141, -- Blessed Sunfruit Juice
+        [13928] = 18192, -- Grilled Squid
+        [13931] = 18194, -- Nightfin Soup
+        [18254] = 22730, -- Runn Tum Tuber Surprise
+        [21023] = 25661, -- Dirge's Kickin' Chimaerok Chops
+    }
+    local namedFoodAuras = {}
+    for _, auraID in pairs(foodAuraByItem) do namedFoodAuras[auraID] = true end
+    local wellFedName
+    local accessible = PSA.IsAccessibleValue
+
+    local function ReadableTable(value)
+        return accessible(value) and (type(value) ~= "table" or not canaccesstable or canaccesstable(value))
+    end
+
+    function PSA.HasKnownFoodAura(itemID)
+        return foodAuraByItem[itemID] ~= nil
+    end
+
+    function PSA.CanReadFoodAuras()
+        return not (C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret())
+    end
+
+    local function SpellAuraReadable(id)
+        return not (C_Secrets and C_Secrets.ShouldSpellAuraBeSecret and C_Secrets.ShouldSpellAuraBeSecret(id))
+    end
+
+    local function InstanceID(aura)
+        local id = aura.auraInstanceID
+        if accessible(id) and type(id) == "number" then return id end
+    end
+
+    -- true = present, false = confirmed missing, nil = unreadable.
+    function PSA.ReadFoodBuff()
+        if not PSA.CanReadFoodAuras() then return end
+        if not wellFedName then
+            local name = C_Spell.GetSpellName(WELL_FED)
+            if accessible(name) and type(name) == "string" and name ~= "" then wellFedName = name end
+        end
+        local unknown = not wellFedName or not SpellAuraReadable(WELL_FED)
+        if not unknown then
+            local aura = C_UnitAuras.GetAuraDataBySpellName("player", wellFedName, "HELPFUL")
+            if not ReadableTable(aura) then
+                unknown = true
+            elseif aura then
+                return true, InstanceID(aura)
+            end
+        end
+
+        local present
+        for id in pairs(namedFoodAuras) do
+            if SpellAuraReadable(id) then
+                local aura = C_UnitAuras.GetPlayerAuraBySpellID(id)
+                if not ReadableTable(aura) then
+                    unknown = true
+                elseif aura then
+                    present = true
+                    local instanceID = InstanceID(aura)
+                    if instanceID then return true, instanceID end
+                end
+            else
+                unknown = true
+            end
+        end
+        if present then return true end
+        if not unknown then return false end
+    end
+
+    function PSA.FoodAuraMayHaveChanged(update, present, instanceID)
+        if not ReadableTable(update) then return false end
+        if not update then return true end
+        local full = update.isFullUpdate
+        if accessible(full) and full then return true end
+
+        if present then
+            local removed = update.removedAuraInstanceIDs
+            if ReadableTable(removed) and removed then
+                for _, id in ipairs(removed) do
+                    if accessible(id) and (not instanceID or id == instanceID) then return true end
+                end
+            end
+            -- A duration update leaves the tracked instance in place.
+            return false
+        end
+
+        local added = update.addedAuras
+        if not ReadableTable(added) or not added then return false end
+        for _, aura in ipairs(added) do
+            if ReadableTable(aura) then
+                local id, name, helpful = aura.spellId, aura.name, aura.isHelpful
+                if accessible(helpful) and helpful
+                    and ((accessible(id) and (id == WELL_FED or namedFoodAuras[id]))
+                        or (wellFedName and accessible(name) and name == wellFedName)) then
+                    return true
+                end
+            end
+        end
+        return false
+    end
+end
+
+function PSA.IsBelowForeverLevelCap(level)
+    if level == nil and UnitLevel then level = UnitLevel("player") end
+    local cap = GetMaxLevelForPlayerExpansion and GetMaxLevelForPlayerExpansion()
+    if not PSA.IsAccessibleValue(cap) or type(cap) ~= "number" or cap <= 0 then cap = 60 end
+    return PSA.IsAccessibleValue(level) and type(level) == "number" and level > 0 and level < cap
+end
+
 function PSA.GetPlayerClassFile()
     if type(UnitClass) == "function" then
         local _, classFile = UnitClass("player")

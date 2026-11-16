@@ -16,6 +16,7 @@ local RefreshPetCare = PSA.RefreshPetCare
 local InvalidatePetFood = PSA.InvalidatePetFood
 local RefreshCombatTTSReminder = PSA.RefreshCombatTTSReminder
 local ClearPetStatusCaches = PSA.ClearPetStatusCaches
+local HandleFoodBuffEvent = PSA.HandleFoodBuffEvent
 local isForever = PSA.IsForeverClient()
 
 local function RegisterEventSafe(event)
@@ -28,6 +29,25 @@ local function RegisterUnitEventSafe(event, unit)
     if addonFrame and event and unit then
         pcall(addonFrame.RegisterUnitEvent, addonFrame, event, unit)
     end
+end
+
+if not isForever then
+    local watchingPlayerAuras = false
+    function PSA.SetRetailSupplyAuraWatch(enabled)
+        local watch = enabled or PSA.HandleWarriorAuraChanged ~= nil
+        if watch == watchingPlayerAuras then return end
+        watchingPlayerAuras = watch
+        if watch then
+            if addonFrame.RegisterUnitEvent then
+                RegisterUnitEventSafe("UNIT_AURA", "player")
+            else
+                RegisterEventSafe("UNIT_AURA")
+            end
+        else
+            addonFrame:UnregisterEvent("UNIT_AURA")
+        end
+    end
+    PSA.SetRetailSupplyAuraWatch(false)
 end
 
 RegisterEventSafe("ADDON_LOADED")
@@ -127,7 +147,20 @@ if RefreshPetCare then
             RegisterEventSafe(event)
         end
     end
+elseif HandleFoodBuffEvent then
+    RegisterEventSafe("PLAYER_DEAD")
+    RegisterEventSafe("PLAYER_ALIVE")
+    RegisterEventSafe("PLAYER_UNGHOST")
 end
+
+local FOOD_ONLY_EVENTS = {
+    UNIT_AURA = true,
+    ADDON_RESTRICTION_STATE_CHANGED = true,
+    PLAYER_UPDATE_RESTING = true,
+    PLAYER_LEVEL_UP = true,
+    ENCOUNTER_START = true,
+    ENCOUNTER_END = true,
+}
 
 local petCareRefreshPending = false
 local foodMenuRefreshPending = false
@@ -190,7 +223,16 @@ addonFrame:SetScript("OnEvent", function(_, event, unit, slot)
             if PSA.RefreshAlertVisuals then
                 PSA.RefreshAlertVisuals()
             end
+            if PSA.RefreshRetailBuffAlerts then PSA.RefreshRetailBuffAlerts() end
             RegisterNativeOptionsCategory()
+        end
+        return
+    end
+
+    if not isForever and event == "UNIT_AURA" then
+        if PSA.IsAccessibleValue(unit) and unit == "player" then
+            if PSA.HandleWarriorAuraChanged then PSA.HandleWarriorAuraChanged() end
+            if PSA.HandleRetailSupplyAuraUpdate then PSA.HandleRetailSupplyAuraUpdate(slot) end
         end
         return
     end
@@ -201,6 +243,17 @@ addonFrame:SetScript("OnEvent", function(_, event, unit, slot)
 
     if (event == "UNIT_FLAGS" and unit ~= "pet") or (event == "UNIT_PET" and unit ~= "player") then
         return
+    end
+
+    if HandleFoodBuffEvent then
+        if FOOD_ONLY_EVENTS[event] then
+            HandleFoodBuffEvent(event, unit, slot)
+            return
+        end
+        if event == "PLAYER_ENTERING_WORLD" or event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED"
+            or event == "PLAYER_DEAD" or event == "PLAYER_ALIVE" or event == "PLAYER_UNGHOST" then
+            HandleFoodBuffEvent(event, unit, slot)
+        end
     end
 
     if trackAmmo then
@@ -276,7 +329,6 @@ addonFrame:SetScript("OnEvent", function(_, event, unit, slot)
     end
 
     -- Pet flags and mount/control/vehicle state changes only need a single
-    -- coalesced refresh. UNIT_AURA(player) is intentionally not registered because
-    -- it causes frequent unrelated refreshes and is not required for pet status.
+    -- coalesced refresh. Food-only UNIT_AURA events return before the pet path.
     QueueRefresh(0.08)
 end)

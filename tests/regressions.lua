@@ -21,6 +21,13 @@ function Methods:RegisterEvent(event)
     self.events = self.events or {}
     self.events[event] = true
 end
+function Methods:RegisterUnitEvent(event, unit)
+    self:RegisterEvent(event)
+    self.events[event] = unit
+end
+function Methods:UnregisterEvent(event)
+    if self.events then self.events[event] = nil end
+end
 function Methods:IsShown() return self.shown end
 function Methods:IsVisible() return self.shown and (not self.parent or self.parent:IsVisible()) end
 function Methods:Show() self.shown = true end
@@ -255,7 +262,7 @@ local function LoadLanguageSession(saved)
     PetStatusAlertDB = nil
     local session = {}
     for _, path in ipairs({"Core/Database.lua", "Core/Compat.lua", "Core/Localization.lua", "Core/AlertFrame.lua",
-        "Core/TTS.lua", "Core/PetLogic.lua", "Core/PetFeed.lua", "Core/WarriorLogic.lua", "UI/Options.lua",
+        "Core/FoodBuff.lua", "Core/FoodPicker.lua", "Core/TTS.lua", "Core/PetLogic.lua", "Core/PetFeed.lua", "Core/WarriorLogic.lua", "Core/RetailBuffs.lua", "UI/Options.lua",
         "UI/ManagerSettings.lua", "Core/Events.lua"}) do
         assert(loadfile(path))("PetStatusAlert", session)
     end
@@ -723,18 +730,28 @@ Test("Forever threshold settings share the saved numeric value", function()
     assert(session.GetAmmoThreshold() == 100)
     local tabs = session.GetSettingsDefinition({}).tabs
     local tab = tabs[#tabs]
-    assert(tab.key == "forever" and tab.title == "弹药不足提醒")
-    local section = {EditBox = function(_, _, get, set, _, _, opts)
+    assert(tab.key == "auras" and tab.title == "增益提醒")
+    assert(#tab.subtabs == 2 and tab.subtabs[1].key == "consumables" and tab.subtabs[2].key == "ammo")
+    local section = {Check = function(_, _, get, set)
+        assert(not get())
+        set(true)
+        assert(get())
+        set(false)
+    end, EditBox = function(_, _, get, set, _, _, opts)
         assert(opts.numeric and get() == 100)
         assert(set("160") == 160 and get() == 160)
     end}
-    tab.build({NewSection = function() return section end, AddSection = noop})
+    local managerPage = {NewSection = function() return section end, AddSection = noop}
+    tab.subtabs[1].build(managerPage)
+    tab.subtabs[2].build(managerPage)
 
-    local createOptions = Upvalue(session.OpenOptionsFrame, "CreateOptionsFrame")
-    local drawForever = Upvalue(createOptions, "DrawForeverPage")
-    local root = Object(UIParent)
-    drawForever(root)
-    local page = root.children[1].children[1]
+    session.OpenOptionsFrame()
+    local foreverFrame = Upvalue(session.RefreshOptionsFrameLocale, "optionsFrame")
+    foreverFrame.navButtons.auras.scripts.OnClick()
+    assert(FindText(foreverFrame.currentPage, session.UI.FOOD_PICKER_ENABLE))
+    foreverFrame.auraButtons.ammo.scripts.OnClick()
+    assert(not FindText(foreverFrame.currentPage, session.UI.FOOD_PICKER_ENABLE))
+    local page = foreverFrame.currentPage.children[1].children[1]
     local standaloneSection = page.children[#page.children]
     local input = standaloneSection.children[#standaloneSection.children]
     assert(input.template == "InputBoxTemplate" and input:GetText() == "160")
@@ -753,7 +770,8 @@ Test("Forever threshold settings share the saved numeric value", function()
     local retail = LoadLanguageSession({language = "enUS", ammoThreshold = 250})
     retail.OpenOptionsFrame()
     local frame = Upvalue(retail.RefreshOptionsFrameLocale, "optionsFrame")
-    frame.navButtons.forever.scripts.OnClick()
+    frame.navButtons.auras.scripts.OnClick()
+    frame.auraButtons.ammo.scripts.OnClick()
     local retailPage = frame.currentPage.children[1].children[1]
     local retailSection = retailPage.children[#retailPage.children]
     local retailInput = retailSection.children[#retailSection.children]
@@ -803,7 +821,7 @@ Test("Forever ammo warns below 100 after every combat and only updates outside c
     Event("PLAYER_ENTERING_WORLD")
     FlushEvents()
     local content = session.alertText.parent
-    local row = content.parent
+    local row = Upvalue(session.SetAmmoAlert, "supplyFrame")
     local frameCount, timerCount = #row.children, #timers
     assert(reads == 1 and not next(activeGlows), "100 must not warn")
 
@@ -819,9 +837,9 @@ Test("Forever ammo warns below 100 after every combat and only updates outside c
     local _, badge, label = table.unpack(alert.children)
     assert(alert:IsVisible() and activeGlows[alert] and alert.icon.texture == 45678)
     assert(badge:GetText() == "99" and session.currentStatusKey == nil)
-    assert(alert.point[1] == "CENTER" and alert.point[2] == content and alert.point[3] == "CENTER")
-    assert(label:GetText() == "Low arrows" and label.point[1] == "RIGHT" and label.point[2] == alert
-        and label.point[3] == "LEFT")
+    assert(alert.point[2] == row and row.parent == UIParent and not session.addonFrame:IsShown())
+    assert(label:GetText() == "Low arrows" and label.point[1] == "LEFT" and label.point[2] == alert
+        and label.point[3] == "RIGHT")
 
     local tooltip = Object()
     function tooltip:IsForbidden() return false end
@@ -875,17 +893,17 @@ Test("Forever ammo warns below 100 after every combat and only updates outside c
     assert(alert:IsVisible() and badge:GetText() == "0" and alert.icon.texture == 12345)
     session.ShowStatus("PASSIVE")
     assert(alert:IsVisible() and session.currentStatusKey == "PASSIVE")
-    assert(alert.point[1] == "RIGHT" and alert.point[2] == content and alert.point[3] == "LEFT")
+    assert(alert.point[2] == row)
     assert(content.point[4] - content:GetWidth() / 2 + content.icon:GetWidth() / 2 == 0,
-        "stance icon must use the same center as the standalone ammo icon")
+        "stance icon must stay at its own saved center")
     session.SetPetCareAlert("feed", 34567)
     local care = session.GetPetCareFrame()
-    assert(care:IsVisible() and care.point[2] == content.icon and alert.point[2] == care)
+    assert(care:IsVisible() and care.point[2] == content.icon and alert.point[2] == row)
     session.SetAlertIconSize(72)
     assert(alert:GetWidth() == 72 and care:GetWidth() == 72 and content.icon:GetWidth() == 72)
     local anchor = session.addonFrame
-    assert(anchor:GetWidth() / 2 - anchor.clampInsets[1] >= 72 / 2 + 2 * (8 + 72) + label:GetWidth(),
-        "left edge must include both accessory icons and the ammo label")
+    assert(anchor:GetWidth() / 2 - anchor.clampInsets[1] >= 72 / 2 + 8 + 72,
+        "pet row must fit the pet care icon")
     assert(anchor:GetWidth() / 2 + anchor.clampInsets[2] >= content:GetWidth() - 72 / 2,
         "right edge must include the stance text")
     PetStatusAlertDB.customMessages.PASSIVE = string.rep("Long alert text ", 30)
@@ -894,19 +912,29 @@ Test("Forever ammo warns below 100 after every combat and only updates outside c
         "the row must fit even when the centered icon leaves most of the text to its right")
     PetStatusAlertDB.customMessages.PASSIVE = nil
     session.HideStatus()
-    assert(alert:IsVisible() and care.point[1] == "CENTER" and alert.point[2] == care)
+    assert(alert:IsVisible() and care.point[1] == "CENTER" and alert.point[2] == row)
     session.SetPetCareAlert(nil)
-    assert(alert:IsVisible() and alert.point[1] == "CENTER" and alert.point[2] == content,
-        "the remaining icon must return to the saved center")
-    function anchor:StartMoving() self.moving = true end
-    function anchor:StopMovingOrSizing() self.moving = false end
-    function anchor:GetPoint() return table.unpack(self.point) end
+    assert(alert:IsVisible() and not anchor:IsShown())
+    for _, draggable in ipairs({anchor, row}) do
+        draggable.StartMoving = function(self) self.moving = true end
+        draggable.StopMovingOrSizing = function(self) self.moving = false end
+        draggable.GetPoint = function(self) return table.unpack(self.point) end
+    end
     session.SetAlertPositionLocked(false)
+    assert(anchor:IsShown() and row:IsShown() and anchor.mouseEnabled and row.mouseEnabled)
+    row.scripts.OnDragStart(row)
+    assert(row.moving and not anchor.moving)
+    row:SetPoint("CENTER", UIParent, "CENTER", -60, -20)
+    row.scripts.OnDragStop(row)
+    assert(PetStatusAlertDB.supplyAlertPosition.x == -60 and PetStatusAlertDB.alertPosition.x == 0)
     anchor.scripts.OnDragStart(anchor)
     assert(anchor.moving and anchor.mouseEnabled)
     anchor:SetPoint("CENTER", UIParent, "CENTER", 120, -40)
     anchor.scripts.OnDragStop(anchor)
     assert(not anchor.moving and PetStatusAlertDB.alertPosition.x == 120 and PetStatusAlertDB.alertPosition.y == -40)
+    assert(PetStatusAlertDB.supplyAlertPosition.x == -60 and PetStatusAlertDB.supplyAlertPosition.y == -20)
+    session.SetAlertPositionLocked(true)
+    assert(not anchor:IsShown() and not row.mouseEnabled)
 
     weapon, ammo, count = 102, 202, 100
     Event("PLAYER_EQUIPMENT_CHANGED", 18)
@@ -949,6 +977,274 @@ Test("Forever ammo warns below 100 after every combat and only updates outside c
     GetInventoryItemID, GetInventoryItemCount, GetInventoryItemTexture = nil, nil, nil
     GameTooltip = nil
     C_Timer.After = after
+end)
+
+Test("Forever food reminder handles gains and removals without polling", function()
+    local pending = {}
+    local level, reads = 59, 0
+    local aura, otherFood, restricted, restrictedFoodID, resting, dead
+    local after, newTimer = C_Timer.After, C_Timer.NewTimer
+    local priorAuras, priorSecrets = C_UnitAuras, C_Secrets
+    local priorLevel, priorResting, priorDead = UnitLevel, IsResting, UnitIsDeadOrGhost
+    local priorSpellName = C_Spell.GetSpellName
+    C_Timer.After = function(_, callback) pending[#pending + 1] = callback end
+    C_Timer.NewTimer = function() error("Food checks must not create an expiry timer") end
+    GetBuildInfo = function() return "1.60.1", "70888", "", 16001 end
+    UnitLevel = function() return level end
+    IsResting = function() return resting end
+    UnitIsDeadOrGhost = function() return dead end
+    C_Secrets = {
+        ShouldAurasBeSecret = function() return restricted end,
+        ShouldSpellAuraBeSecret = function(id) return restrictedFoodID == id end,
+    }
+    C_Spell.GetSpellName = function(id) assert(id == 19705); return "Well Fed" end
+    C_UnitAuras = {
+        GetAuraDataBySpellName = function(unit, name, filter)
+            assert(unit == "player" and name == "Well Fed" and filter == "HELPFUL")
+            assert(not restricted and not inCombat and not resting and not dead)
+            reads = reads + 1
+            return aura
+        end,
+        GetPlayerAuraBySpellID = function(id)
+            assert(id ~= restrictedFoodID, "secret spell IDs must not be queried")
+            if id == 18192 then return otherFood end
+        end,
+    }
+    local session = LoadLanguageSession({ language = "enUS", foodBuffAlertEnabled = true })
+    local events, pet = session.addonFrame.events, session.addonFrame
+    local row = Upvalue(session.SetAmmoAlert, "supplyFrame")
+    local function Event(event, ...)
+        if events[event] then pet.scripts.OnEvent(pet, event, ...) end
+    end
+    local function Flush()
+        local callbacks = pending
+        pending = {}
+        for _, callback in ipairs(callbacks) do callback() end
+    end
+
+    Event("PLAYER_ENTERING_WORLD")
+    Flush()
+    local food = assert(FindNode(row, function(node) return node.icon and node.icon.texture == 136000 end))
+    local label = food.children[2]
+    assert(reads == 1 and events.UNIT_AURA == "player" and food:IsVisible())
+    assert(label:GetText() == "Missing food buff · XP food gives +5% kill XP")
+    Event("UNIT_AURA", "player", { addedAuras = {{isHelpful = true, spellId = 99, name = "Other"}} })
+    Flush()
+    assert(reads == 1, "unrelated aura changes must not trigger a food lookup")
+
+    level = 60
+    Event("PLAYER_LEVEL_UP", level)
+    assert(label:GetText() == "Missing food buff" and food:IsVisible() and reads == 1)
+    session.SetAmmoAlert("LOW_ARROWS", 12, 12345)
+    local ammo = row.children[#row.children]
+    assert(ammo:IsVisible() and food:IsVisible() and ammo.point[2] == row and food.point[4] > ammo.point[4])
+    session.SetAmmoAlert()
+
+    aura = { isHelpful = true, spellId = 999, name = "Well Fed", auraInstanceID = 30 }
+    Event("UNIT_AURA", "player", { addedAuras = {aura} })
+    Flush()
+    assert(reads == 2 and not food:IsShown() and events.UNIT_AURA == "player")
+    Event("UNIT_AURA", "player", { removedAuraInstanceIDs = {999}, updatedAuraInstanceIDs = {30} })
+    assert(#pending == 0 and reads == 2, "unrelated removals and duration changes must not cause a lookup")
+
+    otherFood = { auraInstanceID = 31 }
+    aura = nil
+    Event("UNIT_AURA", "player", { removedAuraInstanceIDs = {30} })
+    Flush()
+    assert(reads == 3 and not food:IsShown(), "removing one food aura must not hide another")
+    otherFood = nil
+    Event("UNIT_AURA", "player", { removedAuraInstanceIDs = {31} })
+    Flush()
+    assert(reads == 4 and food:IsVisible() and label:GetText() == "Missing food buff")
+
+    aura = { isHelpful = true, spellId = 999, name = "Well Fed", auraInstanceID = 32 }
+    Event("UNIT_AURA", "player", { isFullUpdate = true })
+    Flush()
+    assert(reads == 5 and not food:IsShown())
+
+    inCombat = true
+    Event("PLAYER_REGEN_DISABLED")
+    assert(not events.UNIT_AURA)
+    inCombat = false
+    restricted = true
+    Event("PLAYER_REGEN_ENABLED")
+    Flush()
+    assert(reads == 5 and not food:IsShown() and not events.UNIT_AURA)
+
+    restricted = false
+    Event("ADDON_RESTRICTION_STATE_CHANGED")
+    Flush()
+    assert(reads == 6 and events.UNIT_AURA == "player")
+    Event("ADDON_RESTRICTION_STATE_CHANGED")
+    restricted = true
+    Flush()
+    assert(reads == 6 and not events.UNIT_AURA, "restriction activation takes effect after dispatch")
+    restricted, aura = false, nil
+    resting = true
+    Event("PLAYER_UPDATE_RESTING")
+    resting = false
+    Event("PLAYER_UPDATE_RESTING")
+    Flush()
+    assert(reads == 7 and food:IsVisible() and label:GetText() == "Missing food buff")
+    dead = true
+    Event("PLAYER_DEAD")
+    assert(not food:IsVisible() and not events.UNIT_AURA)
+    dead, restrictedFoodID = false, 18192
+    Event("PLAYER_ALIVE")
+    Event("PLAYER_UNGHOST")
+    Flush()
+    assert(reads == 8 and not food:IsVisible(),
+        "an unreadable candidate is unknown rather than missing")
+    session.SetFoodBuffAlertEnabled(false)
+    assert(not events.PLAYER_UPDATE_RESTING and not events.PLAYER_LEVEL_UP and not events.UNIT_AURA
+        and not events.ADDON_RESTRICTION_STATE_CHANGED)
+    Event("PLAYER_REGEN_ENABLED")
+    Flush()
+    assert(reads == 8)
+    assert(not row:IsShown() and not pet:IsShown())
+    session.SetAlertPositionLocked(false)
+    assert(row:IsShown() and pet:IsShown() and row.mouseEnabled and pet.mouseEnabled)
+    assert(not food:IsShown(), "positioning should show a label, not a false food warning")
+    session.SetAlertPositionLocked(true)
+    assert(not row:IsShown() and not pet:IsShown())
+
+    C_Timer.After, C_Timer.NewTimer = after, newTimer
+    C_UnitAuras, C_Secrets = priorAuras, priorSecrets
+    UnitLevel, IsResting, UnitIsDeadOrGhost = priorLevel, priorResting, priorDead
+    GetBuildInfo, C_Spell.GetSpellName = nil, priorSpellName
+end)
+
+Test("Forever player food picker saves a character's valid choice and only scans while its menu is open", function()
+    local previous = {}
+    local globals = { "GetBuildInfo", "C_Container", "C_Item", "C_UnitAuras", "C_Spell", "MenuUtil",
+        "Menu", "MenuVariants", "UnitGUID", "wipe", "SpellIsTargeting", "GetCursorInfo" }
+    for _, key in ipairs(globals) do previous[key] = _G[key] end
+    local after = C_Timer.After
+    local pending, scans = {}, 0
+    local guid, nutritiousName = "Player-A", nil
+    local coldItem = 102
+    local counts = { [101] = 3, [102] = 1, [5525] = 4, [13810] = 1, [999] = 1 }
+    local bag = {101, 101, 5525, 13810, 102, 999}
+    C_Timer.After = function(_, callback) pending[#pending + 1] = callback end
+    GetBuildInfo = function() return "1.60.1", "70888", "", 16001 end
+    UnitGUID = function() return guid end
+    SpellIsTargeting, GetCursorInfo = noop, noop
+    wipe = function(t) for k in pairs(t) do t[k] = nil end end
+    C_Container = {
+        GetContainerNumSlots = function(bagID) return bagID == 0 and #bag or 0 end,
+        GetContainerItemInfo = function(_, slot)
+            scans = scans + 1
+            local id = bag[slot]
+            return id and { itemID = id, stackCount = (id == 101 and (slot == 1 and 1 or 2)) or counts[id] }
+        end,
+    }
+    C_Spell = {
+        GetSpellName = function(id) return id == 1248377 and nutritiousName or id == 19705 and "Well Fed" or nil end,
+        RequestLoadSpellData = function(id) assert(id == 1248377) end,
+    }
+    C_UnitAuras = {GetAuraDataBySpellName = noop, GetPlayerAuraBySpellID = noop}
+    C_Item = {
+        GetItemSpell = function(id) return (id == 101 or id == 102) and "Nutritious Food" or "Food" end,
+        GetItemInfoInstant = function(id) return id, nil, nil, nil, nil, id == 999 and 2 or 0 end,
+        IsUsableItem = function(id) return id ~= 999 end,
+        GetItemCount = function(id) return counts[id] end,
+        GetItemIconByID = function(id) return id + 1000 end,
+        GetItemNameByID = function(id) return "Item " .. id end,
+        IsItemDataCachedByID = function(id) return id ~= coldItem end,
+        RequestLoadItemDataByID = function(id) assert(id == coldItem) end,
+    }
+    local currentMenu
+    MenuUtil = {
+        CreateRootMenuDescription = function()
+            return {
+                rows = {},
+                AddMenuReleasedCallback = function(self, callback) self.release = callback end,
+                CreateTitle = noop, SetScrollMode = noop,
+                CreateRadio = function(self, label, selected, choose, id)
+                    assert(not self.rows[id], "one entry per item ID")
+                    local entry = { label = label, selected = selected, choose = choose, SetTooltip = noop }
+                    self.rows[id] = entry
+                    return entry
+                end,
+            }
+        end,
+    }
+    MenuVariants = {GetDefaultContextMenuMixin = noop}
+    Menu = {PopulateDescription = function(build, owner, root) build(owner, root) end}
+    function MenuUtil.CreateContextMenu(owner, build)
+        local popup = {
+            SetMenuDescription = function(self, root) self.rows, self.release = root.rows, root.release end,
+            Close = function(self) self.closed = true; self.release(self) end,
+        }
+        local root = MenuUtil.CreateRootMenuDescription()
+        build(owner, root)
+        popup:SetMenuDescription(root)
+        currentMenu = popup
+        return popup
+    end
+    local function FindPicker(session)
+        local row = Upvalue(session.SetAmmoAlert, "supplyFrame")
+        return FindNode(row, function(node) return node.template == "InsecureActionButtonTemplate" end)
+    end
+
+    local saved = {language = "enUS", foodBuffAlertEnabled = true, foodPickerEnabled = true}
+    local session = LoadLanguageSession(saved)
+    session.SetFoodBuffAlert(true, true)
+    local picker = assert(FindPicker(session))
+    assert(picker:IsVisible() and scans == 0 and not picker.events)
+    picker.scripts.PostClick(picker, "RightButton")
+    assert(scans == #bag and currentMenu.rows[13810] and not currentMenu.rows[5525])
+    assert(not currentMenu.rows[101] and picker.events.ITEM_DATA_LOAD_RESULT and picker.events.SPELL_DATA_LOAD_RESULT)
+    nutritiousName, coldItem = "Nutritious Food", nil
+    picker.scripts.OnEvent(picker, "ITEM_DATA_LOAD_RESULT", 102)
+    picker.scripts.OnEvent(picker, "SPELL_DATA_LOAD_RESULT", 1248377)
+    assert(#pending == 1, "item and spell data callbacks should rebuild the open menu once")
+    pending[1]()
+    pending = {}
+    assert(currentMenu.rows[101] and currentMenu.rows[102] and not currentMenu.rows[5525] and not currentMenu.rows[999])
+    assert(currentMenu.rows[101].label == "Item 101 ×3", "stacks of the same food should be combined")
+    currentMenu.rows[101].choose(101)
+    assert(saved.playerFoodByCharacter["Player-A"] == 101 and currentMenu.rows[101].selected(101))
+    assert(picker.foodTexture.texture == 1101 and picker.foodCount:GetText() == "3")
+    currentMenu:Close()
+    local before = scans
+    picker.scripts.PreClick(picker, "LeftButton")
+    assert(picker.attributes.type1 == "item" and picker.attributes.item1 == "item:101")
+    picker.scripts.PostClick(picker, "LeftButton")
+    assert(not picker.attributes.item1 and scans == before, "left click must not scan the bags")
+
+    counts[101] = 0
+    picker.scripts.OnEvent(picker, "BAG_UPDATE_DELAYED")
+    picker.scripts.PreClick(picker, "LeftButton")
+    assert(not picker.attributes.type1 and picker.foodCount:GetText() == "" and saved.playerFoodByCharacter["Player-A"] == 101)
+    counts[101] = 2
+    local reloaded = LoadLanguageSession(saved)
+    reloaded.SetFoodBuffAlert(true, true)
+    local restored = assert(FindPicker(reloaded))
+    assert(restored.foodCount:GetText() == "2" and scans == before)
+    restored.scripts.PreClick(restored, "LeftButton")
+    assert(restored.attributes.item1 == "item:101")
+    restored.scripts.PostClick(restored, "LeftButton")
+    reloaded.SetAlertPositionLocked(false)
+    assert(not restored:IsVisible() and not next(restored.events))
+    restored.scripts.PreClick(restored, "LeftButton")
+    assert(not restored.attributes.type1)
+    reloaded.SetAlertPositionLocked(true)
+    inCombat = true
+    restored.scripts.PreClick(restored, "LeftButton")
+    assert(not restored.attributes.type1)
+    inCombat = false
+    reloaded.SetFoodBuffAlert(false, false)
+    assert(not restored:IsVisible() and not next(restored.events) and scans == before)
+
+    guid = "Player-B"
+    local alt = LoadLanguageSession(saved)
+    alt.SetFoodBuffAlert(true, true)
+    local fresh = assert(FindPicker(alt))
+    fresh.scripts.PreClick(fresh, "LeftButton")
+    assert(not fresh.attributes.type1 and fresh.foodCount:GetText() == "")
+    C_Timer.After = after
+    for _, key in ipairs(globals) do _G[key] = previous[key] end
 end)
 
 Test("Forever feeding tracks happiness, food, combat, and the stance layout", function()
@@ -1224,6 +1520,463 @@ Test("Forever feeding tracks happiness, food, combat, and the stance layout", fu
     pet = false
     Event("UNIT_PET", "player")
     assert(not care:IsShown())
+end)
+
+local function WithRetailSupply(playerClass, stat, test)
+    local combat, restricted, chatLocked, socialBlocked, auraReadFails = false, false, false, false, false
+    local state = { auras = {}, roster = {}, raid = false, gear = {}, enchants = {}, now = 100,
+        auraReads = 0, gearReads = 0, inquiries = {}, whispers = {}, errors = {} }
+    local secret = {}
+    local names = { [19705] = "Well Fed", [6673] = "Battle Shout", [1459] = "Arcane Intellect", [462854] = "Skyfury" }
+    local playerSpecID = playerClass == "WARRIOR" and 71 or playerClass == "SHAMAN" and 263 or 63
+    local original = { after = C_Timer.After, ticker = C_Timer.NewTicker, timer = C_Timer.NewTimer }
+    local overrides = {
+        GetBuildInfo = function() return "12.1.5", "70783", "", 120105 end,
+        GetTime = function() return state.now end,
+        UnitClass = function(unit)
+            if unit == "player" then return playerClass, playerClass end
+            local member = state.roster[unit]
+            if member then return member.class, member.class end
+        end,
+        UnitIsUnit = function(unit) return unit == "player" or state.roster[unit].isSelf end,
+        UnitGUID = function(unit) return state.roster[unit].guid end,
+        UnitFullName = function(unit) return state.roster[unit].name, state.roster[unit].realm end,
+        UnitIsConnected = function(unit) return state.roster[unit] and not state.roster[unit].offline end,
+        UnitIsDeadOrGhost = function() return false end,
+        InCombatLockdown = function() return combat end,
+        IsInRaid = function() return state.raid end,
+        GetNumGroupMembers = function() return state.groupSize or 0 end,
+        GetNumSubgroupMembers = function() return state.groupSize or 0 end,
+        issecretvalue = function(value) return value == secret end,
+        C_SpecializationInfo = {
+            GetSpecialization = function() return 1 end,
+            GetSpecializationInfo = function() return playerSpecID, nil, nil, nil, nil, stat end,
+        },
+        C_SpellBook = { IsSpellKnown = function(id)
+            if state.knownSpells then return state.knownSpells[id] == true end
+            return id == (playerClass == "WARRIOR" and 6673 or playerClass == "MAGE" and 1459 or 0)
+        end },
+        C_Spell = { GetSpellTexture = function(id) return id + 100000 end, GetSpellName = function(id) return names[id] end },
+        C_DurationUtil = {
+            CreateDuration = function() return { SetTimeFromEnd = function(self, time) self.expiration = time end } end,
+            CreateDurationTextBinding = function()
+                return { SetFontString = noop, SetDuration = noop, SetEnabled = function(self, enabled) self.enabled = enabled end }
+            end,
+        },
+        C_Secrets = {
+            ShouldAurasBeSecret = function() return restricted end,
+            ShouldSpellAuraBeSecret = function(id) return id == state.secretSpell end,
+        },
+        C_UnitAuras = {
+            GetUnitAuras = function(unit, filter)
+                state.auraReads = state.auraReads + 1
+                assert(unit == "player" and filter == "HELPFUL" and not combat and not restricted)
+                if auraReadFails then error("Aura access unavailable") end
+                return state.auras
+            end,
+            GetAuraDataByAuraInstanceID = function(unit, id)
+                assert(unit == "player" and not combat and not restricted)
+                state.instanceReads = (state.instanceReads or 0) + 1
+                for _, aura in ipairs(state.auras) do if aura.auraInstanceID == id then return aura end end
+            end,
+        },
+        Enum = {
+            SpellBookSpellBank = { Player = 0 }, ItemClass = { Weapon = 2 }, ItemWeaponSubclass = { Fishingpole = 20 },
+            ChatWhisperTargetStatus = { CanWhisper = 0, CanWhisperGuild = 1, Offline = 2, WrongFaction = 3 },
+        },
+        C_ChatInfo = {
+            InChatMessagingLockdown = function() return chatLocked end,
+            RequestCanLocalWhisperTarget = function(guid) table.insert(state.inquiries, guid) end,
+            SendChatMessage = function(message, channel, _, recipient)
+                assert(channel == "WHISPER" and not chatLocked and not socialBlocked)
+                table.insert(state.whispers, { message, recipient })
+            end,
+        },
+        C_SocialRestrictions = { CanSendChat = function() return not socialBlocked end },
+        UIErrorsFrame = { AddMessage = function(_, message) table.insert(state.errors, message) end },
+        GetInventoryItemID = function(_, slot) return state.gear[slot] end,
+        C_Item = { GetItemInfoInstant = function(id)
+            return id, nil, nil, nil, id + 200000, id == 100 and 4 or 2, id == 101 and 20 or 7
+        end },
+        C_PaperDollInfo = { GetTemporaryEnchantmentInfo = function(slot)
+            state.gearReads = state.gearReads + 1
+            assert(not combat)
+            return state.enchants[slot]
+        end },
+    }
+    local previous = {}
+    for key, value in pairs(overrides) do previous[key] = _G[key]; _G[key] = value end
+    local pending, deadlineTimers = {}, {}
+    C_Timer.After = function(_, callback) table.insert(pending, callback) end
+    C_Timer.NewTicker = function() error("Supply alerts must not poll") end
+    C_Timer.NewTimer = function(delay, callback)
+        local timer = Timer(callback)
+        timer.at = state.now + delay
+        table.insert(deadlineTimers, timer)
+        return timer
+    end
+    local ok, err = pcall(function()
+        local session = LoadLanguageSession({ language = "enUS" })
+        local row = Upvalue(session.SetAmmoAlert, "supplyFrame")
+        local frame = Upvalue(session.RefreshRetailBuffAlerts, "eventFrame")
+        local function Event(event, ...)
+            if event == "UNIT_AURA" then
+                if session.addonFrame.events.UNIT_AURA then session.addonFrame.scripts.OnEvent(session.addonFrame, event, ...) end
+            elseif frame.events and frame.events[event] then
+                frame.scripts.OnEvent(frame, event, ...)
+            end
+        end
+        local function Flush()
+            assert(#pending < 3, "Refresh work must coalesce")
+            local callbacks = pending
+            pending = {}
+            for _, callback in ipairs(callbacks) do callback() end
+        end
+        function state.SetCombat(value) combat = value; Event(value and "PLAYER_REGEN_DISABLED" or "PLAYER_REGEN_ENABLED") end
+        function state.Restrict(value) Event("ADDON_RESTRICTION_STATE_CHANGED"); restricted = value end
+        function state.LockChat(value) chatLocked = value end
+        function state.BlockSocial(value) socialBlocked = value end
+        function state.FailAuraRead(value) auraReadFails = value end
+        function state.SwitchSpec(value, id) stat, playerSpecID = value, id; Event("PLAYER_SPECIALIZATION_CHANGED", "player") end
+        function state.Pending() return #pending end
+        function state.Deadline()
+            local active
+            for _, timer in ipairs(deadlineTimers) do
+                if not timer.cancelled then
+                    assert(not active, "At most one threshold timer may be active")
+                    active = timer
+                end
+            end
+            return active and active.at
+        end
+        function state.Advance(now)
+            state.now = now
+            local timersAtStart = #deadlineTimers
+            for index = 1, timersAtStart do
+                local timer = deadlineTimers[index]
+                if not timer.cancelled and now >= timer.at then
+                    timer.cancelled = true
+                    timer.callback()
+                end
+            end
+        end
+        function state.Icon(key)
+            return FindNode(row, function(node) return node.alertKey == key and node:IsVisible() end)
+        end
+        state.Event, state.Flush, state.session, state.row, state.secret = Event, Flush, session, row, secret
+        test(state)
+    end)
+    for key in pairs(overrides) do _G[key] = previous[key] end
+    C_Timer.After, C_Timer.NewTicker, C_Timer.NewTimer = original.after, original.ticker, original.timer
+    assert(ok, err)
+end
+
+Test("Retail supply only scans player auras on full updates or relevant state changes", function()
+    WithRetailSupply("MAGE", 4, function(s)
+        assert(not s.row:IsShown() and not s.session.addonFrame.events.UNIT_AURA and s.Pending() == 0)
+        s.session.SetRetailSupplySetting("FOOD", true)
+        s.session.SetRetailSupplySetting("CLASS", true)
+        s.Flush()
+        assert(s.Icon("FOOD") and s.Icon("ARCANE_INTELLECT") and not s.Icon("BATTLE_SHOUT"))
+        assert(s.auraReads == 1 and s.session.addonFrame.events.UNIT_AURA == "player")
+        assert(s.session.GetRetailSupplyTooltip("FOOD") == "Missing Well Fed")
+        local food = { auraInstanceID = 1, spellId = 123, isHelpful = true, icon = 136000 }
+        s.Event("UNIT_AURA", "pet", { addedAuras = { food } })
+        s.Event("UNIT_AURA", "player", { addedAuras = {{ auraInstanceID = 2, spellId = 500, isHelpful = true, icon = 133950 }},
+            removedAuraInstanceIDs = { 99 }, updatedAuraInstanceIDs = { 99 } })
+        assert(s.Pending() == 0)
+        s.Event("UNIT_AURA", "player", { addedAuras = { food, { auraInstanceID = 3, spellId = 432778, isHelpful = true } } })
+        s.Flush()
+        assert(not s.Icon("FOOD") and not s.Icon("ARCANE_INTELLECT") and s.auraReads == 1)
+        s.Event("UNIT_AURA", "player", { updatedAuraInstanceIDs = { 1 } })
+        assert(s.Pending() == 0)
+        s.Event("UNIT_AURA", "player", { removedAuraInstanceIDs = { 1, 3 } })
+        s.Event("UNIT_AURA", "player", { addedAuras = {{ auraInstanceID = 4, spellId = 124, isHelpful = true, name = "Well Fed", icon = 1 }} })
+        assert(s.Pending() == 1)
+        s.Flush()
+        assert(not s.Icon("FOOD") and s.Icon("ARCANE_INTELLECT") and s.auraReads == 1)
+        s.Restrict(true)
+        s.Flush()
+        assert(not s.row:IsShown() and not s.session.addonFrame.events.UNIT_AURA and s.auraReads == 1)
+        s.Restrict(false)
+        s.FailAuraRead(true)
+        s.Flush()
+        s.Event("UNIT_AURA", "player", { addedAuras = { food } })
+        assert(not s.row:IsShown() and s.auraReads == 2 and s.Pending() == 0)
+        s.FailAuraRead(false)
+        s.auras = { { auraInstanceID = 8, spellId = s.secret, isHelpful = true, icon = s.secret } }
+        s.secretSpell = 1459
+        s.Event("UNIT_AURA", "player", { isFullUpdate = true })
+        s.Flush()
+        assert(not s.row:IsShown() and s.auraReads == 3)
+        s.secretSpell = nil
+        s.Event("UNIT_AURA", "player", { removedAuraInstanceIDs = { 8 } })
+        s.Flush()
+        assert(s.Icon("FOOD") and s.Icon("ARCANE_INTELLECT") and s.auraReads == 3)
+        s.SetCombat(true)
+        s.Flush()
+        assert(not s.row:IsShown() and s.auraReads == 3)
+        s.SetCombat(false)
+        s.auras = {}
+        s.Flush()
+        assert(s.Icon("FOOD") and s.auraReads == 4 and s.Pending() == 0)
+    end)
+end)
+
+Test("Retail supply uses spec and roster, with validated click-only class actions", function()
+    WithRetailSupply("WARRIOR", 1, function(s)
+        assert(s.session.addonFrame.events.UNIT_AURA == "player" and s.session.HandleWarriorAuraChanged)
+        s.groupSize = 5
+        s.roster.party1 = { class = "MAGE", guid = "mage", name = "Mage" }
+        s.roster.party2 = { class = "SHAMAN", guid = "wrong", name = "Wrong" }
+        s.roster.party3 = { class = "SHAMAN", guid = "ally", name = "Ally", realm = "OtherRealm" }
+        s.roster.party4 = { class = "DRUID", guid = "druid", name = "Druid" }
+        s.roster.party5 = { class = "PRIEST", guid = "priest", name = "Priest", offline = true }
+        s.auras = { {auraInstanceID = 9, spellId = 432661, isHelpful = true} }
+        s.session.SetRetailSupplySetting("CLASS", true)
+        s.Flush()
+        local shout, skyfury = assert(s.Icon("BATTLE_SHOUT")), assert(s.Icon("SKYFURY"))
+        assert(not s.Icon("ARCANE_INTELLECT") and not s.Icon("MARK_OF_THE_WILD") and not s.Icon("FORTITUDE"))
+        assert(#s.inquiries == 1 and s.inquiries[1] == "wrong" and #s.whispers == 0)
+        shout.scripts.PreClick(shout, "LeftButton")
+        assert(shout.attributes.type1 == "spell" and shout.attributes.spell1 == 6673 and shout.attributes.unit1 == "player")
+        shout.scripts.PostClick(shout)
+        assert(not shout.attributes.type1 and not shout.attributes.spell1)
+        skyfury.scripts.PreClick(skyfury, "LeftButton")
+        assert(#s.whispers == 0 and s.errors[#s.errors] == s.session.UI.RETAIL_WHISPER_PENDING)
+        s.Event("CAN_LOCAL_WHISPER_TARGET_RESPONSE", "wrong", 3)
+        s.Flush()
+        assert(#s.inquiries == 2 and s.inquiries[2] == "ally" and #s.whispers == 0)
+        s.Event("CAN_LOCAL_WHISPER_TARGET_RESPONSE", "ally", 1)
+        s.Flush()
+        local _, hint = s.session.GetRetailSupplyTooltip("SKYFURY")
+        assert(hint:find("Ally-OtherRealm", 1, true) and #s.whispers == 0)
+        s.LockChat(true)
+        skyfury.scripts.PreClick(skyfury, "LeftButton")
+        s.LockChat(false); s.BlockSocial(true)
+        skyfury.scripts.PreClick(skyfury, "LeftButton")
+        assert(#s.whispers == 0)
+        s.BlockSocial(false)
+        skyfury.scripts.PreClick(skyfury, "LeftButton")
+        skyfury.scripts.PreClick(skyfury, "LeftButton")
+        assert(#s.whispers == 1 and s.whispers[1][2] == "Ally-OtherRealm" and s.whispers[1][1]:find("Skyfury"))
+        s.now = 200
+        s.roster.party3 = { class = "SHAMAN", guid = "new", name = "New" }
+        skyfury.scripts.PreClick(skyfury, "LeftButton")
+        assert(#s.whispers == 1)
+        s.Flush()
+        assert(s.inquiries[3] == "new")
+        s.roster, s.groupSize = { raid1 = { class = "WARRIOR", guid = "self", name = "Me", isSelf = true },
+            raid2 = { class = "PRIEST", guid = "disc", name = "Disc" } }, 2
+        s.raid = true
+        s.Event("GROUP_ROSTER_UPDATE")
+        s.Flush()
+        assert(s.Icon("BATTLE_SHOUT") and s.Icon("FORTITUDE") and not s.Icon("SKYFURY"))
+        s.session.SetRetailSupplySetting("BATTLE_SHOUT", false)
+        s.Flush()
+        assert(not s.Icon("BATTLE_SHOUT") and s.Icon("FORTITUDE"))
+    end)
+end)
+
+Test("Retail weapon alerts follow both equipped weapons and have a separate drag anchor", function()
+    WithRetailSupply("MAGE", 4, function(s)
+        s.gear = { [16] = 110, [17] = 100 }
+        s.session.SetRetailSupplySetting("WEAPON", true)
+        s.Flush()
+        assert(s.Icon("MAIN_HAND") and not s.Icon("OFF_HAND") and s.gearReads == 1 and s.auraReads == 0)
+        s.gear[17] = 111
+        s.Event("PLAYER_EQUIPMENT_CHANGED", 17)
+        s.Flush()
+        assert(s.Icon("MAIN_HAND") and s.Icon("OFF_HAND") and s.gearReads == 3)
+        s.gear[17], s.enchants[16] = 101, {}
+        s.Event("WEAPON_ENCHANT_CHANGED")
+        s.Flush()
+        assert(not s.row:IsShown() and s.gearReads == 4 and s.auraReads == 0)
+        s.session.SetAlertPositionLocked(false)
+        assert(s.row:IsShown() and s.row.mouseEnabled and s.row.parent == UIParent)
+        s.row.GetPoint = function() return "CENTER", UIParent, "CENTER", 10, 95 end
+        s.row.scripts.OnDragStop(s.row)
+        assert(PetStatusAlertDB.supplyAlertPosition.y == 95 and PetStatusAlertDB.alertPosition.y == 220)
+        s.session.SetAlertPositionLocked(true)
+        s.enchants[16] = nil
+        s.Event("WEAPON_ENCHANT_CHANGED")
+        s.Flush()
+        assert(s.Icon("MAIN_HAND") and s.gearReads == 5 and s.Pending() == 0)
+        s.session.OpenOptionsFrame()
+        local options = Upvalue(s.session.RefreshOptionsFrameLocale, "optionsFrame")
+        local nav = assert(options.navButtons.auras)
+        nav.scripts.OnClick(nav)
+        assert(FindText(options.currentPage, s.session.UI.RETAIL_CLASS) and not FindText(options.currentPage, s.session.UI.RETAIL_WEAPON))
+        options.auraButtons.consumables.scripts.OnClick()
+        assert(FindText(options.currentPage, s.session.UI.RETAIL_WEAPON) and not FindText(options.currentPage, s.session.UI.RETAIL_CLASS))
+        s.session.ApplyManagerLanguage("zhCN")
+        assert(nav.text:GetText() == "增益提醒" and options.auraButtons.classBuffs:GetText() == "职业增益")
+        assert(options.activeAuraTab == "consumables" and FindText(options.currentPage, s.session.UI.RETAIL_WEAPON))
+        local tabs = s.session.GetSettingsDefinition({}).tabs
+        local found
+        for _, tab in ipairs(tabs) do if tab.key == "auras" then found = tab end end
+        assert(found and found.title == "增益提醒" and #found.subtabs == 3)
+        assert(found.subtabs[1].title == "职业增益" and found.subtabs[3].key == "ammo")
+        s.session.SetRetailSupplySetting("WEAPON", false)
+        s.Flush()
+        assert(not s.row:IsShown() and not s.session.addonFrame.events.UNIT_AURA and s.Pending() == 0)
+    end)
+end)
+
+Test("Retail class selection follows primary stat for mixed-role classes", function()
+    WithRetailSupply("DRUID", 2, function(s)
+        s.groupSize = 2
+        s.roster.party1 = { class = "WARRIOR", guid = "warrior", name = "Warrior" }
+        s.roster.party2 = { class = "MAGE", guid = "mage", name = "Mage" }
+        s.session.SetRetailSupplySetting("CLASS", true)
+        s.Flush()
+        assert(s.Icon("BATTLE_SHOUT") and not s.Icon("ARCANE_INTELLECT"))
+        s.SwitchSpec(4, 105)
+        s.Flush()
+        assert(s.Icon("ARCANE_INTELLECT") and not s.Icon("BATTLE_SHOUT") and s.auraReads == 2)
+        s.Event("SPELLS_CHANGED")
+        s.Flush()
+        assert(s.auraReads == 2 and s.Pending() == 0)
+    end)
+end)
+
+Test("Retail food and weapon thresholds share one timer and show native countdowns", function()
+    WithRetailSupply("MAGE", 4, function(s)
+        local food = { auraInstanceID = 1, spellId = 123, isHelpful = true, icon = 136000, expirationTime = 410 }
+        s.auras = { food }
+        s.gear = { [16] = 110, [17] = 111 }
+        s.enchants[16] = { hasExpirationTime = true, remainingTimeMs = 420000 }
+        s.enchants[17] = { hasExpirationTime = true, remainingTimeMs = 240000 }
+        s.session.SetRetailSupplySetting("FOOD", true)
+        s.session.SetRetailSupplySetting("WEAPON", true)
+        s.Flush()
+        assert(not s.Deadline() and not s.row:IsShown())
+        s.session.SetRetailSupplyLeadMinutes("FOOD", "3")
+        s.session.SetRetailSupplyLeadMinutes("WEAPON", "2")
+        s.Flush()
+        assert(s.Deadline() == 220 and not s.row:IsShown())
+        local auraReads, gearReads = s.auraReads, s.gearReads
+        s.Advance(220)
+        local offHand = assert(s.Icon("OFF_HAND"))
+        assert(offHand.timeBinding.enabled and offHand.duration.expiration == 340 and s.Deadline() == 230)
+        assert(s.auraReads == auraReads and s.gearReads == gearReads)
+        s.Advance(230)
+        local foodIcon = assert(s.Icon("FOOD"))
+        assert(foodIcon.timeBinding.enabled and foodIcon.duration.expiration == 410 and s.Deadline() == 400)
+        food.expirationTime = 700
+        s.Event("UNIT_AURA", "player", { updatedAuraInstanceIDs = { 1, 80 } })
+        s.Flush()
+        assert(s.instanceReads == 1 and s.auraReads == auraReads and not s.Icon("FOOD") and not foodIcon.timeBinding.enabled)
+        s.SetCombat(true)
+        assert(not s.Deadline())
+        s.Flush()
+        assert(not s.row:IsShown() and not offHand.timeBinding.enabled and s.gearReads == gearReads)
+        s.Advance(450)
+        s.enchants[16], s.enchants[17] = { hasExpirationTime = true, remainingTimeMs = 70000 }, nil
+        s.SetCombat(false)
+        s.Flush()
+        assert(s.Icon("MAIN_HAND").timeBinding.enabled and s.Icon("OFF_HAND") == offHand and not offHand.timeBinding.enabled)
+        assert(s.Deadline() == 520 and s.session.GetRetailSupplyTooltip("OFF_HAND") == s.session.UI.RETAIL_OFF_HAND_MISSING)
+        s.session.SetRetailSupplyLeadMinutes("FOOD", 0)
+        s.Flush()
+        assert(not s.Deadline())
+        s.Event("UNIT_AURA", "player", { updatedAuraInstanceIDs = { 1 } })
+        assert(s.instanceReads == 1 and s.Pending() == 0)
+        s.session.SetRetailSupplyLeadMinutes("FOOD", "700")
+        assert(s.session.GetRetailSupplyLeadMinutes("FOOD") == 60)
+    end)
+end)
+
+Test("Retail thresholds replace stale timers and skip unreadable durations", function()
+    WithRetailSupply("MAGE", 4, function(s)
+        local food = { auraInstanceID = 1, spellId = 123, isHelpful = true, icon = 136000, expirationTime = 480 }
+        local secondFood = { auraInstanceID = 2, spellId = 124, isHelpful = true, icon = 136000, expirationTime = s.secret }
+        s.auras = { food, secondFood }
+        s.gear[16] = 110
+        s.enchants[16] = { hasExpirationTime = true, remainingTimeMs = 300000 }
+        s.session.SetRetailSupplyLeadMinutes("FOOD", 2)
+        s.session.SetRetailSupplyLeadMinutes("WEAPON", 2)
+        s.session.SetRetailSupplySetting("FOOD", true)
+        s.session.SetRetailSupplySetting("WEAPON", true)
+        s.Flush()
+        assert(s.Deadline() == 280 and not s.Icon("FOOD"))
+        s.enchants[16] = { hasExpirationTime = true, remainingTimeMs = 900000 }
+        s.Event("WEAPON_ENCHANT_CHANGED")
+        s.Flush()
+        assert(s.Deadline() == 880)
+        s.Advance(280)
+        assert(not s.row:IsShown() and s.Deadline() == 880)
+        s.Event("UNIT_AURA", "player", { removedAuraInstanceIDs = { 2 } })
+        s.Flush()
+        assert(s.Deadline() == 360)
+        s.Restrict(true)
+        s.Flush()
+        assert(not s.Deadline() and not s.row:IsShown())
+        s.enchants[16] = { hasExpirationTime = false, remainingTimeMs = s.secret }
+        s.Event("WEAPON_ENCHANT_CHANGED")
+        s.Flush()
+        assert(not s.row:IsShown() and not s.Deadline())
+    end)
+end)
+
+Test("Retail Enhancement checks known Windfury and Flametongue in their own weapon slots", function()
+    WithRetailSupply("SHAMAN", 2, function(s)
+        s.knownSpells = { [33757] = true, [318038] = true }
+        s.gear = { [16] = 110, [17] = 111 }
+        s.enchants = { [16] = { enchantID = 5400 }, [17] = { enchantID = 6450 } }
+        s.session.SetRetailSupplySetting("WEAPON", true)
+        s.Flush()
+        assert(s.Icon("MAIN_HAND") and s.Icon("OFF_HAND") and s.gearReads == 2)
+        assert(s.session.GetRetailSupplyTooltip("MAIN_HAND") == s.session.UI.RETAIL_WINDFURY_MISSING)
+        assert(s.session.GetRetailSupplyTooltip("OFF_HAND") == s.session.UI.RETAIL_FLAMETONGUE_MISSING)
+        s.enchants = { [16] = { enchantID = 5401 }, [17] = { enchantID = 5400, hasExpirationTime = true, remainingTimeMs = 70000 } }
+        s.Event("WEAPON_ENCHANT_CHANGED")
+        s.session.SetRetailSupplyLeadMinutes("WEAPON", 2)
+        s.Flush()
+        assert(not s.Icon("MAIN_HAND") and s.Icon("OFF_HAND").timeBinding.enabled)
+        assert(s.session.GetRetailSupplyTooltip("OFF_HAND") == s.session.UI.RETAIL_FLAMETONGUE_EXPIRING)
+        s.session.SetRetailSupplySetting("FLAMETONGUE", false)
+        s.Flush()
+        assert(not s.Icon("OFF_HAND"))
+        s.session.SetRetailSupplySetting("FLAMETONGUE", true)
+        s.knownSpells[318038] = nil
+        s.enchants[17] = { enchantID = 6450 }
+        s.Event("SPELLS_CHANGED")
+        s.Flush()
+        assert(not s.Icon("OFF_HAND"))
+        s.enchants[16] = { enchantID = 6450 }
+        s.SwitchSpec(4, 262)
+        s.Flush()
+        assert(not s.Icon("MAIN_HAND") and not s.Icon("OFF_HAND") and s.auraReads == 0)
+        s.session.OpenOptionsFrame()
+        local options = Upvalue(s.session.RefreshOptionsFrameLocale, "optionsFrame")
+        local nav = assert(options.navButtons.auras)
+        nav.scripts.OnClick(nav)
+        options.auraButtons.shaman.scripts.OnClick()
+        assert(FindText(options.currentPage, s.session.UI.RETAIL_WINDFURY))
+        assert(FindText(options.currentPage, s.session.UI.RETAIL_FLAMETONGUE))
+        assert(not FindText(options.currentPage, s.session.UI.RETAIL_WEAPON_LEAD))
+        options.auraButtons.consumables.scripts.OnClick()
+        assert(FindText(options.currentPage, s.session.UI.RETAIL_WEAPON_LEAD))
+        local sections = {}
+        local page = {
+            NewSection = function(_, title)
+                local section = { labels = {}, title = title }
+                local function AddLabel(self, label) self.labels[label] = true end
+                section.Check, section.EditBox = AddLabel, AddLabel
+                return section
+            end,
+            AddSection = function(_, section) sections[section.title] = section end,
+        }
+        for _, tab in ipairs(s.session.GetSettingsDefinition({}).tabs) do
+            if tab.key == "auras" then
+                assert(#tab.subtabs == 4)
+                for _, sub in ipairs(tab.subtabs) do sub.build(page) end
+            end
+        end
+        assert(sections[s.session.UI.RETAIL_ENHANCEMENT].labels[s.session.UI.RETAIL_FLAMETONGUE])
+        assert(sections[s.session.UI.AURA_TAB_CONSUMABLES].labels[s.session.UI.RETAIL_FOOD_LEAD])
+    end)
 end)
 
 print(string.format("RESULT: %d passed, %d failed", passed, failed))

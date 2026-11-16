@@ -227,6 +227,78 @@ local function ClassTabs(forever)
     return tabs
 end
 
+local function AddRetailSupplyCheck(section, key, label)
+    section:Check(label, function() return PSA.GetRetailSupplySetting(key) end,
+        function(value) PSA.SetRetailSupplySetting(key, value) end)
+end
+
+local function AddRetailLeadTime(section, key, label)
+    section:EditBox(label, function() return PSA.GetRetailSupplyLeadMinutes(key) end,
+        function(value) PSA.SetRetailSupplyLeadMinutes(key, value) end, nil, 84,
+        { numeric = true, note = PSA.UI.RETAIL_LEAD_HINT })
+end
+
+local auraPages = {
+    classBuffs = function(page)
+        local ui = PSA.UI
+        local section = page:NewSection(ui.RETAIL_CLASS, { ui.RETAIL_CLASS_HINT })
+        AddRetailSupplyCheck(section, "CLASS", ui.RETAIL_CLASS)
+        for _, buff in ipairs(PSA.RETAIL_BUFFS) do AddRetailSupplyCheck(section, buff.key, PSA.GetRetailBuffName(buff)) end
+        page:AddSection(section)
+    end,
+    consumables = function(page, forever)
+        local ui = PSA.UI
+        if PSA.RETAIL_BUFFS then
+            local personal = page:NewSection(ui.AURA_TAB_CONSUMABLES, { ui.RETAIL_SUPPLY_HINT, ui.RETAIL_LEAD_HINT })
+            AddRetailSupplyCheck(personal, "FOOD", ui.RETAIL_FOOD)
+            AddRetailLeadTime(personal, "FOOD", ui.RETAIL_FOOD_LEAD)
+            AddRetailSupplyCheck(personal, "WEAPON", ui.RETAIL_WEAPON)
+            AddRetailLeadTime(personal, "WEAPON", ui.RETAIL_WEAPON_LEAD)
+            page:AddSection(personal)
+        end
+        local food = page:NewSection(forever and ui.FOOD_BUFF_ALERT or ui.FOREVER_CLIENT,
+            not forever and { ui.OTHER_CLIENT_SETTINGS } or nil)
+        local availability = { enabled = forever, disabledTooltip = ui.OTHER_CLIENT_SETTINGS }
+        food:Check(ui.FOOD_BUFF_ALERT, function() return forever and PSA.GetFoodBuffAlertEnabled() end,
+            forever and PSA.SetFoodBuffAlertEnabled or nil, ui.FOOD_BUFF_HINT, availability)
+        food:Check(ui.FOOD_PICKER_ENABLE, function() return forever and PSA.GetFoodPickerEnabled() end,
+            forever and PSA.SetFoodPickerEnabled or nil, ui.FOOD_PICKER_HINT, availability)
+        page:AddSection(food)
+    end,
+    shaman = function(page)
+        local ui = PSA.UI
+        local section = page:NewSection(ui.RETAIL_ENHANCEMENT, { ui.RETAIL_ENHANCEMENT_HINT })
+        AddRetailSupplyCheck(section, "WINDFURY", ui.RETAIL_WINDFURY)
+        AddRetailSupplyCheck(section, "FLAMETONGUE", ui.RETAIL_FLAMETONGUE)
+        page:AddSection(section)
+    end,
+    ammo = function(page, forever)
+        local ui = PSA.UI
+        local note = { ui.AMMO_WEAPON_HINT, ui.AMMO_THRESHOLD_HINT }
+        if not forever then table.insert(note, 1, ui.OTHER_CLIENT_SETTINGS) end
+        local section = page:NewSection(ui.AMMO_SETTINGS, note)
+        section:EditBox(ui.AMMO_THRESHOLD, function()
+            return forever and PSA.GetAmmoThreshold() or PSA.DEFAULT_AMMO_THRESHOLD
+        end, forever and PSA.SetAmmoThreshold or nil, nil, 84, { numeric = true, enabled = forever,
+            disabledTooltip = ui.OTHER_CLIENT_SETTINGS })
+        page:AddSection(section)
+    end,
+}
+
+local function BuildAuraTabs(forever)
+    local subtabs = {}
+    for _, tab in ipairs(PSA.GetAuraSettingsTabs()) do
+        local draw = auraPages[tab.key]
+        local title = PSA.GetAuraSettingsTabTitle(tab)
+        subtabs[#subtabs + 1] = {
+            key = tab.key,
+            title = tab.readOnly and ("|cff9a9a9a" .. title .. "|r") or title,
+            build = function(page) draw(page, forever) end,
+        }
+    end
+    return { key = "auras", title = PSA.UI.AURA_SETTINGS, subtabs = subtabs }
+end
+
 function PSA.GetSettingsDefinition(context)
     if PSA.HideStandaloneConfig then PSA.HideStandaloneConfig() end
     PSA.InitDB()
@@ -239,11 +311,10 @@ function PSA.GetSettingsDefinition(context)
         local shared = {
             {key="display", title=Text("Display", "显示样式", "顯示樣式"), build=function(page)
                 local s=page:NewSection(Text("Position & preview", "位置与预览", "位置與預覽"))
-                s:Check(PSA.UI.LOCKED_STATUS, function() return PetStatusAlertDB.alertLocked end, PSA.SetAlertPositionLocked)
+                s:Check(PSA.UI.LOCKED_STATUS, function() return PetStatusAlertDB.alertLocked end,
+                    PSA.SetAlertPositionLocked, (forever or PSA.RETAIL_BUFFS) and PSA.UI.SUPPLY_MOVE_HINT or PSA.UI.MOVE_HINT)
                 s:ButtonRow({{text=PSA.UI.PREVIEW, onClick=PSA.PreviewDisplay}, {text=PSA.UI.STOP_PREVIEW, onClick=PSA.StopSettingsPreview},
-                    {text=Text("Reset position", "重置位置", "重設位置"), onClick=function()
-                        PetStatusAlertDB.alertPosition={point="CENTER",relativePoint="CENTER",x=0,y=220}; PSA.ApplyAlertPosition()
-                    end}})
+                    {text=Text("Reset position", "重置位置", "重設位置"), onClick=PSA.ResetAlertPositions}})
                 page:AddSection(s)
                 s=page:NewSection(PSA.UI.ANIMATION_ICON_MODE)
                 s:Dropdown(PSA.UI.ANIMATION_ICON_MODE, PSA.GetAlertIconMode, PSA.SetAlertIconMode,
@@ -289,20 +360,7 @@ function PSA.GetSettingsDefinition(context)
             end},
         }
         for _, tab in ipairs(shared) do definition.tabs[#definition.tabs + 1] = tab end
-        definition.tabs[#definition.tabs + 1] = {
-            key = "forever",
-            title = forever and PSA.UI.AMMO_SETTINGS or "|cff9a9a9a" .. PSA.UI.AMMO_SETTINGS .. "|r",
-            build = function(page)
-                local note = { PSA.UI.AMMO_WEAPON_HINT, PSA.UI.AMMO_THRESHOLD_HINT }
-                if not forever then table.insert(note, 1, PSA.UI.OTHER_CLIENT_SETTINGS) end
-                local s = page:NewSection(PSA.UI.AMMO_SETTINGS, note)
-                s:EditBox(PSA.UI.AMMO_THRESHOLD, function()
-                    return forever and PSA.GetAmmoThreshold() or PSA.DEFAULT_AMMO_THRESHOLD
-                end, forever and PSA.SetAmmoThreshold, nil, 84, {numeric=true, enabled=forever,
-                    disabledTooltip=PSA.UI.OTHER_CLIENT_SETTINGS})
-                page:AddSection(s)
-            end,
-        }
+        definition.tabs[#definition.tabs + 1] = BuildAuraTabs(forever)
     end
     -- 外部插件设置页由 UI.RefreshToolboxSettings 提供 Rebuild；管理器内部页面
     -- 只有 Refresh（W:Refresh）。两者都保留，按钮/语言切换后控件不会停在旧值。

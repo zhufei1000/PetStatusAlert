@@ -13,10 +13,13 @@ Libs/LibStub/LibStub.lua
 Libs/LibCustomGlow-1.0/LibCustomGlow-1.0.lua
 Core/Localization.lua
 Core/AlertFrame.lua
+Core/FoodBuff.lua
+Core/FoodPicker.lua
 Core/TTS.lua
 Core/PetLogic.lua
 Core/PetFeed.lua
 Core/WarriorLogic.lua
+Core/RetailBuffs.lua
 UI/Options.lua
 UI/ManagerSettings.lua
 Core/Events.lua

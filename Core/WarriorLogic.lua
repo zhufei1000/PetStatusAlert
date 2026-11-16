@@ -359,12 +359,12 @@ end
 if IsWarrior() then
     local warriorEventFrame = CreateFrame("Frame")
 
-    local hasUnitEvent = warriorEventFrame.RegisterUnitEvent ~= nil
-    if hasUnitEvent then
-        pcall(warriorEventFrame.RegisterUnitEvent, warriorEventFrame, "UNIT_AURA", "player")
-    else
-        pcall(warriorEventFrame.RegisterEvent, warriorEventFrame, "UNIT_AURA")
+    function PSA.HandleWarriorAuraChanged()
+        -- Cast events maintain stance while Blizzard restricts aura reads.
+        if CanReadDefensiveStanceAura() then PSA.QueueRefresh(0.02) end
     end
+
+    local hasUnitEvent = warriorEventFrame.RegisterUnitEvent ~= nil
     local hasFilteredSpellcast = hasUnitEvent
         and pcall(warriorEventFrame.RegisterUnitEvent, warriorEventFrame, "UNIT_SPELLCAST_SUCCEEDED", "player")
     if not hasFilteredSpellcast then
@@ -375,20 +375,6 @@ if IsWarrior() then
     pcall(warriorEventFrame.RegisterEvent, warriorEventFrame, "ADDON_RESTRICTION_STATE_CHANGED")
 
     warriorEventFrame:SetScript("OnEvent", function(_, event, unit, _, spellID)
-        if event == "UNIT_AURA" then
-            if unit and unit ~= "player" then
-                return
-            end
-            -- 光环保密时（战斗中/首领战/M+/PvP）读不到结果，刷新没有意义；
-            -- 姿态切换由施法事件维护缓存，等 ADDON_RESTRICTION_STATE_CHANGED
-            -- 或离开战斗后再恢复光环同步。
-            if not CanReadDefensiveStanceAura() then
-                return
-            end
-            PSA.QueueRefresh(0.02)
-            return
-        end
-
         if event == "UNIT_SPELLCAST_SUCCEEDED" then
             if unit and unit ~= "player" then
                 return

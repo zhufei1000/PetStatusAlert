@@ -18,7 +18,6 @@ local SetStatusEnabled = PSA.SetStatusEnabled
 local GetStatusColor = PSA.GetStatusColor
 local SetStatusColor = PSA.SetStatusColor
 local ResetStatusColor = PSA.ResetStatusColor
-local ApplyAlertPosition = PSA.ApplyAlertPosition
 local SetAlertPositionLocked = PSA.SetAlertPositionLocked
 local PreviewStatus = PSA.PreviewStatus
 local ShowStatus = PSA.ShowStatus
@@ -1089,14 +1088,14 @@ local function DrawDisplayPage(parent)
 
     moveToggleButton = CreateButton(parent, GetMoveButtonText(), 112, 26)
     moveToggleButton:SetPoint("LEFT", previewButton, "RIGHT", 10, 0)
-    AddTooltip(moveToggleButton, UI.MOVE_HINT)
+    AddTooltip(moveToggleButton, (isForever or PSA.RETAIL_BUFFS) and UI.SUPPLY_MOVE_HINT or UI.MOVE_HINT)
     moveToggleButton:SetScript("OnClick", function()
         InitDB()
         local locked = not PetStatusAlertDB.alertLocked
         SetAlertPositionLocked(locked)
         moveToggleButton:SetText(GetMoveButtonText())
         AutoFitButton(moveToggleButton, 112)
-        if not locked then
+        if not locked and not isForever then
             PSA.PreviewDisplay()
             RefreshPreviewButton()
         end
@@ -1108,14 +1107,7 @@ local function DrawDisplayPage(parent)
     local resetButton = CreateButton(parent, TEXT.RESET_POSITION, 130, 26)
     resetButton:SetPoint("LEFT", moveToggleButton, "RIGHT", 10, 0)
     resetButton:SetScript("OnClick", function()
-        InitDB()
-        PetStatusAlertDB.alertPosition = {
-            point = "CENTER",
-            relativePoint = "CENTER",
-            x = 0,
-            y = 220,
-        }
-        ApplyAlertPosition()
+        PSA.ResetAlertPositions()
         PSA.PreviewDisplay()
         RefreshPreviewButton()
         if statusLine then
@@ -1463,9 +1455,92 @@ local function DrawGeneralPage(parent)
     finish(510)
 end
 
-local function DrawForeverPage(parent)
-    local page, finish = CreateScrollablePage(parent)
-    CreatePageHeader(page, UI.FOREVER_CLIENT, "")
+function PSA.GetAuraSettingsTabs()
+    local tabs = {}
+    if PSA.RETAIL_BUFFS then
+        tabs[#tabs + 1] = { key = "classBuffs", titleKey = "AURA_TAB_CLASS" }
+        tabs[#tabs + 1] = { key = "consumables", titleKey = "AURA_TAB_CONSUMABLES" }
+        if PSA.GetPlayerClassFile() == "SHAMAN" then
+            tabs[#tabs + 1] = { key = "shaman", titleKey = "RETAIL_ENHANCEMENT" }
+        end
+    else
+        tabs[#tabs + 1] = { key = "consumables", titleKey = "AURA_TAB_FOOD", readOnly = not isForever }
+    end
+    tabs[#tabs + 1] = { key = "ammo", titleKey = "AURA_TAB_AMMO", readOnly = not isForever }
+    return tabs
+end
+
+function PSA.GetAuraSettingsTabTitle(tab)
+    local title = PSA.UI[tab.titleKey]
+    return tab.readOnly and (title .. " · " .. PSA.UI.READ_ONLY_TAB) or title
+end
+
+local function AddRetailSupplyCheck(section, key, text, y)
+    local check = CreateRuleCheck(section, text, 18, y, LAYOUT.contentWidth - 76, function(value)
+        PSA.SetRetailSupplySetting(key, value)
+    end)
+    check:SetChecked(PSA.GetRetailSupplySetting(key))
+end
+
+local function DrawForeverFoodSection(page, offset)
+    local title = isForever and UI.FOOD_BUFF_ALERT or UI.FOREVER_CLIENT
+    local hint = isForever and UI.FOOD_BUFF_HINT or (UI.OTHER_CLIENT_SETTINGS .. "\n" .. UI.FOOD_BUFF_HINT)
+    local food = CreateSection(page, title, hint, -offset, 128)
+    local height = math.max(128, 106 + food.sectionDesc:GetStringHeight())
+    food:SetHeight(height)
+    local foodCheck = CreateRuleCheck(food, UI.FOOD_BUFF_ALERT, 18, 42 - height, LAYOUT.contentWidth - 76,
+        isForever and PSA.SetFoodBuffAlertEnabled)
+    foodCheck:SetChecked(isForever and PSA.GetFoodBuffAlertEnabled())
+    local clickCheck = CreateRuleCheck(food, UI.FOOD_PICKER_ENABLE, 18, 18 - height, LAYOUT.contentWidth - 76,
+        isForever and PSA.SetFoodPickerEnabled)
+    clickCheck:SetChecked(isForever and PSA.GetFoodPickerEnabled())
+    AddTooltip(clickCheck, UI.FOOD_PICKER_HINT)
+    return height
+end
+
+local function DrawConsumableSettings(page)
+    local offset = 52
+    if not PSA.RETAIL_BUFFS then return offset + DrawForeverFoodSection(page, offset) + 14 end
+    local personal = CreateSection(page, UI.AURA_TAB_CONSUMABLES, UI.RETAIL_SUPPLY_HINT .. "\n" .. UI.RETAIL_LEAD_HINT, -offset, 190)
+    local personalY = -54 - math.ceil(personal.sectionDesc:GetStringHeight())
+    local function AddLead(key, label, y)
+        local _, refresh = CreateRuleID(personal, label, y,
+            function() return PSA.GetRetailSupplyLeadMinutes(key) end,
+            function(value) PSA.SetRetailSupplyLeadMinutes(key, value) end)
+        refresh()
+    end
+    AddRetailSupplyCheck(personal, "FOOD", UI.RETAIL_FOOD, personalY)
+    AddLead("FOOD", UI.RETAIL_FOOD_LEAD, personalY - 28)
+    AddRetailSupplyCheck(personal, "WEAPON", UI.RETAIL_WEAPON, personalY - 58)
+    AddLead("WEAPON", UI.RETAIL_WEAPON_LEAD, personalY - 86)
+    local personalHeight = -personalY + 112
+    personal:SetHeight(personalHeight)
+
+    offset = offset + personalHeight + 12
+    return offset + DrawForeverFoodSection(page, offset) + 14
+end
+
+local function DrawShamanSupplySettings(page)
+    local shaman = CreateSection(page, UI.RETAIL_ENHANCEMENT, UI.RETAIL_ENHANCEMENT_HINT, -52, 110)
+    local firstY = -54 - math.ceil(shaman.sectionDesc:GetStringHeight())
+    AddRetailSupplyCheck(shaman, "WINDFURY", UI.RETAIL_WINDFURY, firstY)
+    AddRetailSupplyCheck(shaman, "FLAMETONGUE", UI.RETAIL_FLAMETONGUE, firstY - 25)
+    shaman:SetHeight(-firstY + 50)
+    return 66 + shaman:GetHeight()
+end
+
+local function DrawClassBuffSettings(page)
+    local class = CreateSection(page, UI.RETAIL_CLASS, UI.RETAIL_CLASS_HINT, -52, 225)
+    local firstY = -54 - math.ceil(class.sectionDesc:GetStringHeight())
+    AddRetailSupplyCheck(class, "CLASS", UI.RETAIL_CLASS, firstY)
+    for index, buff in ipairs(PSA.RETAIL_BUFFS) do
+        AddRetailSupplyCheck(class, buff.key, PSA.GetRetailBuffName(buff), firstY - index * 25)
+    end
+    class:SetHeight(-firstY + #PSA.RETAIL_BUFFS * 25 + 32)
+    return 66 + class:GetHeight()
+end
+
+local function DrawAmmoSettings(page)
     local hint = UI.AMMO_WEAPON_HINT .. "\n" .. UI.AMMO_THRESHOLD_HINT
     if not isForever then
         hint = UI.OTHER_CLIENT_SETTINGS .. "\n" .. hint
@@ -1484,11 +1559,11 @@ local function DrawForeverPage(parent)
     input:SetNumeric(true)
     input:SetJustifyH("RIGHT")
     input:SetText(tostring(isForever and PSA.GetAmmoThreshold() or PSA.DEFAULT_AMMO_THRESHOLD))
-    finish(66 + section:GetHeight())
+    local height = 66 + section:GetHeight()
     if not isForever then
         input:Disable()
         input:SetAlpha(0.5)
-        return
+        return height
     end
     input:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
     input:SetScript("OnEditFocusLost", function(self)
@@ -1498,6 +1573,18 @@ local function DrawForeverPage(parent)
         self:SetText(tostring(PSA.GetAmmoThreshold()))
         self:ClearFocus()
     end)
+    return height
+end
+
+local auraSettingsPages = {
+    classBuffs = DrawClassBuffSettings, consumables = DrawConsumableSettings,
+    shaman = DrawShamanSupplySettings, ammo = DrawAmmoSettings,
+}
+
+local function DrawAuraSettingsPage(parent, tab)
+    local page, finish = CreateScrollablePage(parent)
+    CreatePageHeader(page, UI.AURA_SETTINGS, "")
+    finish(auraSettingsPages[tab](page))
 end
 
 -------------------------------------------------
@@ -1635,16 +1722,44 @@ local function CreateOptionsFrame()
     frame.clientButtons.retail:SetPoint("TOPLEFT")
     frame.clientButtons.forever:SetPoint("LEFT", frame.clientButtons.retail, "RIGHT", 8, 0)
 
+    local auraTabs = CreateFrame("Frame", nil, content)
+    auraTabs:SetPoint("TOPLEFT")
+    auraTabs:SetPoint("TOPRIGHT")
+    auraTabs:SetHeight(36)
+    local auraItems = PSA.GetAuraSettingsTabs()
+    frame.activeAuraTab = auraItems[1].key
+    frame.auraButtons = {}
+    local previousAuraButton
+    for _, tab in ipairs(auraItems) do
+        local button = CreateButton(auraTabs, PSA.GetAuraSettingsTabTitle(tab), 84)
+        if previousAuraButton then
+            button:SetPoint("LEFT", previousAuraButton, "RIGHT", 8, 0)
+        else
+            button:SetPoint("TOPLEFT")
+        end
+        button.readOnly = tab.readOnly
+        previousAuraButton = button
+        frame.auraButtons[tab.key] = button
+    end
+
+    local function SetTabButtonSelected(button, selected, readOnly)
+        SetIconModeButtonState(button, selected)
+        button:SetButtonState(selected and "PUSHED" or "NORMAL", selected)
+        if readOnly then button:GetFontString():SetTextColor(ColorRGBA(STYLE.muted)) end
+    end
+
     local function RefreshClientTabs(classPage)
         clientTabs:SetShown(classPage)
         for key, button in pairs(frame.clientButtons) do
             local forever = key == "forever"
-            local selected = forever == frame.viewForever
-            SetIconModeButtonState(button, selected)
-            button:SetButtonState(selected and "PUSHED" or "NORMAL", selected)
-            if forever ~= isForever then
-                button:GetFontString():SetTextColor(ColorRGBA(STYLE.muted))
-            end
+            SetTabButtonSelected(button, forever == frame.viewForever, forever ~= isForever)
+        end
+    end
+
+    local function RefreshAuraTabs(auraPage)
+        auraTabs:SetShown(auraPage)
+        for key, button in pairs(frame.auraButtons) do
+            SetTabButtonSelected(button, key == frame.activeAuraTab, button.readOnly)
         end
     end
 
@@ -1670,6 +1785,7 @@ local function CreateOptionsFrame()
     local function DrawPage()
         local key = frame.activePage
         local classPage = frame.navButtons[key].isClass == true
+        local auraPage = key == "auras"
         local cacheKey = classPage and (GetActiveLocale() .. ":" .. key .. ":" .. tostring(frame.viewForever))
         local pageHolder = cacheKey and alertPages[cacheKey]
         if frame.currentPage and frame.currentPage ~= pageHolder then
@@ -1685,8 +1801,8 @@ local function CreateOptionsFrame()
 
         if not pageHolder then
             pageHolder = CreateFrame("Frame", nil, content)
-            pageHolder.psaPageKey = cacheKey or key
-            pageHolder:SetPoint("TOPLEFT", content, "TOPLEFT", 0, classPage and -36 or 0)
+            pageHolder.psaPageKey = cacheKey or (auraPage and (key .. ":" .. frame.activeAuraTab) or key)
+            pageHolder:SetPoint("TOPLEFT", content, "TOPLEFT", 0, (classPage or auraPage) and -36 or 0)
             pageHolder:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT")
             if key == "display" then
                 DrawDisplayPage(pageHolder)
@@ -1694,8 +1810,8 @@ local function CreateOptionsFrame()
                 DrawVoicePage(pageHolder)
             elseif key == "general" then
                 DrawGeneralPage(pageHolder)
-            elseif key == "forever" then
-                DrawForeverPage(pageHolder)
+            elseif auraPage then
+                DrawAuraSettingsPage(pageHolder, frame.activeAuraTab)
             else
                 pageHolder.refreshAlerts, pageHolder.refreshEligibility = DrawAlertsPage(pageHolder, key, frame.viewForever)
                 alertPages[cacheKey] = pageHolder
@@ -1712,6 +1828,7 @@ local function CreateOptionsFrame()
             scroll:SetVerticalScroll(math.min(offset, scroll:GetVerticalScrollRange() or 0))
         end
         RefreshClientTabs(classPage)
+        RefreshAuraTabs(auraPage)
         RefreshNavButtons()
     end
 
@@ -1724,6 +1841,14 @@ local function CreateOptionsFrame()
                 statusLine:SetText(UI.FOOTER or "/psa")
                 DrawPage()
             end
+        end)
+    end
+
+    for key, button in pairs(frame.auraButtons) do
+        button:SetScript("OnClick", function()
+            if frame.activeAuraTab == key then return end
+            frame.activeAuraTab = key
+            DrawPage()
         end)
     end
 
@@ -1757,8 +1882,7 @@ local function CreateOptionsFrame()
     for _, classFile in ipairs(classes) do
         AddNav(classFile, function() return PSA.GetAlertClassLabel(classFile) end, true)
     end
-    local ammoButton = AddNav("forever", function() return UI.AMMO_SETTINGS end)
-    ammoButton:SetAlpha(isForever and 1 or 0.6)
+    AddNav("auras", function() return UI.AURA_SETTINGS end)
     AddNav("display", function() return TEXT.NAV_DISPLAY end)
     AddNav("voice", function() return TEXT.NAV_VOICE end)
     AddNav("general", function() return TEXT.NAV_GENERAL end)
@@ -1770,6 +1894,11 @@ local function CreateOptionsFrame()
         for key, button in pairs(frame.clientButtons) do
             button:SetText(GetClientTabLabel(key == "forever"))
             AutoFitButton(button, 96)
+        end
+        for _, tab in ipairs(auraItems) do
+            local button = frame.auraButtons[tab.key]
+            button:SetText(PSA.GetAuraSettingsTabTitle(tab))
+            AutoFitButton(button, 84)
         end
     end
 
