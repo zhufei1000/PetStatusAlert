@@ -234,7 +234,7 @@ local currentAlertStrata
 
 local function SetAlertStrata(strata)
     strata = strata or ALERT_STRATA_DEFAULT
-    if isForever and not PetStatusAlertDB.alertLocked then
+    if isForever and PetStatusAlertDB and not PetStatusAlertDB.alertLocked then
         strata = ALERT_STRATA_PREVIEW
     end
     if strata == currentAlertStrata then
@@ -850,8 +850,8 @@ end
 
 local supplyTimeFormatter
 local function ApplyRetailSupplyCountdown(button, expiration, lead)
-    if expiration == button.expiration then return end
-    button.expiration = expiration
+    if expiration == button.expiration and lead == button.lead then return end
+    button.expiration, button.lead = expiration, lead
     local binding = button.timeBinding
     if not expiration then
         if binding then

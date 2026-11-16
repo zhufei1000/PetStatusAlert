@@ -983,6 +983,7 @@ Test("Forever food reminder handles gains and removals without polling", functio
     local pending = {}
     local level, reads = 59, 0
     local aura, otherFood, restricted, restrictedFoodID, resting, dead
+    local auraReadErrors, foodAuraErrors
     local after, newTimer = C_Timer.After, C_Timer.NewTimer
     local priorAuras, priorSecrets = C_UnitAuras, C_Secrets
     local priorLevel, priorResting, priorDead = UnitLevel, IsResting, UnitIsDeadOrGhost
@@ -1002,11 +1003,13 @@ Test("Forever food reminder handles gains and removals without polling", functio
         GetAuraDataBySpellName = function(unit, name, filter)
             assert(unit == "player" and name == "Well Fed" and filter == "HELPFUL")
             assert(not restricted and not inCombat and not resting and not dead)
+            if auraReadErrors then error("Aura access unavailable") end
             reads = reads + 1
             return aura
         end,
         GetPlayerAuraBySpellID = function(id)
             assert(id ~= restrictedFoodID, "secret spell IDs must not be queried")
+            if foodAuraErrors then error("Aura access unavailable") end
             if id == 18192 then return otherFood end
         end,
     }
@@ -1095,12 +1098,20 @@ Test("Forever food reminder handles gains and removals without polling", functio
     Flush()
     assert(reads == 8 and not food:IsVisible(),
         "an unreadable candidate is unknown rather than missing")
+    auraReadErrors, foodAuraErrors = true, true
+    Event("UNIT_AURA", "player", { isFullUpdate = true })
+    Flush()
+    assert(reads == 8 and not food:IsVisible(), "failed aura reads are unknown rather than missing")
+    auraReadErrors, foodAuraErrors, restrictedFoodID = false, false, nil
+    Event("UNIT_AURA", "player", { isFullUpdate = true })
+    Flush()
+    assert(reads == 9 and food:IsVisible(), "food detection resumes after failed aura reads")
     session.SetFoodBuffAlertEnabled(false)
     assert(not events.PLAYER_UPDATE_RESTING and not events.PLAYER_LEVEL_UP and not events.UNIT_AURA
         and not events.ADDON_RESTRICTION_STATE_CHANGED)
     Event("PLAYER_REGEN_ENABLED")
     Flush()
-    assert(reads == 8)
+    assert(reads == 9)
     assert(not row:IsShown() and not pet:IsShown())
     session.SetAlertPositionLocked(false)
     assert(row:IsShown() and pet:IsShown() and row.mouseEnabled and pet.mouseEnabled)
@@ -1206,6 +1217,14 @@ Test("Forever player food picker saves a character's valid choice and only scans
     currentMenu.rows[101].choose(101)
     assert(saved.playerFoodByCharacter["Player-A"] == 101 and currentMenu.rows[101].selected(101))
     assert(picker.foodTexture.texture == 1101 and picker.foodCount:GetText() == "3")
+    bag[5] = nil
+    picker.scripts.OnEvent(picker, "BAG_UPDATE_DELAYED")
+    assert(#pending == 1, "bag changes should refresh the open menu")
+    pending[1]()
+    pending = {}
+    assert(currentMenu.rows[101] and not currentMenu.rows[102],
+        "the open menu should drop items that left the bags")
+    bag[5] = 102
     currentMenu:Close()
     local before = scans
     picker.scripts.PreClick(picker, "LeftButton")
@@ -1558,7 +1577,7 @@ local function WithRetailSupply(playerClass, stat, test)
         end },
         C_Spell = { GetSpellTexture = function(id) return id + 100000 end, GetSpellName = function(id) return names[id] end },
         C_DurationUtil = {
-            CreateDuration = function() return { SetTimeFromEnd = function(self, time) self.expiration = time end } end,
+            CreateDuration = function() return { SetTimeFromEnd = function(self, time, lead) self.expiration, self.lead = time, lead end } end,
             CreateDurationTextBinding = function()
                 return { SetFontString = noop, SetDuration = noop, SetEnabled = function(self, enabled) self.enabled = enabled end }
             end,
@@ -1867,6 +1886,17 @@ Test("Retail food and weapon thresholds share one timer and show native countdow
         s.Advance(230)
         local foodIcon = assert(s.Icon("FOOD"))
         assert(foodIcon.timeBinding.enabled and foodIcon.duration.expiration == 410 and s.Deadline() == 400)
+        s.enchants[16] = { hasExpirationTime = true, remainingTimeMs = 290000 }
+        s.enchants[17] = { hasExpirationTime = true, remainingTimeMs = 110000 }
+        s.session.SetRetailSupplyLeadMinutes("FOOD", "4")
+        s.Flush()
+        assert(s.Icon("FOOD") == foodIcon and foodIcon.duration.expiration == 410
+            and foodIcon.duration.lead == 240, "a lead change must update the open countdown")
+        s.session.SetRetailSupplyLeadMinutes("FOOD", "3")
+        s.Flush()
+        assert(s.Icon("FOOD") == foodIcon and foodIcon.duration.expiration == 410
+            and foodIcon.duration.lead == 180)
+        auraReads, gearReads = s.auraReads, s.gearReads
         food.expirationTime = 700
         s.Event("UNIT_AURA", "player", { updatedAuraInstanceIDs = { 1, 80 } })
         s.Flush()

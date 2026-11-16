@@ -232,7 +232,10 @@ local function CreateButton(parent)
     picker:SetScript("OnHide", HideTooltip)
     picker:SetScript("OnEvent", function(self, event, id)
         if event == "BAG_UPDATE_DELAYED" then
-            if CanInteract() then UpdateIcon() end
+            if CanInteract() then
+                UpdateIcon()
+                if menu then QueueMenuRefresh() end
+            end
         elseif event == "ITEM_DATA_LOAD_RESULT" and waitingItems[id] then
             waitingItems[id] = nil
             if not next(waitingItems) then self:UnregisterEvent(event) end

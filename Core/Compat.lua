@@ -63,8 +63,8 @@ if isForever and C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName
         end
         local unknown = not wellFedName or not SpellAuraReadable(WELL_FED)
         if not unknown then
-            local aura = C_UnitAuras.GetAuraDataBySpellName("player", wellFedName, "HELPFUL")
-            if not ReadableTable(aura) then
+            local ok, aura = pcall(C_UnitAuras.GetAuraDataBySpellName, "player", wellFedName, "HELPFUL")
+            if not ok or not ReadableTable(aura) then
                 unknown = true
             elseif aura then
                 return true, InstanceID(aura)
@@ -74,8 +74,8 @@ if isForever and C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName
         local present
         for id in pairs(namedFoodAuras) do
             if SpellAuraReadable(id) then
-                local aura = C_UnitAuras.GetPlayerAuraBySpellID(id)
-                if not ReadableTable(aura) then
+                local ok, aura = pcall(C_UnitAuras.GetPlayerAuraBySpellID, id)
+                if not ok or not ReadableTable(aura) then
                     unknown = true
                 elseif aura then
                     present = true
