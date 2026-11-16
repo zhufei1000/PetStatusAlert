@@ -20,6 +20,7 @@ Core/PetLogic.lua
 Core/PetFeed.lua
 Core/WarriorLogic.lua
 Core/RetailBuffs.lua
+Core/ForeverBuffs.lua
 UI/Options.lua
 UI/ManagerSettings.lua
 Core/Events.lua

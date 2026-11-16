@@ -54,13 +54,17 @@ local function Session(config)
     }
     env.C_UnitAuras = {GetPlayerAuraBySpellID = function()
         counters.aura = counters.aura + 1
-        return config.stance and {} or nil
+        return config.stance and {auraInstanceID = config.stanceInstanceID} or nil
     end}
     env.C_Timer = {After = function(_, callback) pending[#pending + 1] = callback end}
     env.CreateFrame = function()
         local frame = {events = {}, scripts = {}}
         function frame:RegisterEvent(event) self.events[event] = true end
-        function frame:RegisterUnitEvent(event) self.events[event] = true end
+        function frame:RegisterUnitEvent(event, unit)
+            if config.rejectUnitEvent == event then return false end
+            self.events[event] = unit
+        end
+        function frame:UnregisterEvent(event) self.events[event] = nil end
         function frame:SetScript(key, callback) self.scripts[key] = callback end
         frames[#frames + 1] = frame
         return frame
@@ -79,11 +83,21 @@ local function Session(config)
     session.StopCombatTTSReminder = function() end
     session.RefreshCombatTTSReminder = function() end
     for _, path in ipairs({"Core/PetLogic.lua", "Core/WarriorLogic.lua", "Core/Events.lua"}) do Load(path) end
-    function session.Event(event, ...)
-        session.addonFrame.scripts.OnEvent(session.addonFrame, event, ...)
+    function session.FlushEvents()
         local callbacks = pending
         pending = {}
         for _, callback in ipairs(callbacks) do callback() end
+        return #callbacks
+    end
+    function session.Dispatch(event, ...)
+        local watched = session.addonFrame.events[event]
+        if watched == true or (watched and watched == (...)) then
+            session.addonFrame.scripts.OnEvent(session.addonFrame, event, ...)
+        end
+    end
+    function session.Event(event, ...)
+        session.Dispatch(event, ...)
+        return session.FlushEvents()
     end
     function session.Refresh()
         session.RefreshPetStatusText()
@@ -382,6 +396,96 @@ Test("Retail supports namespaced specialization APIs when globals are absent", f
     local session = Session({spec = 252, class = "DEATHKNIGHT"})
     session.env.GetSpecialization, session.env.GetSpecializationInfo = false, false
     assert(session.Refresh() == "NO_PET")
+end)
+
+Test("re-enabling pet alerts picks up a summon learned while disabled", function()
+    local known = {}
+    local session = Session({forever = true, known = known})
+    assert(session.Refresh() == nil)
+    session.SetPetAlertsEnabled(false)
+    assert(not session.addonFrame.events.LEARNED_SPELL_IN_SKILL_LINE)
+    known[883] = true
+    session.SetPetAlertsEnabled(true)
+    assert(session.addonFrame.events.LEARNED_SPELL_IN_SKILL_LINE)
+    session.Event("PET_BAR_UPDATE")
+    assert(session.currentStatusKey == "NO_PET", "re-enable must recheck learned summons without another spell event")
+end)
+
+Test("routine pet events coalesce but a newly summoned pet can settle after the first check", function()
+    for _, forever in ipairs({false, true}) do
+        local config = {forever = forever, pet = true, known = {[883] = true}, mode = "PET_MODE_PASSIVE"}
+        local session = Session(config)
+        assert(session.Refresh() == "PASSIVE")
+        config.mode = "PET_MODE_ASSIST"
+        session.Dispatch("PET_BAR_UPDATE")
+        session.Dispatch("PET_UI_UPDATE")
+        session.Dispatch("SPELLS_CHANGED")
+        session.Dispatch("UNIT_PET", "party1")
+        assert(session.FlushEvents() == 1 and not session.currentStatusKey)
+        assert(session.FlushEvents() == 0, "routine changes must not schedule a second pass")
+
+        config.pet = false
+        local after = session.env.C_Timer.After
+        local stages = {}
+        session.env.C_Timer.After = function(delay, callback) stages[delay] = callback end
+        session.Dispatch("UNIT_PET", "player")
+        assert(stages[0.08] and stages[0.35])
+        stages[0.08]()
+        assert(session.currentStatusKey == "NO_PET")
+        config.pet, config.mode = true, "PET_MODE_DEFENSIVE"
+        stages[0.35]()
+        assert(session.currentStatusKey == "DEFENSIVE")
+        session.env.C_Timer.After = after
+    end
+end)
+
+Test("pet events use player filtering and retain compatibility when the client rejects unit registration", function()
+    local fallback = Session({forever = true, rejectUnitEvent = "UNIT_PET", known = {[883] = true}})
+    assert(fallback.addonFrame.events.UNIT_PET == true)
+    assert(fallback.Event("UNIT_PET", "party1") == 0)
+    assert(fallback.Event("UNIT_PET", "player") == 2 and fallback.currentStatusKey == "NO_PET")
+
+    local unsupported = Session({forever = true, class = "PRIEST"})
+    assert(unsupported.Event("ADDON_LOADED", "PetStatusAlert") == 0 and not next(unsupported.addonFrame.events))
+    local warrior = Session({class = "WARRIOR", spec = 71, stance = true})
+    assert(warrior.addonFrame.events.PLAYER_REGEN_DISABLED and not warrior.addonFrame.events.PET_BAR_UPDATE)
+    assert(warrior.Event("UNIT_AURA", "player") == 1 and warrior.currentStatusKey == "WARRIOR_DEFENSIVE_STANCE")
+end)
+
+Test("Retail Warrior reads stance only for relevant aura changes and can still track restricted casts", function()
+    local config = {class = "WARRIOR", spec = 71, stanceInstanceID = 18}
+    local session = Session(config)
+    local restricted = false
+    session.env.C_Secrets = {ShouldSpellAuraBeSecret = function() return restricted end}
+    assert(session.Refresh() == nil)
+    local reads = session.counters.aura
+    local unrelated = {addedAuras = {{spellId = 123}}, removedAuraInstanceIDs = {99}, updatedAuraInstanceIDs = {18}}
+    assert(session.Event("UNIT_AURA", "player", unrelated) == 0 and session.counters.aura == reads)
+    config.stance = true
+    session.Dispatch("UNIT_AURA", "player", {addedAuras = {{spellId = 386208}}})
+    session.Dispatch("UNIT_AURA", "player", {isFullUpdate = true})
+    assert(session.FlushEvents() == 1 and session.counters.aura == reads + 1)
+    assert(session.currentStatusKey == "WARRIOR_DEFENSIVE_STANCE")
+    assert(session.Event("UNIT_AURA", "player", unrelated) == 0 and session.counters.aura == reads + 1)
+    config.stance = false
+    assert(session.Event("UNIT_AURA", "player", {removedAuraInstanceIDs = {18}}) == 1)
+    assert(not session.currentStatusKey and session.counters.aura == reads + 2)
+
+    restricted = true
+    assert(session.Event("UNIT_AURA", "player", {isFullUpdate = true}) == 0)
+    local castFrame = assert(session.frames[2])
+    castFrame.scripts.OnEvent(castFrame, "UNIT_SPELLCAST_SUCCEEDED", "player", "cast", 386208)
+    assert(session.FlushEvents() == 1 and session.currentStatusKey == "WARRIOR_DEFENSIVE_STANCE")
+    assert(session.counters.aura == reads + 2)
+    restricted = false
+    assert(session.Event("UNIT_AURA", "player", {isFullUpdate = true}) == 1 and not session.currentStatusKey)
+
+    config.spec = 73
+    session.Event("PLAYER_SPECIALIZATION_CHANGED", "player")
+    assert(not session.addonFrame.events.UNIT_AURA)
+    config.spec = 72
+    session.Event("PLAYER_SPECIALIZATION_CHANGED", "player")
+    assert(session.addonFrame.events.UNIT_AURA == "player")
 end)
 
 print(string.format("RESULT: %d passed, %d failed", passed, failed))

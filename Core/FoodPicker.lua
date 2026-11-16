@@ -49,6 +49,14 @@ local function CanInteract()
     return owner and button:IsVisible() and not InCombatLockdown()
 end
 
+local function UpdateBagWatch()
+    if owner and (menu or PreferredItem()) then
+        button:RegisterEvent("BAG_UPDATE_DELAYED")
+    else
+        button:UnregisterEvent("BAG_UPDATE_DELAYED")
+    end
+end
+
 local function UpdateIcon()
     local id = PreferredItem()
     local count = id and BagCount(id) or 0
@@ -56,11 +64,6 @@ local function UpdateIcon()
     button.foodTexture:SetShown(not not texture)
     if texture then button.foodTexture:SetTexture(texture) end
     button.foodCount:SetText(count > 0 and tostring(count) or "")
-    if owner and id then
-        button:RegisterEvent("BAG_UPDATE_DELAYED")
-    else
-        button:UnregisterEvent("BAG_UPDATE_DELAYED")
-    end
 end
 
 local function StopLoading()
@@ -75,6 +78,7 @@ local function CloseMenu()
     local current = menu
     menu = nil
     StopLoading()
+    UpdateBagWatch()
     if current then current:Close() end
 end
 
@@ -138,6 +142,7 @@ local function BuildMenu(_, root)
         if released == menu then
             menu = nil
             StopLoading()
+            UpdateBagWatch()
         end
     end)
     root:CreateTitle(PSA.UI.FOOD_PICKER_TITLE)
@@ -147,6 +152,7 @@ local function BuildMenu(_, root)
         if not CanInteract() or BagCount(id) == 0 or not C_Item.IsUsableItem(id) then return end
         RememberItem(id)
         UpdateIcon()
+        UpdateBagWatch()
     end
     for _, food in ipairs(choices) do
         local itemID = food.id
@@ -215,6 +221,7 @@ local function CreateButton(parent)
         CloseMenu()
         menu = MenuUtil.CreateContextMenu(self, BuildMenu)
         if not menu then StopLoading() end
+        UpdateBagWatch()
     end)
     picker:SetScript("OnEnter", function(self)
         if not GameTooltip or GameTooltip:IsForbidden() then return end
@@ -255,11 +262,11 @@ function PSA.SetFoodPickerOwner(parent)
     owner = parent
     if not parent then
         CloseMenu()
-        button:UnregisterEvent("BAG_UPDATE_DELAYED")
         button:Hide()
         return
     end
     button = button or CreateButton(parent)
     UpdateIcon()
+    UpdateBagWatch()
     button:Show()
 end

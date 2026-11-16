@@ -23,6 +23,9 @@ local VALID_ALERT_ICON_MODES = PSA.VALID_ALERT_ICON_MODES or { text = true, icon
 local ALERT_GLOW_KEY = "PetStatusAlert_Glow"
 local ALERT_ROW_GAP = 8
 local ALERT_ROW_EDGE_PADDING = 3
+local SUPPLY_BADGE_GAP = 3
+local SUPPLY_BADGE_HEIGHT = 16
+local SUPPLY_NUMERIC_WIDTH = 40
 local DISPLAY_SAMPLE = "DISPLAY_SAMPLE"
 local displayPreview
 
@@ -193,7 +196,8 @@ local function RegisterStatusIcon(classFile, statusKey, value)
 end
 
 local addonFrame = CreateFrame("Frame", "PetStatusAlertFrame", UIParent)
-addonFrame:SetSize(780, 86)
+-- Dragging can save an edge point; keep the anchor's center stable as the row changes size.
+addonFrame:SetSize(80, 32)
 addonFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 220)
 addonFrame:SetClampedToScreen(true)
 addonFrame:SetMovable(true)
@@ -219,8 +223,7 @@ if textFrame.SetFrameLevel then
 end
 
 -- 内容层：textFrame 作为层级容器（始终覆盖 addonFrame）。
--- contentFrame 是浮动层，承载 icon 和 text，跟随浮动动画整体上下移动。
--- 这样布局（icon/text 相对位置）与浮动（整体 Y 偏移）完全解耦。
+-- contentFrame 是整行提醒的浮动基点，宠物、增益和补给跟随同一个 Y 偏移。
 local contentFrame = CreateFrame("Frame", nil, textFrame)
 contentFrame:SetPoint("CENTER", textFrame, "CENTER", 0, 0)
 contentFrame:SetSize(240, 58)
@@ -234,7 +237,7 @@ local currentAlertStrata
 
 local function SetAlertStrata(strata)
     strata = strata or ALERT_STRATA_DEFAULT
-    if isForever and PetStatusAlertDB and not PetStatusAlertDB.alertLocked then
+    if PetStatusAlertDB and not PetStatusAlertDB.alertLocked then
         strata = ALERT_STRATA_PREVIEW
     end
     if strata == currentAlertStrata then
@@ -322,11 +325,16 @@ end
 
 local FLOAT_PERIOD = 1.5
 local FLOAT_UPDATE_INTERVAL = 0.05
+local CLASS_GLOW_INTERVAL = 1 / 30
+local PIXEL_GLOW_FRAME_KEY = "_PixelGlow" .. ALERT_GLOW_KEY
+local classGlowUpdates = {}
+local classGlowTime, classGlowElapsed = 0, 0
+local animationActive = false
 local floatElapsed = 0
 local floatUpdateElapsed = 0
 local lastFloatOffset, lastContentOffsetX
 local contentOffsetX = 0
-local floatingFrame
+local floatActive = false
 local currentFloatAmplitude = DEFAULT_ALERT_FLOAT_AMPLITUDE
 local currentFloatSpeed = DEFAULT_ALERT_FLOAT_SPEED
 local currentAlertFontSize = DEFAULT_ALERT_FONT_SIZE
@@ -339,35 +347,34 @@ local currentLayoutShowsIcon = false
 local iconTexturePending = false
 local lastMessage = ""
 local lastStatusKey = nil
-local RefreshAlertVisuals
+local RefreshAlertVisuals, UpdateFloatingScript
 local petCareFrame, petCareIcon, petCareKind, petCareTexture
 local petCareDesaturated = false
-local supplyFrame, supplyPositionLabel, petPositionLabel
-local ammoFrame, ammoIcon, ammoText, ammoLabel
+local supplyFrame, positionLabel
+local supplyWidth, supplyIconSize, supplyBadgeHeight = 0, 0, 0
+local supplyFirstIconOffset = 0
+local ammoFrame, ammoIcon, ammoText
 local ammoKind, ammoCount, ammoTexture
 local foodFrame, foodLabel
 local foodMissing, foodXP
 local retailSupplyIcons = {}
 local retailSupplyOrder = { "FOOD", "MAIN_HAND", "OFF_HAND", "EARTH_SHIELD", "WATER_SHIELD", "LIGHTNING_SHIELD", "SHIELD", "BATTLE_SHOUT", "ARCANE_INTELLECT", "SKYFURY", "MARK_OF_THE_WILD", "FORTITUDE" }
-local retailSupplyEnabled = false
+local foreverSupplyIcons, foreverSupplyItems = {}, {}
 
 do
-    supplyFrame = CreateFrame("Frame", "PetStatusAlertSupplyFrame", UIParent)
-    supplyFrame:SetClampedToScreen(true)
-    supplyFrame:SetMovable(true)
-    supplyFrame:RegisterForDrag("LeftButton")
+    supplyFrame = CreateFrame("Frame", "PetStatusAlertSupplyFrame", textFrame)
+    supplyFrame:EnableMouse(false)
     supplyFrame:Hide()
-    supplyPositionLabel = supplyFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    supplyPositionLabel:SetPoint("CENTER")
-    petPositionLabel = textFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    petPositionLabel:SetPoint("CENTER")
-    petPositionLabel:Hide()
+    positionLabel = textFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    positionLabel:SetPoint("CENTER")
+    positionLabel:Hide()
 end
 
--- Reserve room for the pet care icon when wrapping the stance text.
+-- Reserve room for the adjacent icons when wrapping the stance text.
 local function GetMaxAlertContentWidth()
     local width = UIParent:GetWidth()
     local reserved = (petCareKind and currentIconSize + ALERT_ROW_GAP or 0) + 2 * ALERT_ROW_EDGE_PADDING
+    if supplyWidth > 0 then reserved = reserved + supplyWidth + ALERT_ROW_GAP end
     return math.max(160, math.min(width * 0.9, width - reserved))
 end
 
@@ -578,45 +585,67 @@ local function ApplyFloatOffset(y)
 end
 
 local function LayoutAlertRow()
-    local stanceWidth = lastStatusKey and contentFrame:GetWidth() or 0
-    local centeredIcon = isForever and lastStatusKey and currentLayoutShowsIcon
-    -- In Forever the stance icon shares the saved center with the pet care icon.
-    local stanceLeft = centeredIcon and currentIconSize / 2 or stanceWidth / 2
+    local hasStance = lastStatusKey ~= nil
+    local hasSupply = supplyWidth > 0
+    local hasAlert = hasStance or petCareKind ~= nil or hasSupply
+    local stanceWidth = hasStance and contentFrame:GetWidth() or 0
+    -- Keep the status icon itself at the saved anchor, even with text beside it.
+    local stanceLeft = hasStance and currentLayoutShowsIcon and currentIconSize / 2 or stanceWidth / 2
     contentOffsetX = stanceWidth / 2 - stanceLeft
     ApplyFloatOffset(lastFloatOffset or 0)
+    UpdateFloatingScript(hasAlert)
 
-    local showPosition = petPositionLabel and not PetStatusAlertDB.alertLocked and not lastStatusKey and not petCareKind
-    if petPositionLabel then petPositionLabel:SetShown(showPosition) end
-    if not petCareKind and not centeredIcon then
-        addonFrame:SetClampRectInsets(0, 0, 0, 0)
-        if showPosition then
-            addonFrame:SetSize(petPositionLabel:GetUnboundedStringWidth() + 16, 32)
+    local showPosition = not PetStatusAlertDB.alertLocked and not hasAlert
+    positionLabel:SetShown(showPosition)
+    if not hasAlert then
+        local extra = showPosition and math.max(0, (positionLabel:GetUnboundedStringWidth() + 16 - addonFrame:GetWidth()) / 2) or 0
+        addonFrame:SetClampRectInsets(-extra, extra, 0, 0)
+        if addonFrame.SetHitRectInsets then
+            addonFrame:SetHitRectInsets(-extra, -extra, 0, 0)
         end
-        addonFrame:SetShown(lastStatusKey ~= nil or showPosition == true)
+        addonFrame:SetShown(showPosition)
         return
     end
 
-    local anchor = lastStatusKey and contentFrame or nil
-    local leftReach = anchor and stanceLeft or currentIconSize / 2
-    local rightReach = anchor and stanceWidth - stanceLeft or currentIconSize / 2
+    local leftmostPet = hasStance and (currentLayoutShowsIcon and icon or contentFrame) or nil
+    local leftReach, rightReach = stanceLeft, stanceWidth - stanceLeft
     if petCareKind then
         petCareFrame:SetSize(currentIconSize, currentIconSize)
         petCareFrame:ClearAllPoints()
-        if anchor then
-            petCareFrame:SetPoint("RIGHT", currentLayoutShowsIcon and icon or anchor, "LEFT", -ALERT_ROW_GAP, 0)
+        if leftmostPet then
+            petCareFrame:SetPoint("RIGHT", leftmostPet, "LEFT", -ALERT_ROW_GAP, 0)
             leftReach = leftReach + ALERT_ROW_GAP + currentIconSize
         else
             petCareFrame:SetPoint("CENTER", contentFrame, "CENTER", 0, 0)
+            leftReach, rightReach = currentIconSize / 2, currentIconSize / 2
+        end
+        leftmostPet = petCareFrame
+    end
+    if hasSupply then
+        supplyFrame:ClearAllPoints()
+        if leftmostPet then
+            supplyFrame:SetPoint("RIGHT", leftmostPet, "LEFT", -ALERT_ROW_GAP, -supplyBadgeHeight / 2)
+            leftReach = leftReach + ALERT_ROW_GAP + supplyWidth
+        else
+            -- With no pet alert, the first visible icon takes the saved anchor.
+            supplyFrame:SetPoint("LEFT", contentFrame, "CENTER", -supplyFirstIconOffset, -supplyBadgeHeight / 2)
+            leftReach, rightReach = supplyFirstIconOffset, supplyWidth - supplyFirstIconOffset
         end
     end
 
     local halfWidth = addonFrame:GetWidth() / 2
     local left = leftReach + ALERT_ROW_EDGE_PADDING - halfWidth
     local right = rightReach + ALERT_ROW_EDGE_PADDING - halfWidth
-    local amplitude = (lastStatusKey or petCareKind == "unhappy") and currentFloatAmplitude or 0
-    local rowHeight = math.max(currentIconSize, lastStatusKey and contentFrame:GetHeight() or 0)
-    local vertical = math.max(0, rowHeight / 2 + amplitude + ALERT_ROW_EDGE_PADDING - addonFrame:GetHeight() / 2)
-    addonFrame:SetClampRectInsets(-left, right, vertical, -vertical)
+    local amplitude = floatActive and currentFloatAmplitude or 0
+    local halfHeight = math.max(petCareKind and currentIconSize or 0, supplyIconSize,
+        hasStance and contentFrame:GetHeight() or 0) / 2
+    local bottomReach = math.max(halfHeight, supplyIconSize / 2 + supplyBadgeHeight)
+    local space = amplitude + ALERT_ROW_EDGE_PADDING - addonFrame:GetHeight() / 2
+    local top, bottom = math.max(0, halfHeight + space), math.max(0, bottomReach + space)
+    addonFrame:SetClampRectInsets(-left, right, top, -bottom)
+    if addonFrame.SetHitRectInsets then
+        addonFrame:SetHitRectInsets(-math.max(0, left), -math.max(0, right), -top, -bottom)
+    end
     addonFrame:Show()
 end
 
@@ -636,7 +665,6 @@ local function RefreshAlertBoxSize()
     local boxWidth = math.min(math.max(math.ceil(contentWidth), 40), GetMaxAlertContentWidth())
     local boxHeight = math.max(math.ceil(contentHeight), currentAlertFontSize + 6)
 
-    addonFrame:SetSize(math.max(boxWidth, 80), math.max(boxHeight, 32))
     contentFrame:SetSize(math.max(contentWidth, 1), math.max(contentHeight, 1))
 
     -- 流光目标：有图标时只围绕图标，纯文字时围绕文字
@@ -651,6 +679,19 @@ end
 
 local function OnAlertUpdate(_, elapsed)
     elapsed = tonumber(elapsed) or 0
+    if next(classGlowUpdates) then
+        classGlowTime = classGlowTime + elapsed
+        classGlowElapsed = classGlowElapsed + elapsed
+        if classGlowTime >= CLASS_GLOW_INTERVAL then
+            classGlowTime = classGlowTime % CLASS_GLOW_INTERVAL
+            for glow, update in pairs(classGlowUpdates) do
+                update(glow, classGlowElapsed)
+            end
+            classGlowElapsed = 0
+        end
+    end
+    if not floatActive then return end
+
     floatElapsed = floatElapsed + elapsed
     floatUpdateElapsed = floatUpdateElapsed + elapsed
     if floatUpdateElapsed < FLOAT_UPDATE_INTERVAL then
@@ -662,30 +703,28 @@ local function OnAlertUpdate(_, elapsed)
     ApplyFloatOffset(math.sin(phase) * currentFloatAmplitude)
 end
 
-local function UpdateFloatingScript()
-    local nextFrame
-    if currentFloatAmplitude > 0 and currentFloatSpeed > 0 then
-        if lastStatusKey then
-            nextFrame = addonFrame
-        elseif petCareKind == "unhappy" then
-            nextFrame = petCareFrame
-        end
-    end
+local function UpdateAlertAnimation()
+    local hasClassGlows = next(classGlowUpdates) ~= nil
+    if not hasClassGlows then classGlowTime, classGlowElapsed = 0, 0 end
+    local active = floatActive or hasClassGlows
+    if active == animationActive then return end
+    animationActive = active
+    addonFrame:SetScript("OnUpdate", active and OnAlertUpdate or nil)
+end
 
-    if nextFrame ~= floatingFrame then
-        if floatingFrame then
-            floatingFrame:SetScript("OnUpdate", nil)
-        end
-        floatingFrame = nextFrame
-        floatUpdateElapsed = 0
-        if nextFrame then
-            nextFrame:SetScript("OnUpdate", OnAlertUpdate)
-        end
-    end
+UpdateFloatingScript = function(hasAlert)
+    local active = hasAlert and currentFloatAmplitude > 0 and currentFloatSpeed > 0
+    if active == floatActive then return end
 
-    if not nextFrame then
+    floatActive = active
+    floatUpdateElapsed = 0
+    UpdateAlertAnimation()
+    if not active then
         floatElapsed = 0
-        ApplyFloatOffset(0)
+        if lastFloatOffset ~= 0 then
+            lastFloatOffset = nil
+            ApplyFloatOffset(0)
+        end
     end
 end
 
@@ -718,82 +757,91 @@ local function RefreshAccessoryGlow(frame, active)
     if not frame or not LCG or not LCG.PixelGlow_Start then
         return
     end
+    local useSharedUpdate = frame.classBuffKey ~= nil or frame.isRetailClassBuff
+    if useSharedUpdate then
+        local glow = frame[PIXEL_GLOW_FRAME_KEY]
+        if glow then classGlowUpdates[glow] = nil end
+    end
     LCG.PixelGlow_Stop(frame, ALERT_GLOW_KEY)
     if active and GetAlertGlowEnabled() then
         StartIconGlow(frame)
-    end
-end
-
-local function MeasureSupplyLabel(label, maxWidth)
-    label:SetFont(STANDARD_TEXT_FONT, currentAlertFontSize, "OUTLINE")
-    local width = math.min(math.ceil(label:GetUnboundedStringWidth()), maxWidth)
-    label:SetWidth(math.max(1, width))
-    return currentIconSize + currentIconGap + width, label:GetStringHeight()
-end
-
-local function LayoutSupplyRow()
-    if not supplyFrame then return end
-    local moving = not PetStatusAlertDB.alertLocked
-    if not isForever then
-        local count = 0
-        for _, button in pairs(retailSupplyIcons) do
-            if button.active then count = count + 1 end
-        end
-        local showPosition = moving and retailSupplyEnabled and count == 0
-        supplyPositionLabel:SetShown(showPosition)
-        supplyFrame:SetFrameStrata(moving and ALERT_STRATA_PREVIEW or ALERT_STRATA_DEFAULT)
-        if showPosition then
-            supplyFrame:SetSize(supplyPositionLabel:GetUnboundedStringWidth() + 16, 32)
-        elseif count > 0 then
-            local width = UIParent:GetWidth() - 2 * ALERT_ROW_EDGE_PADDING - (count - 1) * ALERT_ROW_GAP
-            local size = math.max(1, math.min(currentIconSize, width / count))
-            local x = ALERT_ROW_EDGE_PADDING
-            for _, key in ipairs(retailSupplyOrder) do
-                local button = retailSupplyIcons[key]
-                if button and button.active then
-                    button:SetSize(size, size)
-                    button:ClearAllPoints()
-                    button:SetPoint("LEFT", supplyFrame, "LEFT", x, 0)
-                    button:EnableMouse(not moving)
-                    x = x + size + ALERT_ROW_GAP
-                end
+        -- The bundled glow library attaches its frame under this key. If a
+        -- different installed version doesn't expose it, let it animate itself.
+        if useSharedUpdate then
+            local glow = frame[PIXEL_GLOW_FRAME_KEY]
+            local update = glow and glow.GetScript and glow:GetScript("OnUpdate")
+            if update then
+                glow:SetScript("OnUpdate", nil)
+                classGlowUpdates[glow] = update
             end
-            supplyFrame:SetSize(x - ALERT_ROW_GAP + ALERT_ROW_EDGE_PADDING, size + 2 * ALERT_ROW_EDGE_PADDING)
         end
-        supplyFrame:SetShown(showPosition or count > 0)
-        return
     end
-    local showPosition = moving and not ammoKind and not foodMissing
-    supplyPositionLabel:SetShown(showPosition)
-    supplyFrame:SetFrameStrata(moving and ALERT_STRATA_PREVIEW or ALERT_STRATA_DEFAULT)
-    if showPosition then
-        supplyFrame:SetSize(supplyPositionLabel:GetUnboundedStringWidth() + 16, 32)
-    elseif ammoKind or foodMissing then
-        local ammoWidth, ammoHeight, foodWidth, foodHeight = 0, 0, 0, 0
-        local gap = ammoKind and foodMissing and ALERT_ROW_GAP * 2 or 0
-        local count = gap > 0 and 2 or 1
-        local maxLabelWidth = math.max(1, math.min(UIParent:GetWidth() / 3,
-            (UIParent:GetWidth() - gap - 2 * ALERT_ROW_EDGE_PADDING) / count - currentIconSize - currentIconGap))
-        if ammoKind then
-            ammoWidth, ammoHeight = MeasureSupplyLabel(ammoLabel, maxLabelWidth)
-            ammoFrame:SetSize(currentIconSize, currentIconSize)
-            ammoFrame:ClearAllPoints()
-            ammoFrame:SetPoint("LEFT", supplyFrame, "LEFT", ALERT_ROW_EDGE_PADDING, 0)
-            ammoLabel:ClearAllPoints()
-            ammoLabel:SetPoint("LEFT", ammoFrame, "RIGHT", currentIconGap, 0)
+    if useSharedUpdate then UpdateAlertAnimation() end
+end
+
+local function CreateSupplyBadge(frame)
+    local label = frame:CreateFontString(nil, "OVERLAY")
+    label:SetFont(STANDARD_TEXT_FONT, 12, "OUTLINE")
+    label:SetHeight(SUPPLY_BADGE_HEIGHT)
+    label:SetJustifyH("CENTER")
+    label:SetWordWrap(false)
+    label:SetPoint("TOP", frame, "BOTTOM", 0, -SUPPLY_BADGE_GAP)
+    frame.supplyLabel = label
+    return label
+end
+
+local function LayoutSupplyRow(updateBoxes)
+    local moving = not PetStatusAlertDB.alertLocked
+    local items = {}
+    if isForever then
+        if ammoKind then items[#items + 1] = ammoFrame end
+        if foodMissing then items[#items + 1] = foodFrame end
+        for _, button in ipairs(foreverSupplyItems) do items[#items + 1] = button end
+    else
+        for _, key in ipairs(retailSupplyOrder) do
+            local button = retailSupplyIcons[key]
+            if button and button.active then items[#items + 1] = button end
         end
-        if foodMissing then
-            foodWidth, foodHeight = MeasureSupplyLabel(foodLabel, maxLabelWidth)
-            foodFrame:SetSize(currentIconSize, currentIconSize)
-            foodFrame:ClearAllPoints()
-            foodFrame:SetPoint("LEFT", supplyFrame, "LEFT", ALERT_ROW_EDGE_PADDING + ammoWidth + gap, 0)
-            foodLabel:ClearAllPoints()
-            foodLabel:SetPoint("LEFT", foodFrame, "RIGHT", currentIconGap, 0)
-        end
-        supplyFrame:SetSize(ammoWidth + foodWidth + gap + 2 * ALERT_ROW_EDGE_PADDING,
-            math.max(currentIconSize, ammoHeight, foodHeight) + 2 * ALERT_ROW_EDGE_PADDING)
     end
-    supplyFrame:SetShown(not not (ammoKind or foodMissing or showPosition))
+    local count = #items
+    local previousWidth = supplyWidth
+    supplyWidth, supplyIconSize, supplyBadgeHeight = 0, 0, 0
+    if count > 0 then
+        -- Leave room for the pet status and care icon even if they appear later.
+        local screen = UIParent:GetWidth()
+        local reserve = math.min(screen * 0.50, math.max(220, currentIconSize + currentIconGap + 80)
+            + (isForever and currentIconSize + ALERT_ROW_GAP or 0))
+        local width = screen - reserve - 4 * ALERT_ROW_EDGE_PADDING - count * ALERT_ROW_GAP
+        local maxCellWidth = math.max(1, width / count)
+        local size = math.min(currentIconSize, maxCellWidth)
+        local x, badgeHeight = ALERT_ROW_EDGE_PADDING, 0
+        for index, item in ipairs(items) do
+            local cellWidth = size
+            local label = item.supplyLabel
+            if label and label:IsShown() then
+                local labelWidth = item == foodFrame and math.ceil(label:GetUnboundedStringWidth()) + 2 or SUPPLY_NUMERIC_WIDTH
+                cellWidth = math.min(maxCellWidth, math.max(size, labelWidth))
+                label:SetWidth(cellWidth)
+                badgeHeight = SUPPLY_BADGE_GAP + SUPPLY_BADGE_HEIGHT
+            end
+            item:SetSize(size, size)
+            item:ClearAllPoints()
+            local center = x + cellWidth / 2
+            if index == 1 then supplyFirstIconOffset = center end
+            item:SetPoint("TOP", supplyFrame, "TOPLEFT", center, -ALERT_ROW_EDGE_PADDING)
+            if item.alertKey then item:EnableMouse(not moving) end
+            x = x + cellWidth + ALERT_ROW_GAP
+        end
+        supplyWidth = x - ALERT_ROW_GAP + ALERT_ROW_EDGE_PADDING
+        supplyIconSize, supplyBadgeHeight = size, badgeHeight
+        supplyFrame:SetSize(supplyWidth, size + badgeHeight + 2 * ALERT_ROW_EDGE_PADDING)
+    end
+    supplyFrame:SetShown(count > 0)
+    if updateBoxes or (lastStatusKey and supplyWidth ~= previousWidth) then
+        RefreshAlertBoxSize()
+    else
+        LayoutAlertRow()
+    end
 end
 
 local function RefreshAmmoTooltip(frame)
@@ -823,6 +871,7 @@ end
 local function CreateRetailSupplyIcon(key)
     local button = CreateFrame("Button", nil, supplyFrame, "InsecureActionButtonTemplate")
     button.alertKey = key
+    button.isRetailClassBuff = key ~= "FOOD" and key ~= "MAIN_HAND" and key ~= "OFF_HAND"
     button.icon = button:CreateTexture(nil, "ARTWORK")
     button.icon:SetAllPoints(button)
     button:RegisterForClicks("LeftButtonUp")
@@ -862,9 +911,7 @@ local function ApplyRetailSupplyCountdown(button, expiration, lead)
     end
     if not binding then
         if not (C_DurationUtil and C_DurationUtil.CreateDuration and C_DurationUtil.CreateDurationTextBinding) then return end
-        local text = button:CreateFontString(nil, "OVERLAY")
-        text:SetPoint("BOTTOM", button, "BOTTOM", 0, 2)
-        text:SetFont(STANDARD_TEXT_FONT, 13, "OUTLINE")
+        local text = CreateSupplyBadge(button)
         button.timeText = text
         button.duration = C_DurationUtil.CreateDuration()
         binding = C_DurationUtil.CreateDurationTextBinding()
@@ -883,12 +930,12 @@ local function ApplyRetailSupplyCountdown(button, expiration, lead)
     button.timeText:Show()
 end
 
-function PSA.RenderRetailSupplyAlerts(alerts, enabled)
+function PSA.RenderRetailSupplyAlerts(alerts)
     if not PSA.GetBuffAlertsEnabled() then
-        alerts, enabled = {}, false
+        alerts = {}
     end
-    local layoutChanged = retailSupplyEnabled ~= enabled
-    retailSupplyEnabled = enabled
+    local layoutChanged
+    local newlyActive
     for _, key in ipairs(retailSupplyOrder) do
         local alert, button = alerts[key], retailSupplyIcons[key]
         if alert then
@@ -901,30 +948,82 @@ function PSA.RenderRetailSupplyAlerts(alerts, enabled)
                 button.active = true
                 button:Show()
                 layoutChanged = true
+                newlyActive = newlyActive or {}
+                newlyActive[#newlyActive + 1] = button
             end
+            local hadCountdown = button.timeText and button.timeText:IsShown()
             ApplyRetailSupplyCountdown(button, alert.expiration, alert.lead)
+            if hadCountdown ~= (button.timeText and button.timeText:IsShown()) then layoutChanged = true end
             if GameTooltip and not GameTooltip:IsForbidden() and GameTooltip:IsOwned(button) then
                 ShowRetailSupplyTooltip(button)
             end
         elseif button and button.active then
             button.active = false
             ApplyRetailSupplyCountdown(button)
+            RefreshAccessoryGlow(button, false)
             button:Hide()
             layoutChanged = true
         end
     end
     if layoutChanged then LayoutSupplyRow() end
+    if newlyActive then
+        for _, button in ipairs(newlyActive) do RefreshAccessoryGlow(button, true) end
+    end
+end
+
+-- Personal Forever class alerts are indicators only; food and ammo retain their own behavior.
+function PSA.RenderForeverClassBuffAlerts(alerts)
+    if #foreverSupplyItems == 0 and #alerts == 0 then return end
+    if not PSA.GetBuffAlertsEnabled() then alerts = {} end
+    for _, button in ipairs(foreverSupplyItems) do button.pending = false end
+    local layoutChanged
+    for index, alert in ipairs(alerts) do
+        local button = foreverSupplyIcons[alert.key]
+        if not button then
+            button = CreateFrame("Frame", nil, supplyFrame)
+            button:Hide()
+            button.classBuffKey = alert.key
+            button.icon = button:CreateTexture(nil, "ARTWORK")
+            button.icon:SetAllPoints(button)
+            foreverSupplyIcons[alert.key] = button
+        end
+        button.pending = true
+        if foreverSupplyItems[index] ~= button then layoutChanged = true end
+        local texture = GetSpellTextureByID(alert.spell) or 134400
+        if texture ~= button.texture then
+            button.texture = texture
+            button.icon:SetTexture(texture)
+        end
+    end
+    for _, button in ipairs(foreverSupplyItems) do
+        if not button.pending then
+            RefreshAccessoryGlow(button, false)
+            button:Hide()
+            layoutChanged = true
+        end
+    end
+    if not layoutChanged then return end
+    for index = #foreverSupplyItems, 1, -1 do foreverSupplyItems[index] = nil end
+    for index, alert in ipairs(alerts) do
+        local button = foreverSupplyIcons[alert.key]
+        foreverSupplyItems[index] = button
+        if not button:IsShown() then
+            button.needsGlow = true
+            button:Show()
+        end
+    end
+    LayoutSupplyRow()
+    for _, button in ipairs(foreverSupplyItems) do
+        if button.needsGlow then
+            button.needsGlow = nil
+            RefreshAccessoryGlow(button, true)
+        end
+    end
 end
 
 local function UpdateAmmoText()
-    local label = PSA.UI[ammoKind .. "_LABEL"]
-    local labelChanged = ammoLabel:GetText() ~= label
-    if labelChanged then
-        ammoLabel:SetText(label)
-    end
     ammoText:SetText(tostring(ammoCount))
     RefreshAmmoTooltip(ammoFrame)
-    return labelChanged
 end
 
 function PSA.SetAmmoAlert(kind, count, texture)
@@ -948,14 +1047,8 @@ function PSA.SetAmmoAlert(kind, count, texture)
         ammoFrame:SetMouseMotionEnabled(PetStatusAlertDB.alertLocked)
         ammoIcon = ammoFrame:CreateTexture(nil, "ARTWORK")
         ammoIcon:SetAllPoints(ammoFrame)
-        ammoText = ammoFrame:CreateFontString(nil, "OVERLAY")
-        ammoText:SetFont(STANDARD_TEXT_FONT, 12, "OUTLINE")
+        ammoText = CreateSupplyBadge(ammoFrame)
         ammoText:SetTextColor(1, 0.72, 0.2)
-        ammoText:SetPoint("BOTTOMRIGHT", ammoFrame, "BOTTOMRIGHT", -2, 2)
-        ammoLabel = ammoFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        ammoLabel:SetTextColor(1, 0.72, 0.2)
-        ammoLabel:SetJustifyH("LEFT")
-        ammoLabel:SetWordWrap(true)
         ammoFrame:SetScript("OnEnter", function(self)
             if GameTooltip and not GameTooltip:IsForbidden() then
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -969,22 +1062,16 @@ function PSA.SetAmmoAlert(kind, count, texture)
     if textureChanged or not wasShown then
         ammoIcon:SetTexture(texture)
     end
-    local labelChanged = UpdateAmmoText()
+    UpdateAmmoText()
     if not wasShown then
         ammoFrame:Show()
-    end
-    if not wasShown or labelChanged then
         LayoutSupplyRow()
-    end
-    if not wasShown then
         RefreshAccessoryGlow(ammoFrame, true)
     end
 end
 
 local function UpdateFoodLabel()
-    local label = PSA.UI.FOOD_BUFF_MISSING
-    if foodXP then label = label .. " · " .. PSA.UI.FOOD_BUFF_XP end
-    foodLabel:SetText(label)
+    foodLabel:SetText(foodXP and PSA.UI.FOOD_BUFF_XP or PSA.UI.FOOD_BUFF_MISSING)
 end
 
 function PSA.RefreshFoodPicker()
@@ -999,6 +1086,7 @@ function PSA.SetFoodBuffAlert(missing, showXP)
         missing, showXP = nil, nil
     end
     if not supplyFrame or (foodMissing == missing and foodXP == showXP) then return end
+    local visibilityChanged = (not not foodMissing) ~= (not not missing)
     foodMissing, foodXP = missing, showXP
     if missing then
         if not foodFrame then
@@ -1006,9 +1094,7 @@ function PSA.SetFoodBuffAlert(missing, showXP)
             local texture = foodFrame:CreateTexture(nil, "ARTWORK")
             texture:SetAllPoints(foodFrame)
             texture:SetTexture(136000)
-            foodLabel = foodFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            foodLabel:SetJustifyH("LEFT")
-            foodLabel:SetWordWrap(true)
+            foodLabel = CreateSupplyBadge(foodFrame)
         end
         UpdateFoodLabel()
         foodFrame:Show()
@@ -1016,17 +1102,15 @@ function PSA.SetFoodBuffAlert(missing, showXP)
         foodFrame:Hide()
     end
     LayoutSupplyRow()
+    if visibilityChanged then RefreshAccessoryGlow(foodFrame, foodMissing) end
     PSA.RefreshFoodPicker()
 end
 
 function PSA.RefreshSupplyAlertLabels()
-    if not supplyFrame then return end
-    supplyPositionLabel:SetText(PSA.UI.SUPPLY_ALERTS)
-    petPositionLabel:SetText(PSA.UI.PET_ALERTS_POSITION)
+    positionLabel:SetText(PSA.UI.PET_ALERTS_POSITION)
     if ammoKind then UpdateAmmoText() end
     if foodMissing then UpdateFoodLabel() end
     LayoutSupplyRow()
-    if not PetStatusAlertDB.alertLocked then LayoutAlertRow() end
 end
 
 function PSA.GetPetCareFrame()
@@ -1073,7 +1157,6 @@ function PSA.SetPetCareAlert(kind, texture, desaturated)
             LayoutAlertRow()
         end
         RefreshAccessoryGlow(petCareFrame, petCareKind)
-        UpdateFloatingScript()
     end
 end
 
@@ -1082,14 +1165,19 @@ RefreshAlertVisuals = function()
     RefreshAlertFloatSpeed()
     RefreshAlertIconMode()
     RefreshAlertIconGap()
-    RefreshAlertBoxSize()
-    LayoutSupplyRow()
-    UpdateFloatingScript()
+    RefreshAlertFontSize()
+    RefreshAlertIconSize()
+    LayoutSupplyRow(true)
     if lastStatusKey then
         StartAlertGlow()
     end
     RefreshAccessoryGlow(petCareFrame, petCareKind)
     RefreshAccessoryGlow(ammoFrame, ammoKind)
+    RefreshAccessoryGlow(foodFrame, foodMissing)
+    for _, button in pairs(retailSupplyIcons) do
+        if button.active then RefreshAccessoryGlow(button, true) end
+    end
+    for _, button in ipairs(foreverSupplyItems) do RefreshAccessoryGlow(button, true) end
     if PSA.RefreshCombatTTSReminder then
         PSA.RefreshCombatTTSReminder(true)
     end
@@ -1188,15 +1276,11 @@ end
 local function ApplyAlertPosition()
     local db = InitDB()
     PlaceAlert(addonFrame, db.alertPosition, 220)
-    if supplyFrame then PlaceAlert(supplyFrame, db.supplyAlertPosition, 130) end
 end
 
 function PSA.ResetAlertPositions()
     local db = InitDB()
     db.alertPosition = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 220 }
-    if supplyFrame then
-        db.supplyAlertPosition = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 130 }
-    end
     ApplyAlertPosition()
 end
 
@@ -1204,14 +1288,11 @@ local function SetAlertPositionLocked(locked)
     local db = InitDB()
     db.alertLocked = not not locked
     addonFrame:EnableMouse(not db.alertLocked)
-    if supplyFrame then
-        supplyFrame:EnableMouse(not db.alertLocked)
-        if ammoFrame then ammoFrame:SetMouseMotionEnabled(db.alertLocked) end
-        SetAlertStrata(PSA.currentStatusForce and ALERT_STRATA_PREVIEW or ALERT_STRATA_DEFAULT)
-        PSA.RefreshSupplyAlertLabels()
-        LayoutAlertRow()
-        PSA.RefreshFoodPicker()
-    end
+    if ammoFrame then ammoFrame:SetMouseMotionEnabled(db.alertLocked) end
+    if PSA.SetPetFeedMouseEnabled then PSA.SetPetFeedMouseEnabled(db.alertLocked) end
+    SetAlertStrata(PSA.currentStatusForce and ALERT_STRATA_PREVIEW or ALERT_STRATA_DEFAULT)
+    PSA.RefreshSupplyAlertLabels()
+    PSA.RefreshFoodPicker()
 end
 
 local function SetDragHandlers(frame, positionKey, defaultY)
@@ -1231,7 +1312,6 @@ local function SetDragHandlers(frame, positionKey, defaultY)
 end
 
 SetDragHandlers(addonFrame, "alertPosition", 220)
-if supplyFrame then SetDragHandlers(supplyFrame, "supplyAlertPosition", 130) end
 
 ApplyAlertPosition()
 SetAlertPositionLocked(PetStatusAlertDB.alertLocked)
@@ -1275,7 +1355,6 @@ local function ShowStatus(statusKey, force, classFile)
     PSA.currentStatusForce = force and true or false
     local changed = SetMessage(GetDisplayMessage(statusKey, classFile), statusKey, classFile)
 
-    UpdateFloatingScript()
     if changed then
         StartAlertGlow()
     end
@@ -1315,7 +1394,6 @@ HideStatus = function(force)
     SetMessage("", nil)
     icon:Hide()
     StopAlertGlow()
-    UpdateFloatingScript()
     if PSA.StopCombatTTSReminder then
         PSA.StopCombatTTSReminder()
     end
@@ -1327,7 +1405,6 @@ function PSA.PreviewDisplay()
     PSA.currentStatusForce = true
     SetAlertStrata(ALERT_STRATA_PREVIEW)
     SetMessage(PSA.UI.PREVIEW_SAMPLE, DISPLAY_SAMPLE)
-    UpdateFloatingScript()
     StartAlertGlow()
     if PSA.StopCombatTTSReminder then PSA.StopCombatTTSReminder() end
 end

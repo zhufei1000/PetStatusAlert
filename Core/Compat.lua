@@ -143,6 +143,14 @@ local rangedSlot, ammoSlot, emptyAmmoTexture
 local PROJECTILE_ARROW, PROJECTILE_BULLET = 2, 3
 local ammoItemInfo = {}
 
+local function ResolveAmmoSlots()
+    if not rangedSlot or not ammoSlot then
+        rangedSlot = C_PaperDollInfo.GetInventorySlotInfo("RangedSlot")
+        ammoSlot, emptyAmmoTexture = C_PaperDollInfo.GetInventorySlotInfo("AmmoSlot")
+    end
+    return rangedSlot and ammoSlot
+end
+
 local function GetAmmoItemInfo(itemID)
     local info = ammoItemInfo[itemID]
     if not info then
@@ -161,11 +169,7 @@ local function GetForeverAmmo()
         return
     end
 
-    if not ammoSlot then
-        rangedSlot = C_PaperDollInfo.GetInventorySlotInfo("RangedSlot")
-        ammoSlot, emptyAmmoTexture = C_PaperDollInfo.GetInventorySlotInfo("AmmoSlot")
-    end
-    if not rangedSlot or not ammoSlot then
+    if not ResolveAmmoSlots() then
         return
     end
 
@@ -214,6 +218,11 @@ if isForever and UnitUsesAmmo and C_PaperDollInfo and C_PaperDollInfo.AmmoNeeded
     and GetInventoryItemID and GetInventoryItemCount and GetInventoryItemTexture and C_Item and C_Item.GetItemInfoInstant
     and Enum and Enum.ItemClass and Enum.ItemWeaponSubclass then
     PSA.GetForeverAmmo = GetForeverAmmo
+    function PSA.IsForeverAmmoEquipmentSlot(slot)
+        -- Unknown slot data must not suppress an equipment refresh.
+        return not PSA.IsAccessibleValue(slot) or type(slot) ~= "number"
+            or not ResolveAmmoSlots() or slot == rangedSlot or slot == ammoSlot
+    end
 end
 
 function PSA.GetPlayerSpecId()

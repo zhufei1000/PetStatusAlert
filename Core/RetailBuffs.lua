@@ -62,7 +62,10 @@ end
 
 function PSA.GetRetailSupplySetting(key)
     local value = GetSavedSetting(key)
-    if buffsByKey[key] or imbuesByKey[key] or shieldsByKey[key] then return value ~= false end
+    if key == "CLASS" or key == "FOOD" or key == "WEAPON" or key == "SHIELD"
+        or buffsByKey[key] or imbuesByKey[key] or shieldsByKey[key] then
+        return value ~= false
+    end
     return value == true
 end
 
@@ -692,7 +695,9 @@ function PSA.RefreshRetailBuffAlerts()
     foodEnabled = PSA.GetRetailSupplySetting("FOOD")
     weaponEnabled = PSA.GetRetailSupplySetting("WEAPON")
     classEnabled = PSA.GetRetailSupplySetting("CLASS")
-    shieldEnabled = PSA.GetRetailSupplySetting("SHIELD")
+    local playerClass = PSA.GetPlayerClassFile()
+    local isShaman = playerClass == "SHAMAN"
+    shieldEnabled = (not playerClass or isShaman) and PSA.GetRetailSupplySetting("SHIELD")
     foodLead = foodEnabled and PSA.GetRetailSupplyLeadMinutes("FOOD") * 60 or 0
     weaponLead = weaponEnabled and PSA.GetRetailSupplyLeadMinutes("WEAPON") * 60 or 0
     local active = foodEnabled or weaponEnabled or classEnabled or shieldEnabled
@@ -704,7 +709,7 @@ function PSA.RefreshRetailBuffAlerts()
     if foodEnabled or classEnabled or shieldEnabled or weaponLead > 0 then eventFrame:RegisterEvent("ADDON_RESTRICTION_STATE_CHANGED")
     else eventFrame:UnregisterEvent("ADDON_RESTRICTION_STATE_CHANGED") end
     SetEvents(classEvents, classEnabled)
-    SetEvents(talentEvents, classEnabled or shieldEnabled or (weaponEnabled and PSA.GetPlayerClassFile() == "SHAMAN"))
+    SetEvents(talentEvents, classEnabled or shieldEnabled or (weaponEnabled and isShaman))
     SetEvents(weaponEvents, weaponEnabled)
     if not classEnabled then roster, permissions = {}, {} end
     if active or next(displayed) or watchAuras then

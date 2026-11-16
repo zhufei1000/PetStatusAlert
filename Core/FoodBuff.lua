@@ -15,11 +15,7 @@ end
 local function WatchAura(watch)
     if watching == watch then return end
     watching = watch
-    if watch then
-        frame:RegisterUnitEvent("UNIT_AURA", "player")
-    else
-        frame:UnregisterEvent("UNIT_AURA")
-    end
+    PSA.SetForeverFoodAuraWatch(watch)
 end
 
 local function SetFoodState(newPresent, instanceID)
@@ -99,6 +95,7 @@ function PSA.HandleFoodBuffEvent(event, arg1, arg2)
         StandDown()
     elseif event == "UNIT_AURA" then
         -- Only the player's readable events reach this filter.
+        if not watching then return end
         if InCombatLockdown() or not PSA.CanReadFoodAuras() then
             StandDown()
         elseif PSA.FoodAuraMayHaveChanged(arg2, present, foodInstanceID) then

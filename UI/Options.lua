@@ -500,7 +500,6 @@ local function ConfirmClassReset(classFile, onReset)
             PSA.RefreshClassPetSettings(classFile)
             if PSA.GetPlayerClassFile() == classFile then
                 RefreshPetStatusText()
-                if PSA.RefreshPetCare then PSA.RefreshPetCare() end
             end
             if onReset then onReset() end
         end
@@ -742,7 +741,7 @@ local function CreateRuleCheck(parent, label, x, y, width, setValue)
         check:Disable()
         check:SetAlpha(0.5)
     end
-    return check
+    return check, text
 end
 
 local function CreateRuleID(parent, label, y, getValue, setValue)
@@ -927,12 +926,10 @@ local function DrawFeedingRules(page, y, readOnly)
     local check = CreateRuleCheck(box, UI.FEED_ENABLED, 16, -72, LAYOUT.contentWidth - 56,
         not readOnly and function(on)
             PSA.SetClassOption("petFeedEnabled", on)
-            if PSA.RefreshPetCare then PSA.RefreshPetCare() end
         end)
     local unhappy = CreateRuleCheck(box, UI.PET_UNHAPPY_ENABLED, 16, -96, LAYOUT.contentWidth - 56,
         not readOnly and function(on)
             PSA.SetClassOption("petUnhappyAlertEnabled", on)
-            if PSA.RefreshPetCare then PSA.RefreshPetCare() end
         end)
     local label = CreateText(box, "GameFontNormal", UI.FEED_CHOOSE_TITLE, 12, openMenu and STYLE.text or STYLE.muted)
     label:SetPoint("LEFT", box, "TOPLEFT", 16, -125)
@@ -1396,14 +1393,19 @@ local function GetCurrentLanguageModeText()
     return (UI.LANGUAGE_CURRENT or "Current language mode:") .. " " .. GetLanguageModeLabel(GetSavedLanguageMode())
 end
 
-local function DrawGeneralPage(parent)
-    local page, finish = CreateScrollablePage(parent)
-    CreatePageHeader(page, TEXT.GENERAL_TITLE, TEXT.GENERAL_DESC)
+local function TrackCheck(refreshers, check, getValue)
+    refreshers[#refreshers + 1] = function() check:SetChecked(getValue()) end
+end
 
-    local masterBox = CreateSection(page, UI.MASTER_SWITCHES, UI.MASTER_SWITCHES_HINT, -72, 160)
+local function DrawMasterPage(parent)
+    local page, finish = CreateScrollablePage(parent)
+    CreatePageHeader(page, UI.MASTER_SWITCHES, "")
+
+    local refreshers = {}
+    local masterBox = CreateSection(page, UI.MASTER_MODULES, UI.MASTER_SWITCHES_HINT, -52, 160)
     local function AddMasterCheck(y, label, hint, getter, setter)
         local check = CreateRuleCheck(masterBox, label, 18, y, LAYOUT.contentWidth - 76, setter)
-        check:SetChecked(getter())
+        TrackCheck(refreshers, check, getter)
         local text = CreateText(masterBox, "GameFontDisableSmall", hint, 12, STYLE.muted)
         text:SetPoint("TOPLEFT", masterBox, "TOPLEFT", 43, y - 20)
         text:SetWidth(LAYOUT.contentWidth - 63)
@@ -1416,8 +1418,17 @@ local function DrawGeneralPage(parent)
     masterY = AddMasterCheck(masterY, UI.MASTER_BUFF_ENABLED, UI.MASTER_BUFF_HINT,
         PSA.GetBuffAlertsEnabled, PSA.SetBuffAlertsEnabled)
     masterBox:SetHeight(-masterY + 4)
+    finish(66 + masterBox:GetHeight())
+    return function()
+        for _, refresh in ipairs(refreshers) do refresh() end
+    end
+end
 
-    local languageY = -72 - masterBox:GetHeight() - 12
+local function DrawGeneralPage(parent)
+    local page, finish = CreateScrollablePage(parent)
+    CreatePageHeader(page, TEXT.GENERAL_TITLE, TEXT.GENERAL_DESC)
+
+    local languageY = -72
     local languageBox = CreateSection(page, TEXT.SECTION_LANGUAGE, UI.LANGUAGE_DESC or "", languageY, 188)
 
     local current = CreateText(languageBox, "GameFontNormal", GetCurrentLanguageModeText(), 13, STYLE.text)
@@ -1472,6 +1483,9 @@ local function DrawGeneralPage(parent)
     end
 
     finish(-aboutY + 240)
+    return function()
+        current:SetText(GetCurrentLanguageModeText())
+    end
 end
 
 function PSA.GetAuraSettingsTabs()
@@ -1483,6 +1497,9 @@ function PSA.GetAuraSettingsTabs()
             tabs[#tabs + 1] = { key = "shaman", titleKey = "RETAIL_ENHANCEMENT" }
         end
     else
+        if PSA.GetForeverClassBuffOptions then
+            tabs[#tabs + 1] = { key = "foreverClassBuffs", titleKey = "AURA_TAB_CLASS" }
+        end
         tabs[#tabs + 1] = { key = "consumables", titleKey = "AURA_TAB_FOOD", readOnly = not isForever }
     end
     tabs[#tabs + 1] = { key = "ammo", titleKey = "AURA_TAB_AMMO", readOnly = not isForever }
@@ -1494,14 +1511,14 @@ function PSA.GetAuraSettingsTabTitle(tab)
     return tab.readOnly and (title .. " · " .. PSA.UI.READ_ONLY_TAB) or title
 end
 
-local function AddRetailSupplyCheck(section, key, text, y)
+local function AddRetailSupplyCheck(section, refreshers, key, text, y)
     local check = CreateRuleCheck(section, text, 18, y, LAYOUT.contentWidth - 76, function(value)
         PSA.SetRetailSupplySetting(key, value)
     end)
-    check:SetChecked(PSA.GetRetailSupplySetting(key))
+    TrackCheck(refreshers, check, function() return PSA.GetRetailSupplySetting(key) end)
 end
 
-local function DrawForeverFoodSection(page, offset)
+local function DrawForeverFoodSection(page, refreshers, offset)
     local title = isForever and UI.FOOD_BUFF_ALERT or UI.FOREVER_CLIENT
     local hint = isForever and UI.FOOD_BUFF_HINT or (UI.OTHER_CLIENT_SETTINGS .. "\n" .. UI.FOOD_BUFF_HINT)
     local food = CreateSection(page, title, hint, -offset, 128)
@@ -1509,68 +1526,99 @@ local function DrawForeverFoodSection(page, offset)
     food:SetHeight(height)
     local foodCheck = CreateRuleCheck(food, UI.FOOD_BUFF_ALERT, 18, 42 - height, LAYOUT.contentWidth - 76,
         isForever and PSA.SetFoodBuffAlertEnabled)
-    foodCheck:SetChecked(isForever and PSA.GetFoodBuffAlertEnabled())
+    TrackCheck(refreshers, foodCheck, function() return not isForever or PSA.GetFoodBuffAlertEnabled() end)
     local clickCheck = CreateRuleCheck(food, UI.FOOD_PICKER_ENABLE, 18, 18 - height, LAYOUT.contentWidth - 76,
         isForever and PSA.SetFoodPickerEnabled)
-    clickCheck:SetChecked(isForever and PSA.GetFoodPickerEnabled())
+    TrackCheck(refreshers, clickCheck, function() return not isForever or PSA.GetFoodPickerEnabled() end)
     AddTooltip(clickCheck, UI.FOOD_PICKER_HINT)
     return height
 end
 
-local function DrawConsumableSettings(page)
+local function DrawConsumableSettings(page, refreshers)
     local offset = 52
-    if not PSA.RETAIL_BUFFS then return offset + DrawForeverFoodSection(page, offset) + 14 end
+    if not PSA.RETAIL_BUFFS then return offset + DrawForeverFoodSection(page, refreshers, offset) + 14 end
     local personal = CreateSection(page, UI.AURA_TAB_CONSUMABLES, UI.RETAIL_SUPPLY_HINT .. "\n" .. UI.RETAIL_LEAD_HINT, -offset, 190)
     local personalY = -54 - math.ceil(personal.sectionDesc:GetStringHeight())
     local function AddLead(key, label, y)
         local _, refresh = CreateRuleID(personal, label, y,
             function() return PSA.GetRetailSupplyLeadMinutes(key) end,
             function(value) PSA.SetRetailSupplyLeadMinutes(key, value) end)
-        refresh()
+        refreshers[#refreshers + 1] = refresh
     end
-    AddRetailSupplyCheck(personal, "FOOD", UI.RETAIL_FOOD, personalY)
+    AddRetailSupplyCheck(personal, refreshers, "FOOD", UI.RETAIL_FOOD, personalY)
     AddLead("FOOD", UI.RETAIL_FOOD_LEAD, personalY - 28)
-    AddRetailSupplyCheck(personal, "WEAPON", UI.RETAIL_WEAPON, personalY - 58)
+    AddRetailSupplyCheck(personal, refreshers, "WEAPON", UI.RETAIL_WEAPON, personalY - 58)
     AddLead("WEAPON", UI.RETAIL_WEAPON_LEAD, personalY - 86)
     local personalHeight = -personalY + 112
     personal:SetHeight(personalHeight)
 
     offset = offset + personalHeight + 12
-    return offset + DrawForeverFoodSection(page, offset) + 14
+    return offset + DrawForeverFoodSection(page, refreshers, offset) + 14
 end
 
-local function DrawShamanSupplySettings(page)
+local function DrawShamanSupplySettings(page, refreshers)
     local imbues = PSA.RETAIL_IMBUES or {}
     local shaman = CreateSection(page, UI.RETAIL_ENHANCEMENT, UI.RETAIL_ENHANCEMENT_HINT, -52, 110)
     local firstY = -54 - math.ceil(shaman.sectionDesc:GetStringHeight())
     for index, imbue in ipairs(imbues) do
-        AddRetailSupplyCheck(shaman, imbue.key, UI["RETAIL_" .. imbue.key], firstY - (index - 1) * 25)
+        AddRetailSupplyCheck(shaman, refreshers, imbue.key, UI["RETAIL_" .. imbue.key], firstY - (index - 1) * 25)
     end
     shaman:SetHeight(-firstY + #imbues * 25 + 32)
 
     local shields = PSA.RETAIL_SHIELDS or {}
     local shield = CreateSection(page, UI.RETAIL_SHIELD, UI.RETAIL_SHIELD_HINT, -52 - shaman:GetHeight() - 12, 140)
     local shieldFirstY = -54 - math.ceil(shield.sectionDesc:GetStringHeight())
-    AddRetailSupplyCheck(shield, "SHIELD", UI.RETAIL_SHIELD, shieldFirstY)
+    AddRetailSupplyCheck(shield, refreshers, "SHIELD", UI.RETAIL_SHIELD, shieldFirstY)
     for index, def in ipairs(shields) do
-        AddRetailSupplyCheck(shield, def.key, UI["RETAIL_" .. def.key], shieldFirstY - index * 25)
+        AddRetailSupplyCheck(shield, refreshers, def.key, UI["RETAIL_" .. def.key], shieldFirstY - index * 25)
     end
     shield:SetHeight(-shieldFirstY + #shields * 25 + 50)
     return 66 + shaman:GetHeight() + shield:GetHeight() + 12
 end
 
-local function DrawClassBuffSettings(page)
+local function DrawClassBuffSettings(page, refreshers)
     local class = CreateSection(page, UI.RETAIL_CLASS, UI.RETAIL_CLASS_HINT, -52, 225)
     local firstY = -54 - math.ceil(class.sectionDesc:GetStringHeight())
-    AddRetailSupplyCheck(class, "CLASS", UI.RETAIL_CLASS, firstY)
+    AddRetailSupplyCheck(class, refreshers, "CLASS", UI.RETAIL_CLASS, firstY)
     for index, buff in ipairs(PSA.RETAIL_BUFFS) do
-        AddRetailSupplyCheck(class, buff.key, PSA.GetRetailBuffName(buff), firstY - index * 25)
+        AddRetailSupplyCheck(class, refreshers, buff.key, PSA.GetRetailBuffName(buff), firstY - index * 25)
     end
     class:SetHeight(-firstY + #PSA.RETAIL_BUFFS * 25 + 32)
     return 66 + class:GetHeight()
 end
 
-local function DrawAmmoSettings(page)
+local function DrawForeverClassBuffSettings(page, finish)
+    local section = CreateSection(page, UI.AURA_TAB_CLASS, UI.FOREVER_CLASS_BUFF_HINT, -52, 130)
+    local firstY = -54 - math.ceil(section.sectionDesc:GetStringHeight())
+    local empty = CreateText(section, "GameFontNormal", UI.FOREVER_CLASS_BUFF_NONE, 12, STYLE.muted)
+    empty:SetPoint("TOPLEFT", section, "TOPLEFT", 18, firstY)
+    empty:SetWidth(LAYOUT.contentWidth - 76)
+    local rows = {}
+    return function()
+        local options = PSA.GetForeverClassBuffOptions()
+        for _, row in pairs(rows) do row.check:Hide(); row.label:Hide() end
+        for index, option in ipairs(options) do
+            local key = option.key
+            local row = rows[key]
+            if not row then
+                local check, label = CreateRuleCheck(section, option.label, 18, firstY, LAYOUT.contentWidth - 76,
+                    function(value) PSA.SetForeverClassBuffEnabled(key, value) end)
+                row = { check = check, label = label }
+                rows[key] = row
+            end
+            row.check:ClearAllPoints()
+            row.check:SetPoint("LEFT", section, "TOPLEFT", 18, firstY - (index - 1) * 25)
+            row.check:SetChecked(PSA.GetForeverClassBuffEnabled(key))
+            row.check:Show()
+            row.label:Show()
+        end
+        empty:SetShown(#options == 0)
+        section:SetHeight(-firstY + math.max(0, #options - 1) * 25 + math.max(32, empty:GetStringHeight() + 16))
+        finish(66 + section:GetHeight())
+    end
+end
+
+local function DrawAmmoSettings(page, refreshers)
     local hint = UI.AMMO_WEAPON_HINT .. "\n" .. UI.AMMO_THRESHOLD_HINT
     if not isForever then
         hint = UI.OTHER_CLIENT_SETTINGS .. "\n" .. hint
@@ -1588,7 +1636,9 @@ local function DrawAmmoSettings(page)
     SkinEditBox(input)
     input:SetNumeric(true)
     input:SetJustifyH("RIGHT")
-    input:SetText(tostring(isForever and PSA.GetAmmoThreshold() or PSA.DEFAULT_AMMO_THRESHOLD))
+    refreshers[#refreshers + 1] = function()
+        input:SetText(tostring(isForever and PSA.GetAmmoThreshold() or PSA.DEFAULT_AMMO_THRESHOLD))
+    end
     local height = 66 + section:GetHeight()
     if not isForever then
         input:Disable()
@@ -1614,7 +1664,12 @@ local auraSettingsPages = {
 local function DrawAuraSettingsPage(parent, tab)
     local page, finish = CreateScrollablePage(parent)
     CreatePageHeader(page, UI.AURA_SETTINGS, "")
-    finish(auraSettingsPages[tab](page))
+    if tab == "foreverClassBuffs" then return DrawForeverClassBuffSettings(page, finish) end
+    local refreshers = {}
+    finish(auraSettingsPages[tab](page, refreshers))
+    return function()
+        for _, refresh in ipairs(refreshers) do refresh() end
+    end
 end
 
 -------------------------------------------------
@@ -1727,12 +1782,12 @@ local function CreateOptionsFrame()
     content:SetPoint("TOPLEFT", leftPanel, "TOPRIGHT", 14, -2)
     content:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -20, 56)
 
-    frame.activePage = "general"
+    frame.activePage = "masters"
     frame.viewForever = isForever
     local classes = PSA.GetAlertClasses(false)
     local classesExpanded = false
     frame.navButtons = {}
-    local alertPages = {}
+    local settingsPages = {}
     local scrollOffsets = {}
     local navLabels = {}
     local navOrder = {}
@@ -1816,45 +1871,55 @@ local function CreateOptionsFrame()
         local key = frame.activePage
         local classPage = frame.navButtons[key].isClass == true
         local auraPage = key == "auras"
-        local cacheKey = classPage and (GetActiveLocale() .. ":" .. key .. ":" .. tostring(frame.viewForever))
-        local pageHolder = cacheKey and alertPages[cacheKey]
-        if frame.currentPage and frame.currentPage ~= pageHolder then
-            local oldScroll = frame.currentPage.psaScroll
+        local pageKey = auraPage and (key .. ":" .. frame.activeAuraTab) or key
+        local locale = GetActiveLocale()
+        local cacheKey
+        if classPage then
+            cacheKey = locale .. ":" .. key .. ":" .. tostring(frame.viewForever)
+        elseif auraPage or key == "masters" or key == "general" then
+            cacheKey = locale .. ":" .. pageKey
+        end
+        local pageHolder = cacheKey and settingsPages[cacheKey]
+        local previousPage = frame.currentPage
+        if previousPage and previousPage ~= pageHolder then
+            local oldScroll = previousPage.psaScroll
             if oldScroll and oldScroll.GetVerticalScroll then
-                scrollOffsets[frame.currentPage.psaPageKey] = oldScroll:GetVerticalScroll()
+                scrollOffsets[previousPage.psaPageKey] = oldScroll:GetVerticalScroll()
             end
-            frame.currentPage:Hide()
-            if not frame.currentPage.refreshAlerts then
-                frame.currentPage:SetParent(nil)
+            previousPage:Hide()
+            if not previousPage.refreshSettings then
+                previousPage:SetParent(nil)
             end
         end
 
         if not pageHolder then
             pageHolder = CreateFrame("Frame", nil, content)
-            pageHolder.psaPageKey = cacheKey or (auraPage and (key .. ":" .. frame.activeAuraTab) or key)
+            pageHolder.psaPageKey = classPage and cacheKey or pageKey
             pageHolder:SetPoint("TOPLEFT", content, "TOPLEFT", 0, (classPage or auraPage) and -36 or 0)
             pageHolder:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT")
             if key == "display" then
                 DrawDisplayPage(pageHolder)
             elseif key == "voice" then
                 DrawVoicePage(pageHolder)
+            elseif key == "masters" then
+                pageHolder.refreshSettings = DrawMasterPage(pageHolder)
             elseif key == "general" then
-                DrawGeneralPage(pageHolder)
+                pageHolder.refreshSettings = DrawGeneralPage(pageHolder)
             elseif auraPage then
-                DrawAuraSettingsPage(pageHolder, frame.activeAuraTab)
+                pageHolder.refreshSettings = DrawAuraSettingsPage(pageHolder, frame.activeAuraTab)
             else
-                pageHolder.refreshAlerts, pageHolder.refreshEligibility = DrawAlertsPage(pageHolder, key, frame.viewForever)
-                alertPages[cacheKey] = pageHolder
+                pageHolder.refreshSettings, pageHolder.refreshEligibility = DrawAlertsPage(pageHolder, key, frame.viewForever)
             end
+            if cacheKey then settingsPages[cacheKey] = pageHolder end
         end
-        if pageHolder.refreshAlerts then
-            pageHolder.refreshAlerts()
+        if pageHolder.refreshSettings then
+            pageHolder.refreshSettings()
         end
         frame.currentPage = pageHolder
         pageHolder:Show()
         local scroll = pageHolder.psaScroll
         local offset = scrollOffsets[pageHolder.psaPageKey]
-        if offset and scroll and scroll.GetVerticalScrollRange then
+        if pageHolder ~= previousPage and offset and scroll and scroll.GetVerticalScrollRange then
             scroll:SetVerticalScroll(math.min(offset, scroll:GetVerticalScrollRange() or 0))
         end
         RefreshClientTabs(classPage)
@@ -1901,8 +1966,9 @@ local function CreateOptionsFrame()
     end
 
     local function ClassGroupLabel()
-        return (classesExpanded and "- " or "+ ") .. UI.CLASS_SETTINGS
+        return (classesExpanded and "- " or "+ ") .. UI.PET_SETTINGS
     end
+    AddNav("masters", function() return UI.MASTER_SWITCHES end)
     local classGroup = AddNav("classes", ClassGroupLabel)
     classGroup:SetScript("OnClick", function()
         classesExpanded = not classesExpanded

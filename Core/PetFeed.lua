@@ -143,7 +143,7 @@ local function PrepareClick(button, mouseButton)
         return
     end
     ClearAction(button)
-    if mouseButton ~= "LeftButton" or not button:IsVisible() or SpellIsTargeting() or GetCursorInfo()
+    if mouseButton ~= "LeftButton" or not PSA.InitDB().alertLocked or not button:IsVisible() or SpellIsTargeting() or GetCursorInfo()
         or not PSA.GetClassOption("petFeedEnabled") or not GetHappiness() or not PSA.IsKnownPlayerSpell(FEED_PET) then
         return
     end
@@ -185,7 +185,7 @@ local function HideTooltip(button)
     end
 end
 
-local function AddFoodChoices(root, canChoose, onChange)
+local function AddFoodChoices(root, canChoose, onChange, useCache)
     local function IsSelected(itemID)
         return (GetPreferredFood() or 0) == itemID
     end
@@ -215,7 +215,7 @@ local function AddFoodChoices(root, canChoose, onChange)
             local label = ("%s ×%d"):format(GetFoodName(itemID, food.itemName), C_Item.GetItemCount(itemID))
             root:CreateRadio(label, IsSelected, SelectFood, itemID)
         end
-    end, true)
+    end, useCache)
     if next(seen) then
         root:SetScrollMode(240)
     else
@@ -229,11 +229,11 @@ local function BuildFoodMenu(button, root)
             button.foodMenu = nil
         end
     end)
-    AddFoodChoices(root, function() return button:IsVisible() and GetHappiness() end)
+    AddFoodChoices(root, function() return button:IsVisible() and GetHappiness() end, nil, true)
 end
 
 function PSA.GetPetFeedFoodLabel()
-    local itemID = GetPreferredFood()
+    local itemID = ResolvePreferredFood()
     return itemID and GetFoodName(itemID) or PSA.UI.FEED_CHOOSE_AUTO
 end
 
@@ -259,7 +259,7 @@ local function CreateFeedButton()
     local parent = PSA.GetPetCareFrame()
     local button = CreateFrame("Button", nil, parent, "InsecureActionButtonTemplate")
     button:SetAllPoints(parent)
-    button:EnableMouse(true)
+    button:EnableMouse(PSA.InitDB().alertLocked)
     button:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
     button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     button:SetAttribute("useOnKeyDown", false)
@@ -276,7 +276,7 @@ local function CreateFeedButton()
             return
         end
         ClearAction(self)
-        if mouseButton == "RightButton" and self:IsVisible() and GetHappiness() and MenuUtil then
+        if mouseButton == "RightButton" and PSA.InitDB().alertLocked and self:IsVisible() and GetHappiness() and MenuUtil then
             HideTooltip(self)
             self.foodMenu = MenuUtil.CreateContextMenu(self, BuildFoodMenu)
         end
@@ -297,17 +297,28 @@ local function CreateFeedButton()
     return button
 end
 
+function PSA.SetPetFeedMouseEnabled(enabled)
+    if not feedButton then return end
+    feedButton:EnableMouse(enabled)
+    if not enabled then
+        HideTooltip(feedButton)
+        if feedButton.foodMenu then feedButton.foodMenu:Close() end
+    end
+end
+
 function PSA.RefreshPetCare(refreshFoodMenu)
-    if not PSA.GetPetAlertsEnabled() then
+    local enabled = PSA.GetPetAlertsEnabled()
+    local feedingEnabled = enabled and PSA.GetClassOption("petFeedEnabled")
+    local unhappyEnabled = enabled and PSA.GetClassOption("petUnhappyAlertEnabled")
+    if not feedingEnabled and not unhappyEnabled then
         if feedButton then feedButton:Hide() end
         PSA.SetPetCareAlert(nil)
         return
     end
     local happiness = GetHappiness()
-    local inCombat = InCombatLockdown()
-    local preferredID, preferredCount = ResolvePreferredFood()
-    local feedingEnabled = PSA.GetClassOption("petFeedEnabled")
-    local unhappyEnabled = PSA.GetClassOption("petUnhappyAlertEnabled")
+    local inCombat = feedingEnabled and InCombatLockdown()
+    local preferredID, preferredCount
+    if feedingEnabled then preferredID, preferredCount = ResolvePreferredFood() end
     local kind, texture, unavailable
 
     if happiness == UNHAPPY and unhappyEnabled and not feedingEnabled then

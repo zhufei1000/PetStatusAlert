@@ -27,12 +27,19 @@ end
 
 local function RegisterUnitEventSafe(event, unit)
     if addonFrame and event and unit then
-        pcall(addonFrame.RegisterUnitEvent, addonFrame, event, unit)
+        local ok, registered = pcall(addonFrame.RegisterUnitEvent, addonFrame, event, unit)
+        if not ok or registered == false then RegisterEventSafe(event) end
     end
 end
 
 local petActive, buffActive = true, false
 local mastersInitialized = false
+local playerClass, hasClassAlerts
+local function UpdatePlayerClass()
+    playerClass = PSA.GetPlayerClassFile()
+    hasClassAlerts = playerClass == nil or PSA.GetClassAlertStatuses(playerClass, isForever) ~= nil
+end
+UpdatePlayerClass()
 
 local function UnregisterEventSafe(event)
     if addonFrame and addonFrame.UnregisterEvent then
@@ -48,11 +55,12 @@ local function SetUnitEventRegistered(event, unit, active)
     if active then RegisterUnitEventSafe(event, unit) else UnregisterEventSafe(event) end
 end
 
-if not isForever then
+do
     local watchingPlayerAuras = false
-    local retailAuraWatch = false
+    local supplyAuraWatch, foodAuraWatch = false, false
     local function UpdateAuraWatch()
-        local watch = retailAuraWatch or (petActive and PSA.HandleWarriorAuraChanged ~= nil)
+        local watch = supplyAuraWatch or foodAuraWatch
+            or (petActive and PSA.WantsWarriorAuraWatch ~= nil and PSA.WantsWarriorAuraWatch())
         if watch == watchingPlayerAuras then return end
         watchingPlayerAuras = watch
         if watch then
@@ -65,9 +73,18 @@ if not isForever then
             UnregisterEventSafe("UNIT_AURA")
         end
     end
-    function PSA.SetRetailSupplyAuraWatch(enabled)
-        retailAuraWatch = enabled and true or false
+    local function SetSupplyAuraWatch(enabled)
+        supplyAuraWatch = enabled and true or false
         UpdateAuraWatch()
+    end
+    if isForever then
+        PSA.SetForeverClassAuraWatch = SetSupplyAuraWatch
+        function PSA.SetForeverFoodAuraWatch(enabled)
+            foodAuraWatch = enabled and true or false
+            UpdateAuraWatch()
+        end
+    else
+        PSA.SetRetailSupplyAuraWatch = SetSupplyAuraWatch
     end
     function PSA.RefreshRetailSupplyAuraWatch()
         UpdateAuraWatch()
@@ -76,9 +93,11 @@ if not isForever then
 end
 
 local trackAmmo = PSA.GetForeverAmmo and PSA.SetAmmoAlert
+local ammoThreshold = 0
+local petCareWatch, feedingWatch = false, false
 
 local centralPetEvents = {
-    "UNIT_PET", "PET_BAR_UPDATE", "PET_UI_UPDATE", "SPELLS_CHANGED",
+    "SPELLS_CHANGED",
     "LEARNED_SPELL_IN_SKILL_LINE", "PLAYER_TALENT_UPDATE",
     "PLAYER_CONTROL_LOST", "PLAYER_CONTROL_GAINED", "PLAYER_MOUNT_DISPLAY_CHANGED",
 }
@@ -89,27 +108,31 @@ if not isForever then
 end
 local centralWorldEvents = { "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED" }
 local centralDeathEvents = { "PLAYER_DEAD", "PLAYER_ALIVE", "PLAYER_UNGHOST" }
-local centralPetCareEvents = { "UNIT_HAPPINESS", "BAG_UPDATE", "ITEM_LOCK_CHANGED" }
-local centralAmmoEvents = { "PLAYER_EQUIPMENT_CHANGED", "UNIT_INVENTORY_CHANGED" }
+local centralPetCareEvents = { "BAG_UPDATE", "ITEM_LOCK_CHANGED" }
 
 local function UpdateCentralEvents()
-    local pet = petActive
+    local pet = petActive and hasClassAlerts
+    local hasPet = pet and playerClass ~= "WARRIOR"
     local buff = buffActive
-    local petCare = pet and RefreshPetCare ~= nil
-    local ammo = buff and trackAmmo ~= nil
-    local buffWorld = buff and (trackAmmo ~= nil or HandleFoodBuffEvent ~= nil)
-    local deathEvents = petCare or (buff and HandleFoodBuffEvent ~= nil)
+    local ammo = ammoThreshold > 0
+    local buffWorld = ammo or (buff and HandleFoodBuffEvent ~= nil)
+    local deathEvents = petCareWatch or (buff and HandleFoodBuffEvent ~= nil)
     for _, event in ipairs(centralPetEvents) do SetEventRegistered(event, pet) end
     for _, event in ipairs(centralWorldEvents) do SetEventRegistered(event, pet or buffWorld) end
     for _, event in ipairs(centralDeathEvents) do
         SetEventRegistered(event, deathEvents)
     end
-    for _, event in ipairs(centralPetCareEvents) do SetEventRegistered(event, petCare) end
-    SetEventRegistered("BAG_UPDATE_DELAYED", petCare or ammo)
-    for _, event in ipairs(centralAmmoEvents) do SetEventRegistered(event, ammo) end
+    for _, event in ipairs(centralPetCareEvents) do SetEventRegistered(event, feedingWatch) end
+    SetEventRegistered("BAG_UPDATE_DELAYED", feedingWatch or ammo)
+    SetEventRegistered("PLAYER_EQUIPMENT_CHANGED", ammo)
+    SetUnitEventRegistered("UNIT_INVENTORY_CHANGED", "player", ammo)
+    SetUnitEventRegistered("UNIT_HAPPINESS", "pet", petCareWatch)
     SetUnitEventRegistered("UNIT_ENTERED_VEHICLE", "player", pet)
     SetUnitEventRegistered("UNIT_EXITED_VEHICLE", "player", pet)
-    SetUnitEventRegistered("UNIT_FLAGS", "pet", pet)
+    SetUnitEventRegistered("UNIT_FLAGS", "pet", hasPet)
+    SetUnitEventRegistered("UNIT_PET", "player", hasPet)
+    SetEventRegistered("PET_BAR_UPDATE", hasPet)
+    SetEventRegistered("PET_UI_UPDATE", hasPet)
 end
 
 RegisterEventSafe("ADDON_LOADED")
@@ -117,23 +140,18 @@ UpdateCentralEvents()
 
 local ammoRefreshPending = false
 local function QueueAmmoRefresh()
-    if not buffActive or ammoRefreshPending or InCombatLockdown() then
+    if ammoThreshold == 0 or ammoRefreshPending or InCombatLockdown() then
         return
     end
     ammoRefreshPending = true
     C_Timer.After(0, function()
         ammoRefreshPending = false
-        if not buffActive or InCombatLockdown() then
+        if ammoThreshold == 0 or InCombatLockdown() then
             return
         end
 
-        local threshold = PSA.GetAmmoThreshold()
-        if threshold == 0 then
-            PSA.SetAmmoAlert()
-            return
-        end
         local kind, count, texture = PSA.GetForeverAmmo()
-        if not kind or (count and count >= threshold) then
+        if not kind or (count and count >= ammoThreshold) then
             PSA.SetAmmoAlert()
         elseif count then
             PSA.SetAmmoAlert(kind, count, texture)
@@ -142,7 +160,12 @@ local function QueueAmmoRefresh()
 end
 
 if trackAmmo then
-    PSA.QueueAmmoRefresh = QueueAmmoRefresh
+    function PSA.ApplyAmmoAlertSettings()
+        local wasWatching = ammoThreshold > 0
+        ammoThreshold = buffActive and PSA.GetAmmoThreshold() or 0
+        if wasWatching ~= (ammoThreshold > 0) then UpdateCentralEvents() end
+        if ammoThreshold > 0 then QueueAmmoRefresh() else PSA.SetAmmoAlert() end
+    end
 end
 
 local PET_CARE_ONLY_EVENTS = {
@@ -178,7 +201,6 @@ local PET_CARE_STATE_EVENTS = {
 }
 
 local FOOD_ONLY_EVENTS = {
-    UNIT_AURA = true,
     ADDON_RESTRICTION_STATE_CHANGED = true,
     PLAYER_UPDATE_RESTING = true,
     PLAYER_LEVEL_UP = true,
@@ -188,9 +210,30 @@ local FOOD_ONLY_EVENTS = {
 
 local petCareRefreshPending = false
 local foodMenuRefreshPending = false
-local foodBagUpdateSeen = false
+local foodBagUpdateSeen, foodBagChanged = false, false
+
+local function UpdatePetCareWatch()
+    local canWatch = petActive and hasClassAlerts and RefreshPetCare ~= nil
+    local feeding = canWatch and PSA.GetClassOption("petFeedEnabled")
+    local care = feeding or (canWatch and PSA.GetClassOption("petUnhappyAlertEnabled"))
+    local changed = feeding ~= feedingWatch or care ~= petCareWatch
+    if feeding ~= feedingWatch then
+        InvalidatePetFood()
+        foodBagUpdateSeen, foodBagChanged = false, false
+    end
+    feedingWatch, petCareWatch = feeding, care
+    return changed
+end
+
+if RefreshPetCare then
+    function PSA.ApplyPetCareSettings()
+        if UpdatePetCareWatch() then UpdateCentralEvents() end
+        RefreshPetCare()
+    end
+end
+
 local function QueuePetCareRefresh(refreshFoodMenu)
-    if not petActive or not RefreshPetCare then return end
+    if not petCareWatch then return end
     foodMenuRefreshPending = foodMenuRefreshPending or refreshFoodMenu
     if petCareRefreshPending then
         return
@@ -200,7 +243,7 @@ local function QueuePetCareRefresh(refreshFoodMenu)
         petCareRefreshPending = false
         local refreshMenu = foodMenuRefreshPending
         foodMenuRefreshPending = false
-        RefreshPetCare(refreshMenu)
+        if petCareWatch then RefreshPetCare(refreshMenu) end
     end)
 end
 
@@ -214,22 +257,11 @@ local CACHE_INVALIDATE_EVENTS = {
     TRAIT_CONFIG_LIST_UPDATED = true,
 }
 
-local PET_READY_EVENTS = {
-    PET_UI_UPDATE = true,
-    SPELLS_CHANGED = true,
-    LEARNED_SPELL_IN_SKILL_LINE = true,
-    PLAYER_ENTERING_WORLD = true,
-    UNIT_PET = true,
-    PET_BAR_UPDATE = true,
-    PLAYER_SPECIALIZATION_CHANGED = true,
-    PLAYER_TALENT_UPDATE = true,
-    TRAIT_CONFIG_UPDATED = true,
-    TRAIT_CONFIG_LIST_UPDATED = true,
-}
-
 addonFrame:SetScript("OnEvent", function(_, event, unit, slot)
     if event == "ADDON_LOADED" then
         if unit == ADDON_NAME or unit == "PetStatusAlert" then
+            UnregisterEventSafe("ADDON_LOADED")
+            UpdatePlayerClass()
             InitDB(true)
             -- 存档在脚本执行后载入，按保存的语言重新初始化文案和默认提醒。
             if PSA.RefreshLocaleState then
@@ -254,10 +286,23 @@ addonFrame:SetScript("OnEvent", function(_, event, unit, slot)
         return
     end
 
-    if not isForever and event == "UNIT_AURA" then
+    if not playerClass and event == "PLAYER_ENTERING_WORLD" then
+        UpdatePlayerClass()
+        if playerClass then
+            UpdatePetCareWatch()
+            UpdateCentralEvents()
+        end
+    end
+
+    if event == "UNIT_AURA" then
         if PSA.IsAccessibleValue(unit) and unit == "player" then
-            if petActive and PSA.HandleWarriorAuraChanged then PSA.HandleWarriorAuraChanged() end
-            if buffActive and PSA.HandleRetailSupplyAuraUpdate then PSA.HandleRetailSupplyAuraUpdate(slot) end
+            if isForever then
+                if buffActive and HandleFoodBuffEvent then HandleFoodBuffEvent(event, unit, slot) end
+                if buffActive and PSA.HandleForeverClassAuraUpdate then PSA.HandleForeverClassAuraUpdate(slot) end
+            else
+                if petActive and PSA.HandleWarriorAuraChanged then PSA.HandleWarriorAuraChanged(slot) end
+                if buffActive and PSA.HandleRetailSupplyAuraUpdate then PSA.HandleRetailSupplyAuraUpdate(slot) end
+            end
         end
         return
     end
@@ -269,6 +314,7 @@ addonFrame:SetScript("OnEvent", function(_, event, unit, slot)
     if (event == "UNIT_FLAGS" and unit ~= "pet") or (event == "UNIT_PET" and unit ~= "player") then
         return
     end
+    if event == "PLAYER_SPECIALIZATION_CHANGED" and unit and unit ~= "player" then return end
 
     if buffActive and HandleFoodBuffEvent then
         if FOOD_ONLY_EVENTS[event] then
@@ -281,39 +327,46 @@ addonFrame:SetScript("OnEvent", function(_, event, unit, slot)
         end
     end
 
-    if buffActive and trackAmmo then
+    if ammoThreshold > 0 then
         if event == "PLAYER_REGEN_DISABLED" then
             PSA.SetAmmoAlert()
         elseif event == "PLAYER_REGEN_ENABLED" or event == "PLAYER_ENTERING_WORLD" or event == "BAG_UPDATE_DELAYED" then
             QueueAmmoRefresh()
         elseif event == "PLAYER_EQUIPMENT_CHANGED" or event == "UNIT_INVENTORY_CHANGED" then
-            if event == "PLAYER_EQUIPMENT_CHANGED" or unit == "player" then
+            if (event == "PLAYER_EQUIPMENT_CHANGED" and PSA.IsForeverAmmoEquipmentSlot(unit))
+                or (event == "UNIT_INVENTORY_CHANGED" and unit == "player") then
                 QueueAmmoRefresh()
             end
-            return
         end
     end
+    if event == "PLAYER_EQUIPMENT_CHANGED" or event == "UNIT_INVENTORY_CHANGED" then return end
 
-    if petActive and RefreshPetCare then
+    if petCareWatch then
         if event == "PLAYER_REGEN_DISABLED" then
             RefreshPetCare()
-        elseif event == "BAG_UPDATE" then
-            InvalidatePetFood(unit)
-            foodBagUpdateSeen = true
-        elseif event == "BAG_UPDATE_DELAYED" then
+        elseif event == "BAG_UPDATE" and feedingWatch then
+            if PSA.IsAccessibleValue(unit) and type(unit) == "number" then
+                foodBagUpdateSeen = true
+                foodBagChanged = InvalidatePetFood(unit) or foodBagChanged
+            else
+                InvalidatePetFood()
+                foodBagChanged = true
+            end
+        elseif event == "BAG_UPDATE_DELAYED" and feedingWatch then
             -- A delayed event without a bag ID still has to refresh all food data.
             if not foodBagUpdateSeen then
                 InvalidatePetFood()
             end
-            foodBagUpdateSeen = false
-            QueuePetCareRefresh(true)
-        elseif event == "ITEM_LOCK_CHANGED" then
+            local refresh = not foodBagUpdateSeen or foodBagChanged
+            foodBagUpdateSeen, foodBagChanged = false, false
+            if refresh then QueuePetCareRefresh(true) end
+        elseif event == "ITEM_LOCK_CHANGED" and feedingWatch then
             if slot and InvalidatePetFood(unit) and not InCombatLockdown() then
                 QueuePetCareRefresh(true)
             end
         elseif PET_FOOD_SOURCE_EVENTS[event] then
-            InvalidatePetFood()
-            QueuePetCareRefresh(true)
+            if feedingWatch then InvalidatePetFood() end
+            QueuePetCareRefresh(feedingWatch)
         elseif PET_CARE_STATE_EVENTS[event] or (event == "UNIT_HAPPINESS" and unit == "pet") then
             QueuePetCareRefresh(false)
         end
@@ -321,7 +374,7 @@ addonFrame:SetScript("OnEvent", function(_, event, unit, slot)
     if petActive and PET_CARE_ONLY_EVENTS[event] then
         return
     end
-    if not petActive then return end
+    if not petActive or not hasClassAlerts then return end
 
     if CACHE_INVALIDATE_EVENTS[event] and ClearPetStatusCaches then
         ClearPetStatusCaches()
@@ -343,20 +396,12 @@ addonFrame:SetScript("OnEvent", function(_, event, unit, slot)
         return
     end
 
-    if PET_READY_EVENTS[event] then
-        QueueRefresh(0.08)
-        if event ~= "PET_BAR_UPDATE" or not isForever then
-            QueueRefresh(0.35)
-        end
-        if event == "PLAYER_ENTERING_WORLD" then
-            QueueRefresh(1.00)
-        end
-        return
-    end
-
-    -- Pet flags and mount/control/vehicle state changes only need a single
-    -- coalesced refresh. Food-only UNIT_AURA events return before the pet path.
+    -- Only world entry and pet swaps can outlast the normal event batch.
     QueueRefresh(0.08)
+    if event == "PLAYER_ENTERING_WORLD" or event == "UNIT_PET" then
+        QueueRefresh(0.35)
+        if event == "PLAYER_ENTERING_WORLD" then QueueRefresh(1.00) end
+    end
 end)
 
 function PSA.ApplyAlertMasterSwitches()
@@ -367,24 +412,29 @@ function PSA.ApplyAlertMasterSwitches()
     local firstApply = not mastersInitialized
     petActive, buffActive = nextPet, nextBuff
     mastersInitialized = true
+    UpdatePetCareWatch()
+    if PSA.ApplyAmmoAlertSettings and (firstApply or buffChanged) then PSA.ApplyAmmoAlertSettings() end
     UpdateCentralEvents()
     if PSA.RefreshRetailSupplyAuraWatch then PSA.RefreshRetailSupplyAuraWatch() end
     if PSA.SetWarriorAlertActivity then PSA.SetWarriorAlertActivity(petActive) end
 
     if petActive then
         if petChanged then
-            if RefreshPetCare then RefreshPetCare() end
+            if ClearPetStatusCaches then ClearPetStatusCaches() end
+            if petCareWatch then RefreshPetCare() end
+            if PSA.RefreshOpenClassEligibility then PSA.RefreshOpenClassEligibility() end
             if PSA.QueueRefresh then PSA.QueueRefresh(0.05) end
         end
     else
-        if PSA.SetPetCareAlert then PSA.SetPetCareAlert(nil) end
+        if RefreshPetCare then RefreshPetCare() end
         if PSA.StopCombatTTSReminder then PSA.StopCombatTTSReminder() end
         if PSA.HideStatus then PSA.HideStatus(true) end
     end
 
-    if PSA.RefreshRetailBuffAlerts then PSA.RefreshRetailBuffAlerts() end
-    if PSA.RefreshFoodBuffAlert then PSA.RefreshFoodBuffAlert(firstApply) end
-    if not buffActive and PSA.SetAmmoAlert then PSA.SetAmmoAlert() end
-    if buffActive and buffChanged and trackAmmo then QueueAmmoRefresh() end
-    if PSA.RefreshFoodPicker then PSA.RefreshFoodPicker() end
+    if firstApply or buffChanged then
+        if PSA.RefreshRetailBuffAlerts then PSA.RefreshRetailBuffAlerts() end
+        if PSA.RefreshForeverClassBuffs then PSA.RefreshForeverClassBuffs() end
+        if PSA.RefreshFoodBuffAlert then PSA.RefreshFoodBuffAlert(firstApply) end
+        if PSA.RefreshFoodPicker then PSA.RefreshFoodPicker() end
+    end
 end

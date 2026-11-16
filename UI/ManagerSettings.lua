@@ -100,13 +100,11 @@ local function BuildClassRules(page, classFile, forever, readOnly, availability)
             return PSA.GetClassOption("petFeedEnabled", readOnly)
         end, not readOnly and function(on)
             PSA.SetClassOption("petFeedEnabled", on)
-            if PSA.RefreshPetCare then PSA.RefreshPetCare() end
         end, nil, availability)
         section:Check(ui.PET_UNHAPPY_ENABLED, function()
             return PSA.GetClassOption("petUnhappyAlertEnabled", readOnly)
         end, not readOnly and function(on)
             PSA.SetClassOption("petUnhappyAlertEnabled", on)
-            if PSA.RefreshPetCare then PSA.RefreshPetCare() end
         end, nil, availability)
         local openMenu = not readOnly and PSA.OpenPetFoodSettingsMenu
         local row
@@ -246,6 +244,18 @@ local auraPages = {
         for _, buff in ipairs(PSA.RETAIL_BUFFS) do AddRetailSupplyCheck(section, buff.key, PSA.GetRetailBuffName(buff)) end
         page:AddSection(section)
     end,
+    foreverClassBuffs = function(page)
+        local ui = PSA.UI
+        local options = PSA.GetForeverClassBuffOptions()
+        local section = page:NewSection(ui.AURA_TAB_CLASS, #options > 0 and { ui.FOREVER_CLASS_BUFF_HINT }
+            or { ui.FOREVER_CLASS_BUFF_HINT, ui.FOREVER_CLASS_BUFF_NONE })
+        for _, option in ipairs(options) do
+            local key = option.key
+            section:Check(option.label, function() return PSA.GetForeverClassBuffEnabled(key) end,
+                function(value) PSA.SetForeverClassBuffEnabled(key, value) end)
+        end
+        page:AddSection(section)
+    end,
     consumables = function(page, forever)
         local ui = PSA.UI
         if PSA.RETAIL_BUFFS then
@@ -259,9 +269,9 @@ local auraPages = {
         local food = page:NewSection(forever and ui.FOOD_BUFF_ALERT or ui.FOREVER_CLIENT,
             not forever and { ui.OTHER_CLIENT_SETTINGS } or nil)
         local availability = { enabled = forever, disabledTooltip = ui.OTHER_CLIENT_SETTINGS }
-        food:Check(ui.FOOD_BUFF_ALERT, function() return forever and PSA.GetFoodBuffAlertEnabled() end,
+        food:Check(ui.FOOD_BUFF_ALERT, function() return not forever or PSA.GetFoodBuffAlertEnabled() end,
             forever and PSA.SetFoodBuffAlertEnabled or nil, ui.FOOD_BUFF_HINT, availability)
-        food:Check(ui.FOOD_PICKER_ENABLE, function() return forever and PSA.GetFoodPickerEnabled() end,
+        food:Check(ui.FOOD_PICKER_ENABLE, function() return not forever or PSA.GetFoodPickerEnabled() end,
             forever and PSA.SetFoodPickerEnabled or nil, ui.FOOD_PICKER_HINT, availability)
         page:AddSection(food)
     end,
@@ -313,7 +323,15 @@ function PSA.GetSettingsDefinition(context)
     if definitionKey ~= key then definition, definitionKey = nil, key end
     if not definition then
         local forever = PSA.IsForeverClient()
-        definition = {external=true, tabs=ClassTabs(forever),
+        local masters = {key="masters", title=PSA.UI.MASTER_SWITCHES, build=function(page)
+            local s=page:NewSection(PSA.UI.MASTER_MODULES,PSA.UI.MASTER_SWITCHES_HINT)
+            s:Check(PSA.UI.MASTER_PET_ENABLED,PSA.GetPetAlertsEnabled,PSA.SetPetAlertsEnabled,PSA.UI.MASTER_PET_HINT)
+            s:Check(PSA.UI.MASTER_BUFF_ENABLED,PSA.GetBuffAlertsEnabled,PSA.SetBuffAlertsEnabled,PSA.UI.MASTER_BUFF_HINT)
+            page:AddSection(s)
+        end}
+        local tabs = { masters }
+        for _, tab in ipairs(ClassTabs(forever)) do tabs[#tabs + 1] = tab end
+        definition = {external=true, tabs=tabs,
             OnSettingsHide=function() rebuild=nil; PSA.StopSettingsPreview() end, OnTabShow=PSA.StopSettingsPreview}
         local shared = {
             {key="display", title=Text("Display", "显示样式", "顯示樣式"), build=function(page)
@@ -356,10 +374,6 @@ function PSA.GetSettingsDefinition(context)
                 page:AddSection(s)
             end},
             {key="general", title=Text("General", "通用", "一般"), build=function(page)
-                local master=page:NewSection(PSA.UI.MASTER_SWITCHES,PSA.UI.MASTER_SWITCHES_HINT)
-                master:Check(PSA.UI.MASTER_PET_ENABLED,PSA.GetPetAlertsEnabled,PSA.SetPetAlertsEnabled,PSA.UI.MASTER_PET_HINT)
-                master:Check(PSA.UI.MASTER_BUFF_ENABLED,PSA.GetBuffAlertsEnabled,PSA.SetBuffAlertsEnabled,PSA.UI.MASTER_BUFF_HINT)
-                page:AddSection(master)
                 local title=Text("Language", "语言", "語言")
                 local s=page:NewSection(title,PSA.UI.LANGUAGE_DESC)
                 s:Dropdown(title,PSA.GetSavedLanguageMode,function(v)

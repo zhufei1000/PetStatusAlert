@@ -130,24 +130,15 @@ local function SpeakLocalTTS(spokenText)
     return pcall(C_VoiceChat.SpeakText, 0, spokenText, rate, 100, false)
 end
 
-local function SpeakCurrentAlertText()
-    if not IsCombatTTSEnabled() or not IsPlayerInCombatForTTS() then
-        return
-    end
-
-    local message = GetCurrentAlertSpeechText()
-    if not message then
-        return
-    end
-
+local function SpeakCurrentAlertText(message)
     if SpeakLocalTTS(message) then
         spokenKey, spokenClass, spokenText = PSA.currentStatusKey, PSA.currentStatusClass, message
     end
 end
 
 local function RefreshCombatTTSReminder(playImmediately)
-    local message = GetCurrentAlertSpeechText()
-    if not IsCombatTTSEnabled() or not IsPlayerInCombatForTTS() or not message then
+    local message = IsCombatTTSEnabled() and IsPlayerInCombatForTTS() and GetCurrentAlertSpeechText()
+    if not message then
         StopCombatTTSReminder()
         return
     end
@@ -156,7 +147,7 @@ local function RefreshCombatTTSReminder(playImmediately)
     if interval == 0 then
         CancelTicker()
         if spokenKey ~= PSA.currentStatusKey or spokenClass ~= PSA.currentStatusClass or spokenText ~= message then
-            SpeakCurrentAlertText()
+            SpeakCurrentAlertText(message)
         end
         return
     end
@@ -166,16 +157,17 @@ local function RefreshCombatTTSReminder(playImmediately)
     end
 
     if playImmediately then
-        SpeakCurrentAlertText()
+        SpeakCurrentAlertText(message)
     end
 
     if type(C_Timer) == "table" and type(C_Timer.NewTicker) == "function" then
         combatTTSTicker = C_Timer.NewTicker(interval, function()
-            if not IsCombatTTSEnabled() or not IsPlayerInCombatForTTS() or not GetCurrentAlertSpeechText() then
+            local current = IsCombatTTSEnabled() and IsPlayerInCombatForTTS() and GetCurrentAlertSpeechText()
+            if not current then
                 StopCombatTTSReminder()
                 return
             end
-            SpeakCurrentAlertText()
+            SpeakCurrentAlertText(current)
         end)
     end
 end

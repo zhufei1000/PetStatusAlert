@@ -181,9 +181,6 @@ local function InitDB(force)
     PetStatusAlertDB.alertPosition.x = tonumber(PetStatusAlertDB.alertPosition.x) or 0
     PetStatusAlertDB.alertPosition.y = tonumber(PetStatusAlertDB.alertPosition.y) or 220
 
-    if type(PetStatusAlertDB.supplyAlertPosition) ~= "table" then
-        PetStatusAlertDB.supplyAlertPosition = { point = "CENTER", relativePoint = "CENTER", x = 0, y = 130 }
-    end
 
     PSA.dbInitialized = true
     return PetStatusAlertDB
@@ -245,6 +242,7 @@ function PSA.ResetClassSettings(classFile)
         db.mageRequireSummon, db.mageSummonID = nil, nil
     elseif forever and classFile == "HUNTER" then
         db.petFeedEnabled, db.petUnhappyAlertEnabled = nil, nil
+        if PSA.ApplyPetCareSettings then PSA.ApplyPetCareSettings() end
     end
     return true
 end
@@ -277,7 +275,12 @@ function PSA.SetClassOption(key, value)
         value = value == "" and default or PositiveID(value)
     end
     if default ~= nil and type(value) == type(default) then
-        InitDB()[key] = value
+        local db = InitDB()
+        if db[key] == value then return end
+        db[key] = value
+        if (key == "petFeedEnabled" or key == "petUnhappyAlertEnabled") and PSA.ApplyPetCareSettings then
+            PSA.ApplyPetCareSettings()
+        end
     end
 end
 
@@ -353,7 +356,7 @@ function PSA.SetBuffAlertsEnabled(enabled)
 end
 
 function PSA.GetFoodBuffAlertEnabled()
-    return InitDB().foodBuffAlertEnabled == true
+    return InitDB().foodBuffAlertEnabled ~= false
 end
 
 function PSA.SetFoodBuffAlertEnabled(enabled)
@@ -362,7 +365,7 @@ function PSA.SetFoodBuffAlertEnabled(enabled)
 end
 
 function PSA.GetFoodPickerEnabled()
-    return InitDB().foodPickerEnabled == true
+    return InitDB().foodPickerEnabled ~= false
 end
 
 function PSA.SetFoodPickerEnabled(enabled)
@@ -376,8 +379,8 @@ function PSA.SetAmmoThreshold(value)
     local threshold = NormalizeAmmoThreshold(value) or current
     if threshold ~= current then
         db.ammoThreshold = threshold
-        if PSA.QueueAmmoRefresh then
-            PSA.QueueAmmoRefresh()
+        if PSA.ApplyAmmoAlertSettings then
+            PSA.ApplyAmmoAlertSettings()
         end
     end
     return threshold

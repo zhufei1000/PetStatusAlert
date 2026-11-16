@@ -36,6 +36,8 @@ local SPELL_BATTLE_STANCE = 386164
 local SPELL_BERSERKER_STANCE = 386196
 
 local PET_STATUS_ORDER = PSA.PET_STATUS_ORDER
+local IsAccessible = PSA.IsAccessibleValue
+local stanceAuraWanted = true
 
 -------------------------------------------------
 -- Localization extension
@@ -85,13 +87,12 @@ local function IsWarrior()
     return PSA.GetPlayerClassFile() == "WARRIOR"
 end
 
-local function SupportsWarriorStanceAlert()
-    if not IsWarrior() then
-        return false
-    end
-
-    local specId = GetPlayerSpecId()
+local function SupportsWarriorSpec(specId)
     return specId == SPEC_WARRIOR_ARMS or specId == SPEC_WARRIOR_FURY
+end
+
+local function SupportsWarriorStanceAlert()
+    return IsWarrior() and SupportsWarriorSpec(GetPlayerSpecId())
 end
 
 local function ReplaceStatusOrder(values)
@@ -115,7 +116,14 @@ local function RefreshStatusOrderForPlayer()
         return
     end
 
-    if SupportsWarriorStanceAlert() then
+    local specID = GetPlayerSpecId()
+    local supports = SupportsWarriorSpec(specID)
+    local watch = supports or not specID or specID == 0
+    if watch ~= stanceAuraWanted then
+        stanceAuraWanted = watch
+        if PSA.RefreshRetailSupplyAuraWatch then PSA.RefreshRetailSupplyAuraWatch() end
+    end
+    if supports then
         ReplaceStatusOrder({ STATUS_KEY })
     else
         -- Protection Warrior is intentionally unsupported for this warning.
@@ -172,33 +180,40 @@ end
 -- Defensive Stance aura detection
 -------------------------------------------------
 
-local function IsAuraSpellActive(spellID)
-    spellID = tonumber(spellID)
-    if not spellID then
-        return false
-    end
+local function IsReadableTable(value)
+    return IsAccessible(value) and type(value) == "table" and (not canaccesstable or canaccesstable(value))
+end
 
+local function ReadAuraPresence(ok, aura)
+    if not ok or not IsAccessible(aura) then return end
+    if not aura then return false end
+    if not IsReadableTable(aura) then return end
+    local instanceID = aura.auraInstanceID
+    return true, IsAccessible(instanceID) and type(instanceID) == "number" and instanceID or nil
+end
+
+local function GetAuraSpellPresence(spellID)
     -- 现代客户端：spellID 查询即可给出确定结果，直接返回，不再执行后续全表扫描。
     if C_UnitAuras and type(C_UnitAuras.GetPlayerAuraBySpellID) == "function" then
-        local ok, auraData = pcall(C_UnitAuras.GetPlayerAuraBySpellID, spellID)
-        return ok and auraData ~= nil
+        return ReadAuraPresence(pcall(C_UnitAuras.GetPlayerAuraBySpellID, spellID))
     end
 
     if AuraUtil and type(AuraUtil.FindAuraBySpellID) == "function" then
-        local ok, auraData = pcall(AuraUtil.FindAuraBySpellID, spellID, "player", "HELPFUL")
-        return ok and auraData ~= nil
+        return ReadAuraPresence(pcall(AuraUtil.FindAuraBySpellID, spellID, "player", "HELPFUL"))
     end
 
     -- 旧客户端兜底：逐条扫描玩家光环。
     if C_UnitAuras and type(C_UnitAuras.GetAuraDataByIndex) == "function" then
         for index = 1, 40 do
             local ok, auraData = pcall(C_UnitAuras.GetAuraDataByIndex, "player", index, "HELPFUL")
-            if not ok or not auraData then
-                break
-            end
-            if tonumber(auraData.spellId or auraData.spellID) == spellID then
-                return true
-            end
+            if not ok or not IsAccessible(auraData) then return end
+            if not auraData then break end
+            if not IsReadableTable(auraData) then return end
+            local id = auraData.spellId
+            if not IsAccessible(id) then return end
+            if id == nil then id = auraData.spellID end
+            if not IsAccessible(id) then return end
+            if tonumber(id) == spellID then return ReadAuraPresence(true, auraData) end
         end
     end
 
@@ -214,6 +229,7 @@ end
 -- 姿态是会话状态，不写入 SavedVariables：重登后沿用上一次会话的旧值
 -- 在光环保密时会造成误报。登录/刷新时以可读光环或施法事件重新同步。
 local defensiveStanceActive = nil
+local stanceAuraKnown, stanceInstanceID
 
 local function SetDefensiveStanceActive(active)
     defensiveStanceActive = active and true or false
@@ -223,7 +239,7 @@ local function CanReadDefensiveStanceAura()
     local secrets = _G.C_Secrets
     if type(secrets) == "table" and type(secrets.ShouldSpellAuraBeSecret) == "function" then
         local ok, isSecret = pcall(secrets.ShouldSpellAuraBeSecret, SPELL_DEFENSIVE_STANCE)
-        if ok and isSecret ~= nil then
+        if ok and IsAccessible(isSecret) and isSecret ~= nil then
             return isSecret ~= true
         end
         if type(InCombatLockdown) == "function" then
@@ -237,18 +253,20 @@ local function CanReadDefensiveStanceAura()
 end
 
 local function SyncDefensiveStanceFromAura()
+    stanceAuraKnown, stanceInstanceID = false, nil
     if not CanReadDefensiveStanceAura() then
         return
     end
-    SetDefensiveStanceActive(IsAuraSpellActive(SPELL_DEFENSIVE_STANCE))
+    local active, instanceID = GetAuraSpellPresence(SPELL_DEFENSIVE_STANCE)
+    if active == nil then return end
+    stanceAuraKnown, stanceInstanceID = true, instanceID
+    SetDefensiveStanceActive(active)
+    return true
 end
 
 local function HandleStanceCast(castSpellID)
-    if CanReadDefensiveStanceAura() then
-        -- 光环可读时事件触发时已是施法后的状态，直接以查询结果为准。
-        SyncDefensiveStanceFromAura()
-        return
-    end
+    -- 光环可读时以查询结果为准，受限制时则以施法为准。
+    if SyncDefensiveStanceFromAura() then return end
 
     -- 防御姿态是进入姿态，不是在“未知/已开启”之间切换。初始 nil 时也必须
     -- 置为 true，否则新用户第一次在战斗中切防御姿态不会收到提醒。
@@ -367,9 +385,42 @@ if IsWarrior() then
     local warriorEventFrame = CreateFrame("Frame")
     local warriorEventsActive = false
 
-    function PSA.HandleWarriorAuraChanged()
+    local function AuraUpdateAffectsStance(update)
+        if not stanceAuraKnown or not IsReadableTable(update) then return true end
+        local full = update.isFullUpdate
+        if not IsAccessible(full) or full then return true end
+        local added = update.addedAuras
+        if not IsAccessible(added) then return true end
+        if added then
+            if not IsReadableTable(added) then return true end
+            for _, aura in ipairs(added) do
+                if not IsReadableTable(aura) then return true end
+                local id = aura.spellId
+                if not IsAccessible(id) or id == SPELL_DEFENSIVE_STANCE then return true end
+            end
+        end
+        if defensiveStanceActive then
+            local removed = update.removedAuraInstanceIDs
+            if not IsAccessible(removed) then return true end
+            if removed then
+                if not IsReadableTable(removed) then return true end
+                for _, id in ipairs(removed) do
+                    if not stanceInstanceID or not IsAccessible(id) or id == stanceInstanceID then return true end
+                end
+            end
+        end
+        return false
+    end
+
+    function PSA.WantsWarriorAuraWatch()
+        return stanceAuraWanted
+    end
+
+    function PSA.HandleWarriorAuraChanged(update)
+        if not warriorEventsActive or not stanceAuraWanted or warriorQueuedRefreshTimers["0.02"]
+            or not AuraUpdateAffectsStance(update) then return end
         -- Cast events maintain stance while Blizzard restricts aura reads.
-        if PSA.GetPetAlertsEnabled() and CanReadDefensiveStanceAura() then PSA.QueueRefresh(0.02) end
+        if CanReadDefensiveStanceAura() then PSA.QueueRefresh(0.02) end
     end
 
     local hasUnitEvent = warriorEventFrame.RegisterUnitEvent ~= nil
@@ -411,6 +462,7 @@ if IsWarrior() then
             if unit and unit ~= "player" then
                 return
             end
+            if not IsAccessible(spellID) then return end
             if spellID == SPELL_DEFENSIVE_STANCE
                 or spellID == SPELL_BATTLE_STANCE
                 or spellID == SPELL_BERSERKER_STANCE then
