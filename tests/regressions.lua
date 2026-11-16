@@ -1581,7 +1581,8 @@ local function WithRetailSupply(playerClass, stat, test)
             end,
         },
         Enum = {
-            SpellBookSpellBank = { Player = 0 }, ItemClass = { Weapon = 2 }, ItemWeaponSubclass = { Fishingpole = 20 },
+            SpellBookSpellBank = { Player = 0 }, ItemClass = { Weapon = 2, Armor = 4 },
+            ItemWeaponSubclass = { Fishingpole = 20 }, ItemArmorSubclass = { Shield = 6 },
             ChatWhisperTargetStatus = { CanWhisper = 0, CanWhisperGuild = 1, Offline = 2, WrongFaction = 3 },
         },
         C_ChatInfo = {
@@ -1596,7 +1597,10 @@ local function WithRetailSupply(playerClass, stat, test)
         UIErrorsFrame = { AddMessage = function(_, message) table.insert(state.errors, message) end },
         GetInventoryItemID = function(_, slot) return state.gear[slot] end,
         C_Item = { GetItemInfoInstant = function(id)
-            return id, nil, nil, nil, id + 200000, id == 100 and 4 or 2, id == 101 and 20 or 7
+            local class, subclass = 2, 7
+            if id == 100 or id == 120 or id == 121 then class, subclass = 4, 6 end
+            if id == 101 then subclass = 20 end
+            return id, nil, nil, nil, id + 200000, class, subclass
         end },
         C_PaperDollInfo = { GetTemporaryEnchantmentInfo = function(slot)
             state.gearReads = state.gearReads + 1
@@ -1919,7 +1923,7 @@ Test("Retail thresholds replace stale timers and skip unreadable durations", fun
     end)
 end)
 
-Test("Retail Enhancement checks known Windfury and Flametongue in their own weapon slots", function()
+Test("Retail shaman imbues follow specialization, weapon/shield slots, and known spells", function()
     WithRetailSupply("SHAMAN", 2, function(s)
         s.knownSpells = { [33757] = true, [318038] = true }
         s.gear = { [16] = 110, [17] = 111 }
@@ -1927,14 +1931,17 @@ Test("Retail Enhancement checks known Windfury and Flametongue in their own weap
         s.session.SetRetailSupplySetting("WEAPON", true)
         s.Flush()
         assert(s.Icon("MAIN_HAND") and s.Icon("OFF_HAND") and s.gearReads == 2)
-        assert(s.session.GetRetailSupplyTooltip("MAIN_HAND") == s.session.UI.RETAIL_WINDFURY_MISSING)
-        assert(s.session.GetRetailSupplyTooltip("OFF_HAND") == s.session.UI.RETAIL_FLAMETONGUE_MISSING)
+        assert(s.session.GetRetailSupplyTooltip("MAIN_HAND") ==
+            s.session.UI.RETAIL_IMBUE_MAIN_MISSING:format(s.session.UI.RETAIL_WINDFURY))
+        assert(s.session.GetRetailSupplyTooltip("OFF_HAND") ==
+            s.session.UI.RETAIL_IMBUE_OFF_MISSING:format(s.session.UI.RETAIL_FLAMETONGUE))
         s.enchants = { [16] = { enchantID = 5401 }, [17] = { enchantID = 5400, hasExpirationTime = true, remainingTimeMs = 70000 } }
         s.Event("WEAPON_ENCHANT_CHANGED")
         s.session.SetRetailSupplyLeadMinutes("WEAPON", 2)
         s.Flush()
         assert(not s.Icon("MAIN_HAND") and s.Icon("OFF_HAND").timeBinding.enabled)
-        assert(s.session.GetRetailSupplyTooltip("OFF_HAND") == s.session.UI.RETAIL_FLAMETONGUE_EXPIRING)
+        assert(s.session.GetRetailSupplyTooltip("OFF_HAND") ==
+            s.session.UI.RETAIL_IMBUE_OFF_EXPIRING:format(s.session.UI.RETAIL_FLAMETONGUE))
         s.session.SetRetailSupplySetting("FLAMETONGUE", false)
         s.Flush()
         assert(not s.Icon("OFF_HAND"))
@@ -1944,17 +1951,114 @@ Test("Retail Enhancement checks known Windfury and Flametongue in their own weap
         s.Event("SPELLS_CHANGED")
         s.Flush()
         assert(not s.Icon("OFF_HAND"))
-        s.enchants[16] = { enchantID = 6450 }
+
+        -- Elemental: Flametongue main hand + Thunderstrike Ward shield.
+        s.knownSpells = { [318038] = true, [462757] = true }
+        s.gear = { [16] = 110, [17] = 120 }
+        s.enchants = { [16] = { enchantID = 6450 }, [17] = { enchantID = 6450 } }
         s.SwitchSpec(4, 262)
         s.Flush()
-        assert(not s.Icon("MAIN_HAND") and not s.Icon("OFF_HAND") and s.auraReads == 0)
+        assert(s.Icon("MAIN_HAND") and s.Icon("OFF_HAND"))
+        assert(s.session.GetRetailSupplyTooltip("MAIN_HAND") ==
+            s.session.UI.RETAIL_IMBUE_MAIN_MISSING:format(s.session.UI.RETAIL_FLAMETONGUE))
+        assert(s.session.GetRetailSupplyTooltip("OFF_HAND") ==
+            s.session.UI.RETAIL_IMBUE_SHIELD_MISSING:format(s.session.UI.RETAIL_TSTRIKE))
+        s.knownSpells[462757] = nil
+        s.Event("PLAYER_TALENT_UPDATE")
+        s.Flush()
+        assert(not s.Icon("OFF_HAND"))
+        s.knownSpells[462757] = true
+        s.Event("TRAIT_CONFIG_UPDATED")
+        s.Flush()
+        assert(s.Icon("OFF_HAND"))
+        s.enchants[17] = { enchantID = 7587 }
+        s.Event("WEAPON_ENCHANT_CHANGED")
+        s.Flush()
+        assert(not s.Icon("OFF_HAND") and s.Icon("MAIN_HAND"))
+        s.gear[17] = 111
+        s.enchants[17] = { enchantID = 7587 }
+        s.Event("PLAYER_EQUIPMENT_CHANGED", 17)
+        s.Flush()
+        assert(not s.Icon("OFF_HAND"), "a weapon must not satisfy a shield imbue")
+
+        -- Restoration: Earthliving main hand + Tidecaller's Guard shield.
+        s.knownSpells = { [382021] = true, [457481] = true }
+        s.gear = { [16] = 110, [17] = 121 }
+        s.enchants = { [16] = { enchantID = 6450 }, [17] = { enchantID = 6450 } }
+        s.SwitchSpec(4, 264)
+        s.Flush()
+        assert(s.Icon("MAIN_HAND") and s.Icon("OFF_HAND"))
+        assert(s.session.GetRetailSupplyTooltip("MAIN_HAND") ==
+            s.session.UI.RETAIL_IMBUE_MAIN_MISSING:format(s.session.UI.RETAIL_EARTHLIVING))
+        assert(s.session.GetRetailSupplyTooltip("OFF_HAND") ==
+            s.session.UI.RETAIL_IMBUE_SHIELD_MISSING:format(s.session.UI.RETAIL_TIDECALLER))
+        s.session.SetRetailSupplySetting("EARTHLIVING", false)
+        s.session.SetRetailSupplySetting("TIDECALLER", false)
+        s.session.SetRetailSupplySetting("WEAPON", false)
+        s.Flush()
+        assert(not s.Icon("MAIN_HAND") and not s.Icon("OFF_HAND"))
+
+        -- Shields without Elemental Orbit: any one of the enabled shields.
+        s.knownSpells = { [974] = true, [52127] = true, [192106] = true }
+        s.auras = {}
+        s.session.SetRetailSupplySetting("SHIELD", true)
+        s.Flush()
+        local shieldIcon = assert(s.Icon("SHIELD"))
+        assert(s.session.GetRetailSupplyTooltip("SHIELD") ==
+            s.session.UI.RETAIL_SHIELD_MISSING:format(s.session.UI.RETAIL_WATER_SHIELD))
+        shieldIcon.scripts.PreClick(shieldIcon, "LeftButton")
+        assert(shieldIcon.attributes.type1 == "spell" and shieldIcon.attributes.spell1 == 52127)
+        shieldIcon.scripts.PostClick(shieldIcon)
+        s.auras = { { auraInstanceID = 60, spellId = 52127, isHelpful = true } }
+        s.Event("UNIT_AURA", "player", { isFullUpdate = true })
+        s.Flush()
+        assert(not s.Icon("SHIELD"))
+        s.auras = {}
+        s.Event("UNIT_AURA", "player", { isFullUpdate = true })
+        s.Flush()
+        assert(s.Icon("SHIELD"))
+
+        -- Elemental Orbit: Earth Shield self + the specialization shield.
+        s.knownSpells[383010] = true
+        s.Event("PLAYER_TALENT_UPDATE")
+        s.Flush()
+        assert(s.Icon("EARTH_SHIELD") and s.Icon("WATER_SHIELD") and not s.Icon("SHIELD"))
+        assert(s.session.GetRetailSupplyTooltip("EARTH_SHIELD") ==
+            s.session.UI.RETAIL_SHIELD_MISSING:format(s.session.UI.RETAIL_EARTH_SHIELD))
+        assert(s.session.GetRetailSupplyTooltip("WATER_SHIELD") ==
+            s.session.UI.RETAIL_SHIELD_MISSING:format(s.session.UI.RETAIL_WATER_SHIELD))
+        s.auras = { { auraInstanceID = 61, spellId = 383648, isHelpful = true } }
+        s.Event("UNIT_AURA", "player", { isFullUpdate = true })
+        s.Flush()
+        assert(not s.Icon("EARTH_SHIELD") and s.Icon("WATER_SHIELD"))
+        s.auras[#s.auras + 1] = { auraInstanceID = 62, spellId = 52127, isHelpful = true }
+        s.Event("UNIT_AURA", "player", { isFullUpdate = true })
+        s.Flush()
+        assert(not s.Icon("EARTH_SHIELD") and not s.Icon("WATER_SHIELD"))
+
+        -- Elemental uses Lightning Shield as its specialization shield.
+        s.knownSpells[192106] = true
+        s.auras = {}
+        s.SwitchSpec(4, 262)
+        s.Flush()
+        assert(s.Icon("EARTH_SHIELD") and s.Icon("LIGHTNING_SHIELD") and not s.Icon("WATER_SHIELD"))
+        assert(s.session.GetRetailSupplyTooltip("LIGHTNING_SHIELD") ==
+            s.session.UI.RETAIL_SHIELD_MISSING:format(s.session.UI.RETAIL_LIGHTNING_SHIELD))
+        s.session.SetRetailSupplySetting("SHIELD", false)
+        s.Flush()
+        assert(not s.Icon("EARTH_SHIELD") and not s.Icon("LIGHTNING_SHIELD"))
+        s.session.SetRetailSupplySetting("SHIELD", true)
+        s.Flush()
+
         s.session.OpenOptionsFrame()
         local options = Upvalue(s.session.RefreshOptionsFrameLocale, "optionsFrame")
         local nav = assert(options.navButtons.auras)
         nav.scripts.OnClick(nav)
         options.auraButtons.shaman.scripts.OnClick()
-        assert(FindText(options.currentPage, s.session.UI.RETAIL_WINDFURY))
-        assert(FindText(options.currentPage, s.session.UI.RETAIL_FLAMETONGUE))
+        for _, key in ipairs({ "WINDFURY", "FLAMETONGUE", "EARTHLIVING", "TIDECALLER", "TSTRIKE",
+            "SHIELD", "EARTH_SHIELD", "WATER_SHIELD", "LIGHTNING_SHIELD" }) do
+            assert(FindText(options.currentPage, s.session.UI["RETAIL_" .. key]))
+        end
         assert(not FindText(options.currentPage, s.session.UI.RETAIL_WEAPON_LEAD))
         options.auraButtons.consumables.scripts.OnClick()
         assert(FindText(options.currentPage, s.session.UI.RETAIL_WEAPON_LEAD))
@@ -1974,7 +2078,14 @@ Test("Retail Enhancement checks known Windfury and Flametongue in their own weap
                 for _, sub in ipairs(tab.subtabs) do sub.build(page) end
             end
         end
-        assert(sections[s.session.UI.RETAIL_ENHANCEMENT].labels[s.session.UI.RETAIL_FLAMETONGUE])
+        local shamanSection = sections[s.session.UI.RETAIL_ENHANCEMENT]
+        for _, key in ipairs({ "WINDFURY", "FLAMETONGUE", "EARTHLIVING", "TIDECALLER", "TSTRIKE" }) do
+            assert(shamanSection.labels[s.session.UI["RETAIL_" .. key]])
+        end
+        local shieldSection = sections[s.session.UI.RETAIL_SHIELD]
+        for _, key in ipairs({ "SHIELD", "EARTH_SHIELD", "WATER_SHIELD", "LIGHTNING_SHIELD" }) do
+            assert(shieldSection.labels[s.session.UI["RETAIL_" .. key]])
+        end
         assert(sections[s.session.UI.AURA_TAB_CONSUMABLES].labels[s.session.UI.RETAIL_FOOD_LEAD])
     end)
 end)

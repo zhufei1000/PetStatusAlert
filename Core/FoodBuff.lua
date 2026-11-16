@@ -7,6 +7,11 @@ local enabled, watching, queued = false, false, false
 local inEncounter, showXP = false, false
 local present, foodInstanceID
 
+local function EncounterInProgress()
+    return C_InstanceEncounter and C_InstanceEncounter.IsEncounterInProgress
+        and C_InstanceEncounter.IsEncounterInProgress() or false
+end
+
 local function WatchAura(watch)
     if watching == watch then return end
     watching = watch
@@ -61,7 +66,7 @@ function PSA.RefreshFoodBuffAlert()
         }) do
             if enabled then frame:RegisterEvent(event) else frame:UnregisterEvent(event) end
         end
-        if enabled then inEncounter = IsEncounterInProgress and IsEncounterInProgress() or false end
+        if enabled then inEncounter = EncounterInProgress() end
     end
     if enabled then
         showXP = PSA.IsBelowForeverLevelCap()
@@ -73,7 +78,7 @@ end
 
 function PSA.HandleFoodBuffEvent(event, arg1, arg2)
     if event == "PLAYER_ENTERING_WORLD" then
-        inEncounter = IsEncounterInProgress and IsEncounterInProgress() or false
+        inEncounter = EncounterInProgress()
         PSA.RefreshFoodBuffAlert()
         return
     end

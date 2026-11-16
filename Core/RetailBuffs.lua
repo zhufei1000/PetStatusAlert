@@ -3,7 +3,12 @@ if PSA.IsForeverClient() or not (C_UnitAuras and C_UnitAuras.GetUnitAuras and C_
 
 local IsAccessible = PSA.IsAccessibleValue
 local WELL_FED_ICON = 136000
-local ENHANCEMENT = 263
+local ELEMENTAL, ENHANCEMENT, RESTORATION = 262, 263, 264
+local ELEMENTAL_ORBIT = 383010
+local EARTH_SHIELD_SPELL = 974
+local EARTH_SHIELD_SELF_AURA = 383648
+local WATER_SHIELD_SPELL = 52127
+local LIGHTNING_SHIELD_SPELL = 192106
 local MAX_LEAD_MINUTES = 60
 local STRENGTH, AGILITY, INTELLECT = 1, 2, 4
 local WHISPER_RECHECK = 60
@@ -16,13 +21,39 @@ local buffs = {
     { key = "MARK_OF_THE_WILD", id = 1126, aura = 432661, class = "DRUID" },
     { key = "FORTITUDE", id = 21562, class = "PRIEST" },
 }
-local weapons = {
-    { key = "MAIN_HAND", slot = INVSLOT_MAINHAND or 16, imbue = { key = "WINDFURY", spell = 33757, enchant = 5401 } },
-    { key = "OFF_HAND", slot = INVSLOT_OFFHAND or 17, imbue = { key = "FLAMETONGUE", spell = 318038, enchant = 5400 } },
+local hands = {
+    { key = "MAIN_HAND", slot = INVSLOT_MAINHAND or 16 },
+    { key = "OFF_HAND", slot = INVSLOT_OFFHAND or 17 },
+}
+-- Spell/enchant IDs match EUI's shaman imbue table. Shield imbues require an equipped shield.
+local imbues = {
+    { key = "WINDFURY", spell = 33757, enchant = 5401 },
+    { key = "FLAMETONGUE", spell = 318038, enchant = 5400 },
+    { key = "EARTHLIVING", spell = 382021, enchant = 6498 },
+    { key = "TIDECALLER", spell = 457481, enchant = 7528, shield = true },
+    { key = "TSTRIKE", spell = 462757, enchant = 7587, shield = true },
+}
+local imbuesByKey = {}
+for _, imbue in ipairs(imbues) do imbuesByKey[imbue.key] = imbue end
+-- Self shields. Earth Shield uses 383648 for the Elemental Orbit self aura and
+-- 974 for the normal Earth Shield buff; Water/Lightning share their spell IDs.
+local shields = {
+    { key = "EARTH_SHIELD", cast = EARTH_SHIELD_SPELL, buffs = { EARTH_SHIELD_SPELL, EARTH_SHIELD_SELF_AURA } },
+    { key = "WATER_SHIELD", cast = WATER_SHIELD_SPELL, buffs = { WATER_SHIELD_SPELL } },
+    { key = "LIGHTNING_SHIELD", cast = LIGHTNING_SHIELD_SPELL, buffs = { LIGHTNING_SHIELD_SPELL } },
+}
+local shieldsByKey = {}
+for _, shield in ipairs(shields) do shieldsByKey[shield.key] = shield end
+local specImbues = {
+    [ENHANCEMENT] = { MAIN_HAND = "WINDFURY", OFF_HAND = "FLAMETONGUE" },
+    [ELEMENTAL] = { MAIN_HAND = "FLAMETONGUE", OFF_HAND = "TSTRIKE" },
+    [RESTORATION] = { MAIN_HAND = "EARTHLIVING", OFF_HAND = "TIDECALLER" },
 }
 local buffsByKey = {}
 for _, buff in ipairs(buffs) do buffsByKey[buff.key] = buff end
 PSA.RETAIL_BUFFS = buffs
+PSA.RETAIL_IMBUES = imbues
+PSA.RETAIL_SHIELDS = shields
 
 local function GetSavedSetting(key)
     local settings = PSA.InitDB().retailSupply
@@ -31,7 +62,7 @@ end
 
 function PSA.GetRetailSupplySetting(key)
     local value = GetSavedSetting(key)
-    if buffsByKey[key] or key == "WINDFURY" or key == "FLAMETONGUE" then return value ~= false end
+    if buffsByKey[key] or imbuesByKey[key] or shieldsByKey[key] then return value ~= false end
     return value == true
 end
 
@@ -48,6 +79,26 @@ end
 
 function PSA.GetRetailBuffName(buff)
     return C_Spell.GetSpellName(buff.id) or PSA.UI["RETAIL_" .. buff.key]
+end
+
+function PSA.GetRetailImbueName(key)
+    local imbue = imbuesByKey[key]
+    if not imbue then return key end
+    return C_Spell.GetSpellName(imbue.spell) or PSA.UI["RETAIL_" .. key]
+end
+
+function PSA.GetRetailShieldName(spellID)
+    if spellID == EARTH_SHIELD_SPELL then return PSA.UI.RETAIL_EARTH_SHIELD end
+    if spellID == WATER_SHIELD_SPELL then return PSA.UI.RETAIL_WATER_SHIELD end
+    if spellID == LIGHTNING_SHIELD_SPELL then return PSA.UI.RETAIL_LIGHTNING_SHIELD end
+    return C_Spell.GetSpellName(spellID) or PSA.UI.RETAIL_SHIELD
+end
+
+local function SpecShield()
+    if PSA.GetPlayerSpecId() == RESTORATION then
+        return "WATER_SHIELD", WATER_SHIELD_SPELL
+    end
+    return "LIGHTNING_SHIELD", LIGHTNING_SHIELD_SPELL
 end
 
 local function IsReadableTable(value)
@@ -89,10 +140,11 @@ local function GroupUnits()
     return "party", GetNumSubgroupMembers()
 end
 
-local foodEnabled, weaponEnabled, classEnabled, watchAuras, watching = false, false, false, false, false
+local foodEnabled, weaponEnabled, classEnabled, shieldEnabled, watchAuras, watching = false, false, false, false, false, false
 local tracked, eligible, roster, permissions, lastWhisper = {}, {}, {}, {}, {}
 local instances, counts, foodExpirations = {}, {}, {}
 local aurasKnown, weaponStates, expectedImbues = false, {}, {}
+local shieldPlan = {}
 local foodLead, weaponLead = 0, 0
 local wakeAt, wakeTimer
 local wellFedName, foodHasOpaqueAura
@@ -220,15 +272,66 @@ local function ReadAuras()
 end
 
 local function UpdateExpectedImbues()
-    local enhancement = weaponEnabled and PSA.GetPlayerClassFile() == "SHAMAN" and PSA.GetPlayerSpecId() == ENHANCEMENT
+    local nextImbues = {}
+    if weaponEnabled and PSA.GetPlayerClassFile() == "SHAMAN" then
+        local plan = specImbues[PSA.GetPlayerSpecId()]
+        if plan then
+            for hand, key in pairs(plan) do
+                local imbue = imbuesByKey[key]
+                if imbue and PSA.IsKnownPlayerSpell(imbue.spell) then
+                    nextImbues[hand] = key
+                end
+            end
+        end
+    end
     local changed = false
-    for _, hand in ipairs(weapons) do
-        local imbue = enhancement and PSA.IsKnownPlayerSpell(hand.imbue.spell) and hand.imbue or nil
-        if expectedImbues[hand.key] ~= imbue then
-            expectedImbues[hand.key] = imbue
+    for _, hand in ipairs(hands) do
+        if expectedImbues[hand.key] ~= nextImbues[hand.key] then
+            expectedImbues[hand.key] = nextImbues[hand.key]
             changed = true
         end
     end
+    return changed
+end
+
+local function UpdateShieldPlan()
+    local nextPlan = {}
+    if shieldEnabled then
+        local orbit = PSA.IsKnownPlayerSpell(ELEMENTAL_ORBIT)
+        local specKey, specID = SpecShield()
+        if orbit then
+            if PSA.GetRetailSupplySetting("EARTH_SHIELD") and PSA.IsKnownPlayerSpell(EARTH_SHIELD_SPELL) then
+                nextPlan.earth = true
+                tracked[EARTH_SHIELD_SPELL] = "EARTH_SHIELD"
+                tracked[EARTH_SHIELD_SELF_AURA] = "EARTH_SHIELD"
+            end
+            if PSA.GetRetailSupplySetting(specKey) and PSA.IsKnownPlayerSpell(specID) then
+                nextPlan.spec = specKey
+                nextPlan.specID = specID
+                tracked[specID] = specKey
+            end
+        else
+            local first
+            for _, shield in ipairs(shields) do
+                if PSA.GetRetailSupplySetting(shield.key) and PSA.IsKnownPlayerSpell(shield.cast) then
+                    first = first or shield
+                    for _, id in ipairs(shield.buffs) do tracked[id] = shield.key end
+                end
+            end
+            if first then
+                nextPlan.combined = true
+                if PSA.GetRetailSupplySetting(specKey) and PSA.IsKnownPlayerSpell(specID) then
+                    nextPlan.castID = specID
+                else
+                    nextPlan.castID = first.cast
+                end
+            end
+        end
+    end
+    local changed = shieldPlan.earth ~= nextPlan.earth or shieldPlan.spec ~= nextPlan.spec
+        or shieldPlan.specID ~= nextPlan.specID or shieldPlan.combined ~= nextPlan.combined
+        or shieldPlan.castID ~= nextPlan.castID
+    shieldPlan = nextPlan
     return changed
 end
 
@@ -236,32 +339,44 @@ local function ReadWeapons()
     weaponStates = {}
     if not weaponEnabled or IsSuspended() or not (C_Item and C_Item.GetItemInfoInstant
         and C_PaperDollInfo and C_PaperDollInfo.GetTemporaryEnchantmentInfo) then return end
+    local isShaman = PSA.GetPlayerClassFile() == "SHAMAN"
     local now = weaponLead > 0 and GetTime()
-    for _, hand in ipairs(weapons) do
-        local imbue = expectedImbues[hand.key]
-        local item = GetInventoryItemID("player", hand.slot)
-        if IsAccessible(item) and item and (not imbue or PSA.GetRetailSupplySetting(imbue.key)) then
-            local _, _, _, _, icon, class, subclass = C_Item.GetItemInfoInstant(item)
-            if IsAccessible(class) and class == Enum.ItemClass.Weapon and IsAccessible(subclass)
-                and subclass ~= Enum.ItemWeaponSubclass.Fishingpole then
-                local enchant = C_PaperDollInfo.GetTemporaryEnchantmentInfo(hand.slot)
-                local readable = IsReadableTable(enchant)
-                local enchantID = imbue and readable and enchant.enchantID
-                if IsAccessible(enchant) and (not enchant or (readable and IsAccessible(enchantID))) then
-                    local missing = not enchant or (imbue and enchantID ~= imbue.enchant)
-                    local expiration
-                    if not missing and now and readable then
-                        local timed, remaining = enchant.hasExpirationTime, enchant.remainingTimeMs
-                        if IsAccessible(timed) and timed and IsAccessible(remaining) and type(remaining) == "number"
-                            and remaining > 0 and remaining < math.huge then
-                            expiration = now + remaining / 1000
+    for _, hand in ipairs(hands) do
+        local imbueKey = expectedImbues[hand.key]
+        local imbue = imbueKey and imbuesByKey[imbueKey]
+        -- Non-shamans use the generic temporary-enchantment reminder; shamans get
+        -- only their current specialization's known imbues (and only for the
+        -- matching weapon or shield slot).
+        if not isShaman or imbue then
+            local item = GetInventoryItemID("player", hand.slot)
+            if IsAccessible(item) and item then
+                local _, _, _, _, icon, class, subclass = C_Item.GetItemInfoInstant(item)
+                local isWeapon = IsAccessible(class) and class == Enum.ItemClass.Weapon
+                    and IsAccessible(subclass) and subclass ~= Enum.ItemWeaponSubclass.Fishingpole
+                local isShield = IsAccessible(class) and class == Enum.ItemClass.Armor
+                    and IsAccessible(subclass) and subclass == Enum.ItemArmorSubclass.Shield
+                local eligible = imbue and (imbue.shield and isShield or (not imbue.shield and isWeapon))
+                    or (not imbue and isWeapon)
+                if eligible and (not imbue or PSA.GetRetailSupplySetting(imbue.key)) then
+                    local enchant = C_PaperDollInfo.GetTemporaryEnchantmentInfo(hand.slot)
+                    local readable = IsReadableTable(enchant)
+                    local enchantID = imbue and readable and enchant.enchantID
+                    if IsAccessible(enchant) and (not enchant or (readable and IsAccessible(enchantID))) then
+                        local missing = not enchant or (imbue and enchantID ~= imbue.enchant)
+                        local expiration
+                        if not missing and now and readable then
+                            local timed, remaining = enchant.hasExpirationTime, enchant.remainingTimeMs
+                            if IsAccessible(timed) and timed and IsAccessible(remaining) and type(remaining) == "number"
+                                and remaining > 0 and remaining < math.huge then
+                                expiration = now + remaining / 1000
+                            end
                         end
+                        if imbue then icon = C_Spell.GetSpellTexture(imbue.spell) end
+                        weaponStates[hand.key] = {
+                            icon = IsAccessible(icon) and icon or 134400,
+                            missing = missing, expiration = expiration, imbue = imbue and imbue.key,
+                        }
                     end
-                    if imbue then icon = C_Spell.GetSpellTexture(imbue.spell) end
-                    weaponStates[hand.key] = {
-                        icon = IsAccessible(icon) and icon or 134400,
-                        missing = missing, expiration = expiration, imbue = imbue and imbue.key,
-                    }
                 end
             end
         end
@@ -331,10 +446,38 @@ local function RefreshDisplay()
                     end
                 end
             end
+            if shieldEnabled and shieldPlan then
+                local earthReadable = CanReadSpell(EARTH_SHIELD_SPELL) and CanReadSpell(EARTH_SHIELD_SELF_AURA)
+                local waterReadable = CanReadSpell(WATER_SHIELD_SPELL)
+                local lightningReadable = CanReadSpell(LIGHTNING_SHIELD_SPELL)
+                if shieldPlan.earth and earthReadable and (counts.EARTH_SHIELD or 0) == 0 then
+                    displayed.EARTH_SHIELD = {
+                        icon = C_Spell.GetSpellTexture(EARTH_SHIELD_SPELL) or 134400,
+                        action = "shield", spellID = EARTH_SHIELD_SPELL,
+                    }
+                end
+                if shieldPlan.spec and (counts[shieldPlan.spec] or 0) == 0 then
+                    local readable = (shieldPlan.spec == "WATER_SHIELD" and waterReadable)
+                        or (shieldPlan.spec == "LIGHTNING_SHIELD" and lightningReadable)
+                    if readable then
+                        displayed[shieldPlan.spec] = {
+                            icon = C_Spell.GetSpellTexture(shieldPlan.specID) or 134400,
+                            action = "shield", spellID = shieldPlan.specID,
+                        }
+                    end
+                end
+                if shieldPlan.combined and earthReadable and waterReadable and lightningReadable
+                    and (counts.EARTH_SHIELD or 0) + (counts.WATER_SHIELD or 0) + (counts.LIGHTNING_SHIELD or 0) == 0 then
+                    displayed.SHIELD = {
+                        icon = C_Spell.GetSpellTexture(shieldPlan.castID) or 134400,
+                        action = "shield", spellID = shieldPlan.castID,
+                    }
+                end
+            end
         end
     end
     SetReminderWake(nextWake, RefreshDisplay)
-    PSA.RenderRetailSupplyAlerts(displayed, foodEnabled or weaponEnabled or classEnabled)
+    PSA.RenderRetailSupplyAlerts(displayed, foodEnabled or weaponEnabled or classEnabled or shieldEnabled)
 end
 
 local pending, dirtyPlan, dirtyRoster, dirtyAuras, dirtyWeapons
@@ -348,6 +491,7 @@ local function QueueRefresh(plan, group, auras, gear)
         pending = false
         if dirtyPlan then
             if BuildAuraPlan() then dirtyAuras = true end
+            if UpdateShieldPlan() then dirtyAuras = true end
             if UpdateExpectedImbues() then dirtyWeapons = true end
         end
         if dirtyRoster and classEnabled and CanReadAuras() then ReadRoster() end
@@ -409,8 +553,19 @@ end
 function PSA.GetRetailSupplyTooltip(key)
     local alert, buff = displayed[key], buffsByKey[key]
     if not alert then return end
+    if alert.action == "shield" then
+        return PSA.UI.RETAIL_SHIELD_MISSING:format(PSA.GetRetailShieldName(alert.spellID)), PSA.UI.RETAIL_BUFF_CAST
+    end
     if not buff then
-        local label = "RETAIL_" .. (alert.imbue or key)
+        if alert.imbue then
+            local imbue = imbuesByKey[alert.imbue]
+            if not imbue then return end
+            local slot = imbue.shield and "SHIELD" or (key == "MAIN_HAND" and "MAIN" or "OFF")
+            local formatString = PSA.UI["RETAIL_IMBUE_" .. slot .. (alert.expiration and "_EXPIRING" or "_MISSING")]
+            if formatString then return formatString:format(PSA.GetRetailImbueName(alert.imbue)) end
+            return
+        end
+        local label = "RETAIL_" .. key
         if alert.expiration then return PSA.UI[label .. "_EXPIRING"] end
         return PSA.UI[label .. "_MISSING"]
     end
@@ -423,7 +578,18 @@ end
 
 function PSA.ActivateRetailSupplyAlert(key)
     local alert, buff = displayed[key], buffsByKey[key]
-    if not alert or not buff or not classEnabled or not PSA.GetRetailSupplySetting(key) or dirtyPlan or dirtyRoster
+    if not alert then return end
+    if alert.action == "shield" then
+        if not shieldEnabled or not aurasKnown or not CanReadAuras()
+            or not PSA.IsKnownPlayerSpell(alert.spellID) or not CanReadSpell(alert.spellID) then return end
+        if key == "SHIELD" then
+            if (counts.EARTH_SHIELD or 0) + (counts.WATER_SHIELD or 0) + (counts.LIGHTNING_SHIELD or 0) > 0 then return end
+        elseif (counts[key] or 0) > 0 then
+            return
+        end
+        return alert.spellID
+    end
+    if not buff or not classEnabled or not PSA.GetRetailSupplySetting(key) or dirtyPlan or dirtyRoster
         or not aurasKnown or not CanReadAuras() or (counts[key] or 0) > 0
         or not CanReadSpell(buff.id) or (buff.aura and not CanReadSpell(buff.aura)) then return end
     if alert.action == "spell" then
@@ -454,7 +620,7 @@ local eventFrame = CreateFrame("Frame")
 local commonEvents = { "PLAYER_ENTERING_WORLD", "PLAYER_REGEN_ENABLED", "PLAYER_REGEN_DISABLED", "PLAYER_DEAD",
     "PLAYER_ALIVE", "PLAYER_UNGHOST", "ENCOUNTER_START", "ENCOUNTER_END" }
 local classEvents = { "GROUP_ROSTER_UPDATE", "UNIT_CONNECTION", "CAN_LOCAL_WHISPER_TARGET_RESPONSE" }
-local talentEvents = { "PLAYER_SPECIALIZATION_CHANGED", "SPELLS_CHANGED" }
+local talentEvents = { "PLAYER_SPECIALIZATION_CHANGED", "SPELLS_CHANGED", "PLAYER_TALENT_UPDATE", "TRAIT_CONFIG_UPDATED" }
 local weaponEvents = { "PLAYER_EQUIPMENT_CHANGED", "WEAPON_ENCHANT_CHANGED" }
 
 local function SetEvents(events, active)
@@ -471,7 +637,7 @@ eventFrame:SetScript("OnEvent", function(_, event, value, status)
             QueueRefresh()
         end
     elseif event == "PLAYER_EQUIPMENT_CHANGED" then
-        if value == weapons[1].slot or value == weapons[2].slot then QueueRefresh(false, false, false, true) end
+        if value == hands[1].slot or value == hands[2].slot then QueueRefresh(false, false, false, true) end
     elseif event == "WEAPON_ENCHANT_CHANGED" then
         QueueRefresh(false, false, false, true)
     elseif event == "GROUP_ROSTER_UPDATE" or event == "UNIT_CONNECTION" then
@@ -479,8 +645,9 @@ eventFrame:SetScript("OnEvent", function(_, event, value, status)
             and (value:match("^party%d+$") or value:match("^raid%d+$"))) then
             QueueRefresh(false, true)
         end
-    elseif event == "SPELLS_CHANGED" or event == "PLAYER_SPECIALIZATION_CHANGED" then
-        if event == "SPELLS_CHANGED" or value == "player" then QueueRefresh(true) end
+    elseif event == "SPELLS_CHANGED" or event == "PLAYER_SPECIALIZATION_CHANGED"
+        or event == "PLAYER_TALENT_UPDATE" or event == "TRAIT_CONFIG_UPDATED" then
+        if event ~= "PLAYER_SPECIALIZATION_CHANGED" or value == "player" then QueueRefresh(true) end
     elseif event == "ADDON_RESTRICTION_STATE_CHANGED" then
         -- Activation events are sent before the restricted state takes effect.
         QueueRefresh(false, true, true)
@@ -501,18 +668,19 @@ function PSA.RefreshRetailBuffAlerts()
     foodEnabled = PSA.GetRetailSupplySetting("FOOD")
     weaponEnabled = PSA.GetRetailSupplySetting("WEAPON")
     classEnabled = PSA.GetRetailSupplySetting("CLASS")
+    shieldEnabled = PSA.GetRetailSupplySetting("SHIELD")
     foodLead = foodEnabled and PSA.GetRetailSupplyLeadMinutes("FOOD") * 60 or 0
     weaponLead = weaponEnabled and PSA.GetRetailSupplyLeadMinutes("WEAPON") * 60 or 0
-    local active = foodEnabled or weaponEnabled or classEnabled
+    local active = foodEnabled or weaponEnabled or classEnabled or shieldEnabled
     if active ~= watching then
         watching = active
         inEncounter = active and C_InstanceEncounter and C_InstanceEncounter.IsEncounterInProgress() or false
         SetEvents(commonEvents, active)
     end
-    if foodEnabled or classEnabled or weaponLead > 0 then eventFrame:RegisterEvent("ADDON_RESTRICTION_STATE_CHANGED")
+    if foodEnabled or classEnabled or shieldEnabled or weaponLead > 0 then eventFrame:RegisterEvent("ADDON_RESTRICTION_STATE_CHANGED")
     else eventFrame:UnregisterEvent("ADDON_RESTRICTION_STATE_CHANGED") end
     SetEvents(classEvents, classEnabled)
-    SetEvents(talentEvents, classEnabled or (weaponEnabled and PSA.GetPlayerClassFile() == "SHAMAN"))
+    SetEvents(talentEvents, classEnabled or shieldEnabled or (weaponEnabled and PSA.GetPlayerClassFile() == "SHAMAN"))
     SetEvents(weaponEvents, weaponEnabled)
     if not classEnabled then roster, permissions = {}, {} end
     if active or next(displayed) or watchAuras then

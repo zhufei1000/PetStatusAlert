@@ -268,9 +268,16 @@ local auraPages = {
     shaman = function(page)
         local ui = PSA.UI
         local section = page:NewSection(ui.RETAIL_ENHANCEMENT, { ui.RETAIL_ENHANCEMENT_HINT })
-        AddRetailSupplyCheck(section, "WINDFURY", ui.RETAIL_WINDFURY)
-        AddRetailSupplyCheck(section, "FLAMETONGUE", ui.RETAIL_FLAMETONGUE)
+        for _, imbue in ipairs(PSA.RETAIL_IMBUES or {}) do
+            AddRetailSupplyCheck(section, imbue.key, ui["RETAIL_" .. imbue.key])
+        end
         page:AddSection(section)
+        local shield = page:NewSection(ui.RETAIL_SHIELD, { ui.RETAIL_SHIELD_HINT })
+        AddRetailSupplyCheck(shield, "SHIELD", ui.RETAIL_SHIELD)
+        for _, def in ipairs(PSA.RETAIL_SHIELDS or {}) do
+            AddRetailSupplyCheck(shield, def.key, ui["RETAIL_" .. def.key])
+        end
+        page:AddSection(shield)
     end,
     ammo = function(page, forever)
         local ui = PSA.UI

@@ -348,7 +348,7 @@ local ammoKind, ammoCount, ammoTexture
 local foodFrame, foodLabel
 local foodMissing, foodXP
 local retailSupplyIcons = {}
-local retailSupplyOrder = { "FOOD", "MAIN_HAND", "OFF_HAND", "BATTLE_SHOUT", "ARCANE_INTELLECT", "SKYFURY", "MARK_OF_THE_WILD", "FORTITUDE" }
+local retailSupplyOrder = { "FOOD", "MAIN_HAND", "OFF_HAND", "EARTH_SHIELD", "WATER_SHIELD", "LIGHTNING_SHIELD", "SHIELD", "BATTLE_SHOUT", "ARCANE_INTELLECT", "SKYFURY", "MARK_OF_THE_WILD", "FORTITUDE" }
 local retailSupplyEnabled = false
 
 do

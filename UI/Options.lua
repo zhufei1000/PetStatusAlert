@@ -1521,12 +1521,23 @@ local function DrawConsumableSettings(page)
 end
 
 local function DrawShamanSupplySettings(page)
+    local imbues = PSA.RETAIL_IMBUES or {}
     local shaman = CreateSection(page, UI.RETAIL_ENHANCEMENT, UI.RETAIL_ENHANCEMENT_HINT, -52, 110)
     local firstY = -54 - math.ceil(shaman.sectionDesc:GetStringHeight())
-    AddRetailSupplyCheck(shaman, "WINDFURY", UI.RETAIL_WINDFURY, firstY)
-    AddRetailSupplyCheck(shaman, "FLAMETONGUE", UI.RETAIL_FLAMETONGUE, firstY - 25)
-    shaman:SetHeight(-firstY + 50)
-    return 66 + shaman:GetHeight()
+    for index, imbue in ipairs(imbues) do
+        AddRetailSupplyCheck(shaman, imbue.key, UI["RETAIL_" .. imbue.key], firstY - (index - 1) * 25)
+    end
+    shaman:SetHeight(-firstY + #imbues * 25 + 32)
+
+    local shields = PSA.RETAIL_SHIELDS or {}
+    local shield = CreateSection(page, UI.RETAIL_SHIELD, UI.RETAIL_SHIELD_HINT, -52 - shaman:GetHeight() - 12, 140)
+    local shieldFirstY = -54 - math.ceil(shield.sectionDesc:GetStringHeight())
+    AddRetailSupplyCheck(shield, "SHIELD", UI.RETAIL_SHIELD, shieldFirstY)
+    for index, def in ipairs(shields) do
+        AddRetailSupplyCheck(shield, def.key, UI["RETAIL_" .. def.key], shieldFirstY - index * 25)
+    end
+    shield:SetHeight(-shieldFirstY + #shields * 25 + 50)
+    return 66 + shaman:GetHeight() + shield:GetHeight() + 12
 end
 
 local function DrawClassBuffSettings(page)
