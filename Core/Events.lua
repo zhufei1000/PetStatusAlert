@@ -49,12 +49,29 @@ local function UnregisterEventSafe(event)
     end
 end
 
+local registeredEvents, registeredUnitEvents = {}, {}
+
 local function SetEventRegistered(event, active)
-    if active then RegisterEventSafe(event) else UnregisterEventSafe(event) end
+    if active then
+        if registeredEvents[event] then return end
+        registeredEvents[event] = true
+        RegisterEventSafe(event)
+    elseif registeredEvents[event] then
+        registeredEvents[event] = nil
+        UnregisterEventSafe(event)
+    end
 end
 
 local function SetUnitEventRegistered(event, unit, active)
-    if active then RegisterUnitEventSafe(event, unit) else UnregisterEventSafe(event) end
+    local key = event .. ":" .. (unit or "")
+    if active then
+        if registeredUnitEvents[key] then return end
+        registeredUnitEvents[key] = true
+        RegisterUnitEventSafe(event, unit)
+    elseif registeredUnitEvents[key] then
+        registeredUnitEvents[key] = nil
+        UnregisterEventSafe(event)
+    end
 end
 
 local watchingWarriorAuras = false
@@ -128,24 +145,27 @@ RegisterEventSafe("ADDON_LOADED")
 UpdateCentralEvents()
 
 local ammoRefreshPending = false
+
+local function RunAmmoRefresh()
+    ammoRefreshPending = false
+    if ammoThreshold == 0 or InCombatLockdown() then
+        return
+    end
+
+    local kind, count, texture = PSA.GetForeverAmmo()
+    if not kind or (count and count >= ammoThreshold) then
+        PSA.SetAmmoAlert()
+    elseif count then
+        PSA.SetAmmoAlert(kind, count, texture)
+    end
+end
+
 local function QueueAmmoRefresh()
     if ammoThreshold == 0 or ammoRefreshPending or InCombatLockdown() then
         return
     end
     ammoRefreshPending = true
-    C_Timer.After(0, function()
-        ammoRefreshPending = false
-        if ammoThreshold == 0 or InCombatLockdown() then
-            return
-        end
-
-        local kind, count, texture = PSA.GetForeverAmmo()
-        if not kind or (count and count >= ammoThreshold) then
-            PSA.SetAmmoAlert()
-        elseif count then
-            PSA.SetAmmoAlert(kind, count, texture)
-        end
-    end)
+    C_Timer.After(0, RunAmmoRefresh)
 end
 
 if isForever and trackAmmo then
@@ -215,6 +235,13 @@ if RefreshPetCare then
     end
 end
 
+local function RunPetCareRefresh()
+    petCareRefreshPending = false
+    local refreshMenu = foodMenuRefreshPending
+    foodMenuRefreshPending = false
+    if petCareWatch then RefreshPetCare(refreshMenu) end
+end
+
 local function QueuePetCareRefresh(refreshFoodMenu)
     if not petCareWatch then return end
     foodMenuRefreshPending = foodMenuRefreshPending or refreshFoodMenu
@@ -224,12 +251,7 @@ local function QueuePetCareRefresh(refreshFoodMenu)
     petCareRefreshPending = true
     -- Bag and happiness events arrive in bursts. Food does not need 20 Hz
     -- feedback, so coalesce them into one refresh per 150 ms.
-    C_Timer.After(0.15, function()
-        petCareRefreshPending = false
-        local refreshMenu = foodMenuRefreshPending
-        foodMenuRefreshPending = false
-        if petCareWatch then RefreshPetCare(refreshMenu) end
-    end)
+    C_Timer.After(0.15, RunPetCareRefresh)
 end
 
 local CACHE_INVALIDATE_EVENTS = {
@@ -243,11 +265,30 @@ local CACHE_INVALIDATE_EVENTS = {
 }
 
 addonFrame:SetScript("OnEvent", function(_, event, unit, slot, spellID)
+    -- Mount and vehicle state changed; drop the cached value before any status
+    -- check so the next refresh reads the real state once.
+    if event == "PLAYER_MOUNT_DISPLAY_CHANGED" or event == "PLAYER_CONTROL_LOST"
+        or event == "PLAYER_CONTROL_GAINED" or event == "PLAYER_ENTERING_WORLD"
+        or event == "UNIT_PET"
+        or ((event == "UNIT_ENTERED_VEHICLE" or event == "UNIT_EXITED_VEHICLE") and unit == "player") then
+        if PSA.InvalidatePlayerMountState then PSA.InvalidatePlayerMountState() end
+    end
+
+    -- Pet action buttons only change on these events; everything else can reuse
+    -- the cached stance instead of walking the ten pet action slots again.
+    if event == "UNIT_PET" or event == "PET_BAR_UPDATE" or event == "PET_UI_UPDATE"
+        or (event == "UNIT_FLAGS" and unit == "pet")
+        or event == "PLAYER_CONTROL_LOST" or event == "PLAYER_CONTROL_GAINED"
+        or event == "PLAYER_REGEN_DISABLED" or event == "PLAYER_REGEN_ENABLED" then
+        if PSA.InvalidatePetMode then PSA.InvalidatePetMode() end
+    end
+
     if event == "ADDON_LOADED" then
         if unit == ADDON_NAME or unit == "PetStatusAlert" then
             UnregisterEventSafe("ADDON_LOADED")
             InitDB(true)
             UpdatePlayerClass()
+            if PSA.InvalidatePlayerMountState then PSA.InvalidatePlayerMountState() end
             -- 存档在脚本执行后载入，按保存的语言重新初始化文案和默认提醒。
             if PSA.RefreshLocaleState then
                 PSA.RefreshLocaleState()

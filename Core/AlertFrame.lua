@@ -360,14 +360,16 @@ local function NormalizeIconGap(value)
 end
 
 local FLOAT_PERIOD = 1.5
-local FLOAT_UPDATE_INTERVAL = 0.05
--- 所有像素流光共用同一个 20 FPS 调度器。LibCustomGlow 默认会给每个图标挂一个
--- 每帧 OnUpdate；提醒图标一多（补给、职业增益、宠物护理）时，每帧的 SetPoint
--- 调用会成倍增长。集中调度后每帧只跑一次循环，20 FPS 对流光观感几乎没有影响。
-local CLASS_GLOW_INTERVAL = 1 / 20
+local FLOAT_UPDATE_INTERVAL = 1 / 15
+-- 所有像素流光共用同一个调度器。LibCustomGlow 默认会给每个图标挂一个每帧
+-- OnUpdate；提醒图标一多（补给、职业增益、宠物护理）时，每帧的 SetPoint
+-- 调用会成倍增长。主状态流光 15 FPS，常驻配件流光 10 FPS，SetPoint 总量
+-- 比默认按帧更新低一个数量级，而观感几乎没有差别。
+local GLOW_PIXEL_COUNT = 6
+local MAIN_GLOW_FPS = 15
+local ACCESSORY_GLOW_FPS = 10
 local PIXEL_GLOW_FRAME_KEY = "_PixelGlow" .. ALERT_GLOW_KEY
 local classGlowUpdates = {}
-local classGlowTime, classGlowElapsed = 0, 0
 local animationActive = false
 local floatElapsed = 0
 local floatUpdateElapsed = 0
@@ -415,15 +417,24 @@ local function GetMaxAlertContentWidth()
     return math.max(160, math.min(width * 0.9, width - reserved))
 end
 
+local lastTextColorR, lastTextColorG, lastTextColorB, lastTextColorA
+
 local function ApplyAlertTextColor(statusKey)
     -- 无参调用时同步当前显示中的状态；管理器里改其他状态的颜色时，
     -- 不会把当前告警误染成 UNKNOWN 的颜色。
     statusKey = statusKey or PSA.currentStatusKey
+    local r, g, b, a
     if statusKey == DISPLAY_SAMPLE then
-        text:SetTextColor(PSA.GetDefaultStatusColor())
+        r, g, b, a = PSA.GetDefaultStatusColor()
+    else
+        r, g, b, a = GetStatusColor(statusKey or "UNKNOWN", PSA.currentStatusClass)
+    end
+    -- RefreshPetStatusText runs on every pet event; only touch the FontString
+    -- when the color setting actually changed.
+    if r == lastTextColorR and g == lastTextColorG and b == lastTextColorB and a == lastTextColorA then
         return
     end
-    local r, g, b, a = GetStatusColor(statusKey or "UNKNOWN", PSA.currentStatusClass)
+    lastTextColorR, lastTextColorG, lastTextColorB, lastTextColorA = r, g, b, a
     text:SetTextColor(r, g, b, a)
 end
 
@@ -612,13 +623,17 @@ local function ForgetGlowUpdate(frame)
     end
 end
 
--- 把库自带的每帧 OnUpdate 摘下来，交给统一的 30 FPS 循环。
-local function ShareGlowUpdate(frame)
+-- 把库自带的每帧 OnUpdate 摘下来，交给统一的限速循环。
+local function ShareGlowUpdate(frame, fps)
     local glow = frame and frame[PIXEL_GLOW_FRAME_KEY]
     local update = glow and glow.GetScript and glow:GetScript("OnUpdate")
     if not update then return end
     glow:SetScript("OnUpdate", nil)
-    classGlowUpdates[glow] = update
+    classGlowUpdates[glow] = {
+        update = update,
+        interval = 1 / (fps or MAIN_GLOW_FPS),
+        elapsed = 0,
+    }
 end
 
 local function StopAlertGlow()
@@ -736,14 +751,12 @@ end
 local function OnAlertUpdate(_, elapsed)
     elapsed = tonumber(elapsed) or 0
     if next(classGlowUpdates) then
-        classGlowTime = classGlowTime + elapsed
-        classGlowElapsed = classGlowElapsed + elapsed
-        if classGlowTime >= CLASS_GLOW_INTERVAL then
-            classGlowTime = classGlowTime % CLASS_GLOW_INTERVAL
-            for glow, update in pairs(classGlowUpdates) do
-                update(glow, classGlowElapsed)
+        for glow, state in pairs(classGlowUpdates) do
+            state.elapsed = state.elapsed + elapsed
+            if state.elapsed >= state.interval then
+                state.update(glow, state.elapsed)
+                state.elapsed = 0
             end
-            classGlowElapsed = 0
         end
     end
     if not floatActive then return end
@@ -761,7 +774,6 @@ end
 
 UpdateAlertAnimation = function()
     local hasClassGlows = next(classGlowUpdates) ~= nil
-    if not hasClassGlows then classGlowTime, classGlowElapsed = 0, 0 end
     local active = floatActive or hasClassGlows
     if active == animationActive then return end
     animationActive = active
@@ -787,7 +799,7 @@ end
 local function StartIconGlow(frame, frameLevel)
     local length = math.max(8, math.floor(currentAlertFontSize * 0.38 + 0.5))
     local frequency = 0.2 * RefreshAlertGlowSpeed()
-    LCG.PixelGlow_Start(frame, DEFAULT_ALERT_GLOW_COLOR, 8, frequency, length, 2, 0, 0, false, ALERT_GLOW_KEY, frameLevel)
+    LCG.PixelGlow_Start(frame, DEFAULT_ALERT_GLOW_COLOR, GLOW_PIXEL_COUNT, frequency, length, 2, 0, 0, false, ALERT_GLOW_KEY, frameLevel)
 end
 
 local function StartAlertGlow()
@@ -822,7 +834,7 @@ local function RefreshAccessoryGlow(frame, active)
         -- The bundled glow library attaches its frame under this key. If a
         -- different installed version doesn't expose it, the library keeps its
         -- own OnUpdate and the glow still animates.
-        ShareGlowUpdate(frame)
+        ShareGlowUpdate(frame, ACCESSORY_GLOW_FPS)
     end
     UpdateAlertAnimation()
 end
@@ -1212,16 +1224,30 @@ local function ShowStatus(statusKey, force, classFile)
     if displayPreview and not force then return end
     displayPreview = nil
     classFile = (force and classFile) or GetPlayerClassFile()
-    if not force and not IsStatusEnabled(statusKey, classFile) then
+    local isForce = force and true or false
+    if not isForce and not IsStatusEnabled(statusKey, classFile) then
         HideStatus()
         return
     end
 
-    -- 预览（设置面板/管理器）时提升到面板之上；真实状态恢复默认层级。
-    SetAlertStrata(force and ALERT_STRATA_PREVIEW or ALERT_STRATA_DEFAULT)
+    local message = GetDisplayMessage(statusKey, classFile)
+    -- Pet events fire every few frames. When the visible state did not change,
+    -- keep the existing layout and only make sure a color-only setting change
+    -- is reflected; no SetText, no layout rebuild, no glow restart.
+    if not iconTexturePending
+        and PSA.currentStatusKey == statusKey
+        and PSA.currentStatusClass == classFile
+        and lastMessage == message
+        and (PSA.currentStatusForce and true or false) == isForce then
+        ApplyAlertTextColor(statusKey)
+        return
+    end
 
-    PSA.currentStatusForce = force and true or false
-    local changed = SetMessage(GetDisplayMessage(statusKey, classFile), statusKey, classFile)
+    -- 预览（设置面板/管理器）时提升到面板之上；真实状态恢复默认层级。
+    SetAlertStrata(isForce and ALERT_STRATA_PREVIEW or ALERT_STRATA_DEFAULT)
+
+    PSA.currentStatusForce = isForce
+    local changed = SetMessage(message, statusKey, classFile)
 
     if changed then
         StartAlertGlow()
@@ -1248,7 +1274,6 @@ end
 HideStatus = function(force)
     if displayPreview and not force then return end
     displayPreview = nil
-    SetAlertStrata(ALERT_STRATA_DEFAULT)
 
     if not lastStatusKey and lastMessage == "" then
         if PSA.StopCombatTTSReminder then
@@ -1257,6 +1282,7 @@ HideStatus = function(force)
         return
     end
 
+    SetAlertStrata(ALERT_STRATA_DEFAULT)
     PSA.currentStatusKey = nil
     PSA.currentStatusForce = false
     SetMessage("", nil)

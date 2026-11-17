@@ -18,13 +18,44 @@ local UNHAPPY, CONTENT = 1, 2
 local LAST_BAG = NUM_TOTAL_EQUIPPED_BAG_SLOTS or 4
 local feedButton
 local characterGUID, sessionFoodID
+-- bag -> { size, dirty, hasFood, first, entries, [slot] = entry|false }
 local foodBags = {}
+-- itemID -> edible. CanPetEatItem is purely item-based, so the same item must
+-- not be re-queried for every bag slot after every pickup. The cache is bounded
+-- so a long session with many distinct items cannot grow it without limit.
+local canEatCache = {}
+local canEatCacheSize = 0
+local CAN_EAT_CACHE_LIMIT = 1024
+local preferredCountCache
+
+local function CanPetEatItem(itemID)
+    if not itemID then return false end
+    local edible = canEatCache[itemID]
+    if edible == nil then
+        local value = C_PetInfo.CanPetEatItem(itemID)
+        if not IsAccessible(value) then return false end
+        edible = value and true or false
+        if canEatCacheSize < CAN_EAT_CACHE_LIMIT then
+            canEatCache[itemID] = edible
+            canEatCacheSize = canEatCacheSize + 1
+        end
+    end
+    return edible
+end
 
 function PSA.InvalidatePetFood(bag)
     if bag == nil then
-        foodBags = {}
-    elseif type(bag) == "number" and bag >= 0 and bag <= LAST_BAG then
-        foodBags[bag] = nil
+        preferredCountCache = nil
+        for index = 0, LAST_BAG do
+            local cache = foodBags[index]
+            if cache then cache.dirty = true end
+        end
+        return
+    end
+    if type(bag) == "number" and bag >= 0 and bag <= LAST_BAG then
+        preferredCountCache = nil
+        local cache = foodBags[bag]
+        if cache then cache.dirty = true end
         return true
     end
 end
@@ -67,15 +98,23 @@ local function SetPreferredFood(itemID)
     db.petFeedFoodByCharacter[guid] = itemID
 end
 
-local function ResolvePreferredFood()
+local function ResolvePreferredFood(useCache)
     local itemID = GetPreferredFood()
     if not itemID then
+        preferredCountCache = nil
         return
     end
-    local count = C_Item.GetItemCount(itemID)
+    local count
+    if useCache and preferredCountCache and preferredCountCache.itemID == itemID then
+        count = preferredCountCache.count
+    else
+        count = C_Item.GetItemCount(itemID)
+        preferredCountCache = { itemID = itemID, count = count }
+    end
     -- Wait until bags are available before treating a zero count as depletion.
     if count == 0 and C_Container.GetContainerNumSlots(0) > 0 then
         SetPreferredFood(nil)
+        preferredCountCache = nil
         return
     end
     return itemID, count
@@ -97,50 +136,100 @@ local function GetHappiness()
     end
 end
 
+local function FillFoodEntry(entry, item, slot)
+    entry.itemID = item.itemID
+    entry.stackCount = item.stackCount
+    entry.iconFileID = item.iconFileID
+    entry.itemName = item.itemName
+    entry.isLocked = item.isLocked and true or false
+    entry.slot = slot
+    return entry
+end
+
+-- Mark one bag stale without discarding its per-slot entry tables. The next
+-- FindFood pass re-probes lazily and reuses the entry table for each slot, so a
+-- pickup burst does not allocate a table per bag slot.
+local function PrepareBagCache(bag, cache)
+    if not cache then
+        cache = { size = -1, dirty = true, entries = {} }
+        foodBags[bag] = cache
+    end
+    local size = C_Container.GetContainerNumSlots(bag)
+    if cache.dirty or cache.size ~= size then
+        local previousSize = cache.size
+        if previousSize and previousSize > 0 then
+            for slot = 1, previousSize do
+                local entry = cache[slot]
+                if type(entry) == "table" then
+                    cache.entries[slot] = entry
+                end
+                cache[slot] = nil
+            end
+            if previousSize > size then
+                for slot = size + 1, previousSize do
+                    cache.entries[slot] = nil
+                end
+            end
+        end
+        cache.size = size
+        cache.dirty = false
+        cache.hasFood = false
+        cache.first = nil
+    end
+    return cache, size
+end
+
+local function ProbeSlot(bag, cache, slot)
+    local item = C_Container.GetContainerItemInfo(bag, slot)
+    local entry
+    if item and item.stackCount > 0 and CanPetEatItem(item.itemID) then
+        entry = cache.entries[slot]
+        if entry then
+            FillFoodEntry(entry, item, slot)
+        else
+            entry = FillFoodEntry({}, item, slot)
+            cache.entries[slot] = entry
+        end
+    end
+    cache[slot] = entry or false
+    return entry
+end
+
 -- Reuse a per-bag summary when only the current happiness changed. Without it
 -- every UNIT_HAPPINESS tick walked every bag slot even though no bag event had
--- invalidated the cached contents.
+-- invalidated the cached contents. The scan stays lazy: a preferred food found
+-- early stops the pass instead of re-reading the rest of the bag.
 local function FindFood(preferredID, visitFood, useCache)
     local hasFood = false
     for bag = 0, LAST_BAG do
-        local cachedBag = useCache and foodBags[bag] or nil
-        if useCache and cachedBag and not visitFood then
-            hasFood = hasFood or cachedBag.hasFood
-            local entry
-            if preferredID then
-                entry = cachedBag.byID and cachedBag.byID[preferredID]
-            else
-                entry = cachedBag.first
-            end
-            if entry then return entry.item, bag, entry.slot, true end
-        else
-            local size = cachedBag and cachedBag.size or C_Container.GetContainerNumSlots(bag)
-            if useCache and not cachedBag then
-                cachedBag = { size = size, byID = {} }
-                foodBags[bag] = cachedBag
-            end
-
+        if useCache then
+            local cache, size = PrepareBagCache(bag, foodBags[bag])
             for slot = 1, size do
-                local item = cachedBag and cachedBag[slot]
-                if item == nil then
-                    item = C_Container.GetContainerItemInfo(bag, slot)
-                    local edible = item and item.stackCount > 0 and C_PetInfo.CanPetEatItem(item.itemID)
-                    if cachedBag then
-                        cachedBag[slot] = edible and item or false
-                    end
-                    item = edible and item
+                local entry = cache[slot]
+                if entry == nil then
+                    entry = ProbeSlot(bag, cache, slot)
                 end
-                if item then
-                    hasFood = true
-                    if cachedBag then
-                        cachedBag.hasFood = true
-                        if not item.isLocked then
-                            local entry = { item = item, slot = slot }
-                            cachedBag.byID = cachedBag.byID or {}
-                            cachedBag.first = cachedBag.first or entry
-                            cachedBag.byID[item.itemID] = cachedBag.byID[item.itemID] or entry
+                if entry then
+                    cache.hasFood = true
+                    if not entry.isLocked then
+                        cache.first = cache.first or entry
+                        if visitFood then
+                            visitFood(entry)
+                        elseif not preferredID or entry.itemID == preferredID then
+                            return entry, bag, slot, true
                         end
                     end
+                end
+            end
+            hasFood = hasFood or cache.hasFood
+        else
+            -- One-shot path used by clicks and item selection: always read live
+            -- bag data so a stale lock flag can never feed the wrong slot.
+            local size = C_Container.GetContainerNumSlots(bag)
+            for slot = 1, size do
+                local item = C_Container.GetContainerItemInfo(bag, slot)
+                if item and item.stackCount > 0 and CanPetEatItem(item.itemID) then
+                    hasFood = true
                     if not item.isLocked then
                         if visitFood then
                             visitFood(item)
@@ -360,7 +449,7 @@ function PSA.RefreshPetCare(refreshFoodMenu)
     local happiness = GetHappiness()
     local inCombat = feedingEnabled and InCombatLockdown()
     local preferredID, preferredCount
-    if feedingEnabled then preferredID, preferredCount = ResolvePreferredFood() end
+    if feedingEnabled then preferredID, preferredCount = ResolvePreferredFood(true) end
     local kind, texture, unavailable
 
     if happiness == UNHAPPY and unhappyEnabled and not feedingEnabled then

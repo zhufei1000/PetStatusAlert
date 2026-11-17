@@ -608,11 +608,16 @@ for index, key in ipairs(PSA.PET_STATUS_ORDER) do
 end
 
 local STATUS_LABEL = {}
+-- Default alert text only changes when the language changes. Caching the
+-- resolved default keeps GetDisplayMessage off the gsub path during pet events
+-- (custom messages are still resolved live so edits apply immediately).
+local defaultMessageCache = {}
 
 local function RefreshLocaleTables()
     local locale = GetActiveLocale()
     L = LOCALIZED_MESSAGES[locale] or LOCALIZED_MESSAGES.enUS
     UI = UI_LOCALE[locale] or UI_LOCALE.enUS
+    defaultMessageCache = {}
     STATUS_LABEL = {
         NO_PET = UI.NO_PET,
         PET_DEAD = UI.PET_DEAD,
@@ -675,11 +680,20 @@ local function SetCustomMessage(statusKey, value, classFile)
 end
 
 local function GetDisplayMessage(statusKey, classFile)
-    local value = Trim(GetCustomMessage(statusKey, classFile))
-    if value ~= "" then
-        return value
+    local custom = PSA.GetStatusSetting("customMessages", statusKey, classFile)
+    if type(custom) == "string" and custom ~= "" then
+        local value = Trim(custom)
+        if value ~= "" then
+            return value
+        end
     end
-    return GetDefaultMessage(statusKey)
+    local cached = defaultMessageCache[statusKey]
+    if cached then
+        return cached
+    end
+    local message = GetDefaultMessage(statusKey)
+    defaultMessageCache[statusKey] = message
+    return message
 end
 
 function PSA.GetDefaultStatusEnabled(statusKey)

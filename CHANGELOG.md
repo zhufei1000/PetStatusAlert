@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Reduce idle and combat CPU: cache mount/vehicle and pet stance state between the events that can change them, cache learned spell lookups, remove protected-call wrappers from the pet refresh hot path, and reuse timer callbacks instead of allocating closures and formatted strings for every pet event.
+- Reduce bag-event CPU: cache pet-food edibility per item, reuse per-slot food entries instead of rebuilding them on every pickup, and cache the preferred-food count between bag changes.
+- Lower animation cost: pixel glow now runs at 15 FPS for the main alert and 10 FPS for accessory icons with six pixels, and floating text updates at 15 FPS.
+- Skip redundant alert work: unchanged statuses no longer rewrite the text color, rebuild the layout, or recalculate default message strings.
+- Fix pet stance detection to read the real `isActive` pet action flag instead of the `isToken` flag on clients that return the full action tuple.
 - Remove general class and group buffs, player food reminders, and temporary weapon enhancement alerts. Pet and Warrior stance alerts, pet feeding, and low ammo remain available.
 - On Forever, show the Hunter aspect reminder only in combat with the Hunter's own Cheetah or Pack active. Suggest Falcon or the highest known Hawk rank.
 - Move Retail and Forever selection above the navigation. Group class, display, and voice settings under Pet Alerts. Forever has separate Hunter Tools and Ammo pages.

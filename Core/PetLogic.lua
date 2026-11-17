@@ -35,6 +35,12 @@ local supportsPetStatusCache = {
     valid = false,
 }
 
+-- Learned spells only gain ranks during a session; a "true" answer can be cached
+-- until the spellbook changes. "false" is never cached so a login-time spellbook
+-- that is still loading cannot disable pet alerts until the next reload.
+local knownSpellCache = {}
+local petModeValid, petModeValue
+
 local function ClearPetStatusCaches()
     grimoireOfSacrificeCache.specId = 0
     grimoireOfSacrificeCache.value = false
@@ -44,6 +50,9 @@ local function ClearPetStatusCaches()
     supportsPetStatusCache.specId = 0
     supportsPetStatusCache.value = false
     supportsPetStatusCache.valid = false
+
+    knownSpellCache = {}
+    petModeValid = false
 end
 
 -------------------------------------------------
@@ -56,23 +65,32 @@ local function IsKnownPlayerSpell(spellID)
         return false
     end
 
+    -- Hot path: RefreshPetCare and the aspect recommendation both query the
+    -- same handful of spell IDs several times per second.
+    if knownSpellCache[spellID] then
+        return true
+    end
+
     if C_SpellBook and type(C_SpellBook.IsSpellKnown) == "function" then
-        local ok, known = pcall(C_SpellBook.IsSpellKnown, spellID)
-        if ok and PSA.IsAccessibleValue(known) and known ~= nil then
+        local known = C_SpellBook.IsSpellKnown(spellID)
+        if PSA.IsAccessibleValue(known) and known ~= nil then
+            if known then knownSpellCache[spellID] = true end
             return known and true or false
         end
     end
 
     if type(IsPlayerSpell) == "function" then
-        local ok, known = pcall(IsPlayerSpell, spellID)
-        if ok and PSA.IsAccessibleValue(known) and known ~= nil then
+        local known = IsPlayerSpell(spellID)
+        if PSA.IsAccessibleValue(known) and known ~= nil then
+            if known then knownSpellCache[spellID] = true end
             return known and true or false
         end
     end
 
     if type(IsSpellKnown) == "function" then
-        local ok, known = pcall(IsSpellKnown, spellID)
-        if ok and PSA.IsAccessibleValue(known) and known ~= nil then
+        local known = IsSpellKnown(spellID)
+        if PSA.IsAccessibleValue(known) and known ~= nil then
+            if known then knownSpellCache[spellID] = true end
             return known and true or false
         end
     end
@@ -363,53 +381,117 @@ local function SupportsPetStatusPrompt()
     return supportsPetStatusCache.value
 end
 
+-- Mount/vehicle state does not change between pet refreshes; several events per
+-- second used to call four separate vehicle APIs each time. Cache it and let the
+-- event layer invalidate the value when mount or vehicle state actually changes.
+local mountStateValid = false
+local mountedOrInVehicle = false
+
 local function IsPlayerMountedOrInVehicle()
-    if type(IsMounted) == "function" and IsMounted() then
-        return true
-    end
-    if type(UnitInVehicle) == "function" and UnitInVehicle("player") then
-        return true
-    end
-    if type(UnitHasVehicleUI) == "function" and UnitHasVehicleUI("player") then
-        return true
-    end
-    local hasVehicleActionBar = _G["HasVehicleActionBar"]
-    if type(hasVehicleActionBar) == "function" and hasVehicleActionBar() then
-        return true
+    if mountStateValid then
+        return mountedOrInVehicle
     end
 
-    return false
+    local mounted = false
+    if type(IsMounted) == "function" then
+        local value = IsMounted()
+        if PSA.IsAccessibleValue(value) and value then mounted = true end
+    end
+    if not mounted and type(UnitInVehicle) == "function" then
+        local value = UnitInVehicle("player")
+        if PSA.IsAccessibleValue(value) and value then mounted = true end
+    end
+    if not mounted and type(UnitHasVehicleUI) == "function" then
+        local value = UnitHasVehicleUI("player")
+        if PSA.IsAccessibleValue(value) and value then mounted = true end
+    end
+    if not mounted then
+        local hasVehicleActionBar = _G["HasVehicleActionBar"]
+        if type(hasVehicleActionBar) == "function" then
+            local value = hasVehicleActionBar()
+            if PSA.IsAccessibleValue(value) and value then mounted = true end
+        end
+    end
+
+    mountStateValid, mountedOrInVehicle = true, mounted
+    return mounted
+end
+
+function PSA.InvalidatePlayerMountState()
+    mountStateValid = false
+end
+
+-- Pet action names are fixed for the session. Build the token/localized-name to
+-- mode lookup once instead of walking five token entries for every active slot.
+local petModeByActionName
+
+local function GetPetModeActionMap()
+    local map = petModeByActionName
+    if map then
+        return map
+    end
+    map = {}
+    for _, entry in ipairs(PET_MODE_TOKENS) do
+        local token, mode = entry[1], entry[2]
+        map[token] = mode
+        local localized = _G[token]
+        if type(localized) == "string" and localized ~= token then
+            map[localized] = mode
+        end
+    end
+    petModeByActionName = map
+    return map
 end
 
 local function GetPetMode()
+    if petModeValid then
+        return petModeValue
+    end
+
     if not UnitExists("pet") then
+        petModeValid, petModeValue = true, nil
         return nil
     end
 
     if type(GetPetActionInfo) ~= "function" then
+        petModeValid, petModeValue = true, "UNKNOWN"
         return "UNKNOWN"
     end
 
     local slotCount = tonumber(NUM_PET_ACTION_SLOTS) or 10
+    local modeByActionName = GetPetModeActionMap()
 
     for i = 1, slotCount do
-        local okAction, name, _, isToken, isActive = pcall(GetPetActionInfo, i)
-        if not okAction or not PSA.IsAccessibleValue(name)
+        local name, _, texture, isToken, isActive = GetPetActionInfo(i)
+        -- Some classic-era builds return name, subtext, isToken, isActive
+        -- without a texture slot. Normalize both shapes.
+        if isActive == nil and type(texture) == "boolean" and type(isToken) == "boolean" then
+            isToken, isActive = texture, isToken
+        end
+        if not PSA.IsAccessibleValue(name)
             or not PSA.IsAccessibleValue(isToken) or not PSA.IsAccessibleValue(isActive) then
+            petModeValid, petModeValue = true, "UNKNOWN"
             return "UNKNOWN"
         end
 
         if name and isActive then
-            for _, entry in ipairs(PET_MODE_TOKENS) do
-                local token, mode = entry[1], entry[2]
-                if name == token or (not isToken and _G[token] and name == _G[token]) then
-                    return mode
-                end
+            local mode = modeByActionName[name]
+            if mode then
+                petModeValid, petModeValue = true, mode
+                return mode
             end
         end
     end
 
+    petModeValid, petModeValue = true, "UNKNOWN"
     return "UNKNOWN"
+end
+
+-- Pet action buttons only change on pet bar/UI updates, pet swaps and control
+-- changes. Invalidate on those events instead of walking ten action slots on
+-- every status refresh triggered by bag or happiness events.
+function PSA.InvalidatePetMode()
+    petModeValid = false
 end
 
 local function GetPetModeStatusKey(mode)
@@ -429,28 +511,24 @@ local function RefreshPetStatusText()
     InitDB()
     if PSA.RefreshForeverFormAlert then return PSA.RefreshForeverFormAlert() end
 
-    local okSupports, supports = pcall(SupportsPetStatusPrompt)
-    if not okSupports or not supports then
+    if not SupportsPetStatusPrompt() or IsPlayerMountedOrInVehicle() then
         HideStatus()
         return
     end
 
-    local okMounted, mounted = pcall(IsPlayerMountedOrInVehicle)
-    if not okMounted or mounted then
+    if type(UnitExists) ~= "function" then
         HideStatus()
         return
     end
-
-    local okPetExists, petExists = pcall(UnitExists, "pet")
-    if not okPetExists then
+    local petExists = UnitExists("pet")
+    if not PSA.IsAccessibleValue(petExists) then
         HideStatus()
         return
     end
 
     if not petExists then
         -- Sacrifice can explain the missing pet. It leaves stance and death checks active.
-        local okSacrifice, hasSacrificeTalent = pcall(IsWarlockGrimoireOfSacrificeActive)
-        if okSacrifice and hasSacrificeTalent then
+        if IsWarlockGrimoireOfSacrificeActive() then
             HideStatus()
             return
         end
@@ -459,8 +537,8 @@ local function RefreshPetStatusText()
         return
     end
 
-    local okPetDead, petDead = pcall(UnitIsDeadOrGhost, "pet")
-    if not okPetDead then
+    local petDead = type(UnitIsDeadOrGhost) == "function" and UnitIsDeadOrGhost("pet")
+    if not PSA.IsAccessibleValue(petDead) then
         HideStatus()
         return
     end
@@ -475,11 +553,7 @@ local function RefreshPetStatusText()
         return
     end
 
-    local okMode, mode = pcall(GetPetMode)
-    if not okMode then
-        HideStatus()
-        return
-    end
+    local mode = GetPetMode()
 
     if PSA.IsNormalPetMode(mode) then
         HideStatus()
@@ -491,8 +565,7 @@ local function RefreshPetStatusText()
         -- play without a controllable demon. In that case, do not show the generic
         -- "status could not be identified" warning. Real pets are still checked above
         -- for dead/passive/defensive states when those states can be identified.
-        local okSacrifice, hasSacrificeTalent = pcall(IsWarlockGrimoireOfSacrificeActive)
-        if okSacrifice and hasSacrificeTalent then
+        if IsWarlockGrimoireOfSacrificeActive() then
             HideStatus()
             return
         end
@@ -502,6 +575,9 @@ local function RefreshPetStatusText()
 end
 
 local queuedRefreshTimers = {}
+-- QueueRefresh is called with four fixed delays. Reuse one callback per delay
+-- bucket instead of allocating a closure for every pet event.
+local queuedRefreshCallbacks = {}
 
 local function QueueRefresh(delaySeconds)
     delaySeconds = tonumber(delaySeconds) or 0.05
@@ -509,17 +585,24 @@ local function QueueRefresh(delaySeconds)
         delaySeconds = 0
     end
 
-    local key = string.format("%.2f", delaySeconds)
+    -- Numeric key instead of string.format: QueueRefresh runs on every pet event
+    -- and the formatted string was pure garbage on the hot path.
+    local key = math.floor(delaySeconds * 100 + 0.5)
     if queuedRefreshTimers[key] then
         return
     end
     queuedRefreshTimers[key] = true
 
     if type(C_Timer) == "table" and type(C_Timer.After) == "function" then
-        C_Timer.After(delaySeconds, function()
-            queuedRefreshTimers[key] = nil
-            RefreshPetStatusText()
-        end)
+        local callback = queuedRefreshCallbacks[key]
+        if not callback then
+            callback = function()
+                queuedRefreshTimers[key] = nil
+                RefreshPetStatusText()
+            end
+            queuedRefreshCallbacks[key] = callback
+        end
+        C_Timer.After(delaySeconds, callback)
     else
         queuedRefreshTimers[key] = nil
         RefreshPetStatusText()

@@ -312,6 +312,7 @@ end
 -- Replace the public queue for Warriors so Events.lua captures the Warrior-aware path.
 local OriginalQueueRefresh = PSA.QueueRefresh
 local warriorQueuedRefreshTimers = {}
+local warriorQueuedRefreshCallbacks = {}
 
 PSA.QueueRefresh = function(delaySeconds)
     if not IsWarrior() then
@@ -326,17 +327,22 @@ PSA.QueueRefresh = function(delaySeconds)
         delaySeconds = 0
     end
 
-    local key = string.format("%.2f", delaySeconds)
+    local key = math.floor(delaySeconds * 100 + 0.5)
     if warriorQueuedRefreshTimers[key] then
         return
     end
     warriorQueuedRefreshTimers[key] = true
 
     if C_Timer and type(C_Timer.After) == "function" then
-        C_Timer.After(delaySeconds, function()
-            warriorQueuedRefreshTimers[key] = nil
-            RefreshWarriorStatusText()
-        end)
+        local callback = warriorQueuedRefreshCallbacks[key]
+        if not callback then
+            callback = function()
+                warriorQueuedRefreshTimers[key] = nil
+                RefreshWarriorStatusText()
+            end
+            warriorQueuedRefreshCallbacks[key] = callback
+        end
+        C_Timer.After(delaySeconds, callback)
     else
         warriorQueuedRefreshTimers[key] = nil
         RefreshWarriorStatusText()

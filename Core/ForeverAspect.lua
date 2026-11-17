@@ -56,40 +56,42 @@ end
 
 -- Seed the cache on login and reconcile after combat. Combat never reads a
 -- full aura snapshot; it uses successful casts and readable aura deltas.
+local function RunSnapshot()
+    pending = false
+    if not enabled or combat or dead or InCombatLockdown()
+        or (C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret()) then return end
+    local auras = C_UnitAuras
+    if not auras then return end
+    local spell, id
+    local readable = true
+    if auras.GetUnitAuras then
+        local list = auras.GetUnitAuras("player", "HELPFUL")
+        if not ReadableTable(list) then return end
+        for _, aura in ipairs(list) do
+            spell, id = ReadAura(aura)
+            if spell then break end
+            if spell == nil then readable = false end
+        end
+    elseif auras.GetAuraDataByIndex then
+        for index = 1, 255 do
+            local aura = auras.GetAuraDataByIndex("player", index, "HELPFUL")
+            if not IsAccessible(aura) then return end
+            if not aura then break end
+            spell, id = ReadAura(aura)
+            if spell then break end
+            if spell == nil then readable = false end
+        end
+    else
+        return
+    end
+    if spell or readable then active, instance = spell or nil, id end
+end
+
 local function QueueSnapshot()
     if pending or combat or not C_UnitAuras
         or not (C_UnitAuras.GetUnitAuras or C_UnitAuras.GetAuraDataByIndex) then return end
     pending = true
-    C_Timer.After(0, function()
-        pending = false
-        if not enabled or combat or dead or InCombatLockdown()
-            or (C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret()) then return end
-        local auras = C_UnitAuras
-        if not auras then return end
-        local spell, id
-        local readable = true
-        if auras.GetUnitAuras then
-            local list = auras.GetUnitAuras("player", "HELPFUL")
-            if not ReadableTable(list) then return end
-            for _, aura in ipairs(list) do
-                spell, id = ReadAura(aura)
-                if spell then break end
-                if spell == nil then readable = false end
-            end
-        elseif auras.GetAuraDataByIndex then
-            for index = 1, 255 do
-                local aura = auras.GetAuraDataByIndex("player", index, "HELPFUL")
-                if not IsAccessible(aura) then return end
-                if not aura then break end
-                spell, id = ReadAura(aura)
-                if spell then break end
-                if spell == nil then readable = false end
-            end
-        else
-            return
-        end
-        if spell or readable then active, instance = spell or nil, id end
-    end)
+    C_Timer.After(0, RunSnapshot)
 end
 
 local function HandleAuraUpdate(update)
