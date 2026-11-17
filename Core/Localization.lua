@@ -66,7 +66,7 @@ local LOCALIZED_MESSAGES = {
 local UI_LOCALE = {
     enUS = {
         TITLE = "PetStatusAlert",
-        SUBTITLE = "Custom pet warning text. Leave blank to use the default text for your client language.",
+        SUBTITLE = "Pet and class alerts, buff reminders, display, voice, and language settings.",
         PASSIVE = "Pet: Passive",
         DEFENSIVE = "Pet: Defensive",
         AGGRESSIVE = "Pet: Aggressive",
@@ -85,8 +85,8 @@ local UI_LOCALE = {
         SAVED = "Saved automatically",
         CLEARED = "Custom text cleared",
         RESET_DONE = "All custom text has been reset",
-        SUPPORT = PSA.IsForeverClient() and "Supported: Hunter, Warlock, Mage with Summon Water Elemental. Requires a learned pet summon ability."
-            or "Supported: Hunter, Warlock, Unholy Death Knight, Frost Mage with Summon Water Elemental talent",
+        SUPPORT = PSA.IsForeverClient() and "Forever: pet alerts for Hunter, Warlock and Mage; Warrior stance alerts; class buff, Paladin aura, food and ammo reminders."
+            or "Retail: Hunter, Warlock, Unholy DK, Frost Mage and Arms/Fury Warrior; class buff and supply reminders.",
         LOCKED_STATUS = "Alert position locked",
         UNLOCKED_STATUS = "Alert position unlocked. Drag the alert text to move it.",
         COMBAT_TTS = "Combat TTS voice reminder",
@@ -116,7 +116,7 @@ local UI_LOCALE = {
         LOW_BULLETS = "Low bullets (%d left)",
         RETAIL_CLIENT = "Retail",
         FOREVER_CLIENT = "Forever",
-        PET_SETTINGS = "Pet Alerts",
+        PET_SETTINGS = "Class Alerts",
         OTHER_CLIENT_SETTINGS = "Read-only defaults. Open this game version to change its settings.",
         CLASS_UNSUPPORTED = "This class has no alerts in this game version.",
         WARLOCK_WRONG_PET = "Wrong summon alert",
@@ -173,7 +173,7 @@ local UI_LOCALE = {
     },
     zhCN = {
         TITLE = "PetStatusAlert 宠物状态提醒",
-        SUBTITLE = "自定义不同宠物状态下的屏幕提示文字。留空时，自动使用当前客户端语言的默认文字。",
+        SUBTITLE = "宠物与职业提醒、增益提醒、显示样式、语音和语言设置。",
         PASSIVE = "被动状态",
         DEFENSIVE = "防御状态",
         AGGRESSIVE = "攻击状态",
@@ -192,8 +192,8 @@ local UI_LOCALE = {
         SAVED = "已自动保存",
         CLEARED = "已清空，将使用默认文字",
         RESET_DONE = "全部自定义文字已恢复默认",
-        SUPPORT = PSA.IsForeverClient() and "支持：猎人、术士、学会召唤水元素的法师；学会宠物召唤技能后启用。"
-            or "支持：猎人、术士、邪恶死亡骑士、点出召唤水元素天赋的冰霜法师",
+        SUPPORT = PSA.IsForeverClient() and "无限服：猎人、术士、法师宠物提醒；战士姿态提醒；职业增益、圣骑士光环、进食与弹药提醒。"
+            or "正式服：猎人、术士、邪恶死亡骑士、冰霜法师、武器/狂暴战士；职业增益与补给提醒。",
         LOCKED_STATUS = "提示文字位置已锁定",
         UNLOCKED_STATUS = "提示文字位置已解锁，可拖动屏幕提示文字移动位置。",
         COMBAT_TTS = "战斗中 TTS 语音提醒",
@@ -223,7 +223,7 @@ local UI_LOCALE = {
         LOW_BULLETS = "子弹不足（剩余 %d）",
         RETAIL_CLIENT = "正式服",
         FOREVER_CLIENT = "无限服",
-        PET_SETTINGS = "宠物提醒",
+        PET_SETTINGS = "职业提醒",
         OTHER_CLIENT_SETTINGS = "此处只读，展示该版本的默认设置。请在对应客户端修改。",
         CLASS_UNSUPPORTED = "该职业在此版本没有可用的提醒。",
         WARLOCK_WRONG_PET = "召唤错误提示",
@@ -280,7 +280,7 @@ local UI_LOCALE = {
     },
     zhTW = {
         TITLE = "PetStatusAlert 寵物狀態提醒",
-        SUBTITLE = "自訂不同寵物狀態下的螢幕提示文字。留空時，自動使用目前客戶端語言的預設文字。",
+        SUBTITLE = "寵物與職業提醒、增益提醒、顯示樣式、語音和語言設定。",
         PASSIVE = "被動狀態",
         DEFENSIVE = "防禦狀態",
         AGGRESSIVE = "攻擊狀態",
@@ -299,8 +299,8 @@ local UI_LOCALE = {
         SAVED = "已自動儲存",
         CLEARED = "已清空，將使用預設文字",
         RESET_DONE = "全部自訂文字已恢復預設",
-        SUPPORT = PSA.IsForeverClient() and "支援：獵人、術士、學會召喚水元素的法師；學會寵物召喚技能後啟用。"
-            or "支援：獵人、術士、邪惡死亡騎士、點出召喚水元素天賦的冰霜法師",
+        SUPPORT = PSA.IsForeverClient() and "永恆服：獵人、術士、法師寵物提醒；戰士姿態提醒；職業增益、聖騎士光環、進食與彈藥提醒。"
+            or "正式服：獵人、術士、邪惡死亡騎士、冰霜法師、武器/狂怒戰士；職業增益與補給提醒。",
         LOCKED_STATUS = "提示文字位置已鎖定",
         UNLOCKED_STATUS = "提示文字位置已解鎖，可拖動螢幕提示文字移動位置。",
         COMBAT_TTS = "戰鬥中 TTS 語音提醒",
@@ -330,7 +330,7 @@ local UI_LOCALE = {
         LOW_BULLETS = "子彈不足（剩餘 %d）",
         RETAIL_CLIENT = "正式服",
         FOREVER_CLIENT = "無限服",
-        PET_SETTINGS = "寵物提醒",
+        PET_SETTINGS = "職業提醒",
         OTHER_CLIENT_SETTINGS = "此處唯讀，顯示該版本的預設設定。請在對應用戶端修改。",
         CLASS_UNSUPPORTED = "此職業在這個版本沒有可用的提醒。",
         WARLOCK_WRONG_PET = "召喚錯誤提醒",
@@ -387,7 +387,7 @@ local UI_LOCALE = {
     },
     ruRU = {
         TITLE = "PetStatusAlert",
-        SUBTITLE = "Собственный текст предупреждения. Оставьте поле пустым, чтобы использовать стандартный текст для языка вашего клиента.",
+        SUBTITLE = "Напоминания о питомце, классе и эффектах; внешний вид, озвучивание и язык.",
         PASSIVE = "Пассивный питомец",
         DEFENSIVE = "Защищающийся питомец",
         AGGRESSIVE = "Агрессивный питомец",
@@ -406,8 +406,8 @@ local UI_LOCALE = {
         SAVED = "Сохранено автоматически",
         CLEARED = "Пользовательский текст очищен",
         RESET_DONE = "Весь пользовательский текст был сброшен",
-        SUPPORT = PSA.IsForeverClient() and "Поддерживается: Охотник, Чернокнижник, Маг с призывом элементаля воды. Требуется изученное заклинание призыва питомца."
-            or "Поддерживается: Охотник, Чернокнижник, Рыцарь смерти «Нечестивости», Маг «Льда» с талантом «Призыв элементаля воды»",
+        SUPPORT = PSA.IsForeverClient() and "Forever: напоминания о питомце для охотника, чернокнижника и мага; стойки воина; классовые эффекты, ауры паладина, еда и боеприпасы."
+            or "Retail: охотник, чернокнижник, рыцарь смерти (нечестивость), маг (лёд), воин (оружие/неистовство); эффекты и припасы.",
         LOCKED_STATUS = "Позиция предупреждения закреплена",
         UNLOCKED_STATUS = "Позиция предупреждения разблокирована. Перетащите текст для перемещения.",
         COMBAT_TTS = "Голосовое напоминание (TTS) в бою",
@@ -437,7 +437,7 @@ local UI_LOCALE = {
         LOW_BULLETS = "Мало пуль (осталось %d)",
         RETAIL_CLIENT = "Retail",
         FOREVER_CLIENT = "Forever",
-        PET_SETTINGS = "Питомцы",
+        PET_SETTINGS = "Классовые напоминания",
         OTHER_CLIENT_SETTINGS = "Показаны настройки по умолчанию. Изменить их можно в соответствующем клиенте.",
         CLASS_UNSUPPORTED = "Для этого класса в данной версии нет предупреждений.",
         WARLOCK_WRONG_PET = "Предупреждение о неверном призыве",
@@ -514,6 +514,12 @@ local SETTINGS_STRINGS = {
     AMMO_WEAPON_HINT = { "Any class with a bow, crossbow, or gun that requires ammo.", "适用于装备需要弹药的弓、弩或枪的职业。", "適用於裝備需要彈藥的弓、弩或槍的職業。", "Для любого класса с луком, арбалетом или ружьём, требующим боеприпасы." },
     SUPPLY_ALERTS = { "Supply Alerts", "补给提醒", "補給提醒", "Напоминания о припасах" },
     AURA_SETTINGS = { "Buff Alerts", "增益提醒", "增益提醒", "Напоминания об эффектах" },
+    AURA_PAGE_DESC = {
+        "Reminders appear only while Buff Alerts is enabled. Use the checkbox above to turn it on.",
+        "只有开启「增益提醒」后，下列提醒才会出现。可直接勾选上方的开关。",
+        "只有開啟「增益提醒」後，下列提醒才會出現。可直接勾選上方的開關。",
+        "Напоминания работают только при включённых «Напоминаниях об эффектах».",
+    },
     AURA_TAB_CLASS = { "Class Buffs", "职业增益", "職業增益", "Классовые эффекты" },
     FOREVER_CLASS_BUFF_HINT = { "Shows missing learned buffs outside combat and rest areas. Any rank or option in a group counts. In combat, Cheetah or Pack prompts hunters to switch to Falcon or Hawk.", "战斗外且离开休息区时提醒缺失的已学增益，同组任意效果或等级生效即可。战斗中开着猎豹守护或豹群守护时，提示切换猎鹰守护或雄鹰守护。", "戰鬥外且離開休息區時提醒缺少的已學增益，同組任一效果或等級生效即可。戰鬥中開著獵豹守護或豹群守護時，提示切換獵鷹守護或雄鷹守護。", "Напоминает о недостающих эффектах вне боя и зон отдыха. В группе подходит любой ранг или вариант. В бою предлагает сменить дух гепарда или стаи на дух сокола или ястреба." },
     FOREVER_CLASS_BUFF_NONE = { "No supported personal buffs learned yet.", "当前角色尚未学会受支持的自身增益。", "目前角色尚未學會支援的自身增益。", "Поддерживаемые личные эффекты ещё не изучены." },
@@ -531,11 +537,24 @@ local SETTINGS_STRINGS = {
     FOREVER_BUFF_DEMON_ARMOR = { "Warlock armor", "术士魔甲", "術士魔甲", "Доспехи чернокнижника" },
     AURA_TAB_CONSUMABLES = { "Food & Weapons", "进食与武器", "進食與武器", "Еда и оружие" },
     AURA_TAB_FOOD = { "Food", "进食", "進食", "Еда" },
+    AURA_TAB_FOOD_AMMO = { "Food & Ammo", "进食与弹药", "進食與彈藥", "Еда и боеприпасы" },
     AURA_TAB_AMMO = { "Ammo", "弹药", "彈藥", "Боеприпасы" },
     MASTER_SWITCHES = { "Alert master switches", "提醒总开关", "提醒總開關", "Главные переключатели" },
     MASTER_MODULES = { "Alert modules", "提醒模块", "提醒模組", "Модули напоминаний" },
     MASTER_SWITCHES_HINT = { "Turning a module off stops its events, timers and scans completely.", "关闭后对应模块会停止注册事件、刷新和扫描，完全静默。", "關閉後對應模組會停止註冊事件、重新整理和掃描，完全靜默。", "При отключении модуль перестаёт регистрировать события, обновляться и сканировать данные." },
-    MASTER_PET_ENABLED = { "Pet alerts (main feature)", "宠物提醒（主要功能）", "寵物提醒（主要功能）", "Напоминания о питомце (основная функция)" },
+    MASTER_PAGE_DESC = {
+        "Choose which alert modules run. Class and buff settings only take effect while their module is on.",
+        "选择要运行的提醒模块。职业与增益设置只有在对应模块开启时才会生效。",
+        "選擇要執行的提醒模組。職業與增益設定只有在對應模組開啟時才會生效。",
+        "Выберите, какие модули работают. Настройки классов и эффектов действуют только при включённом модуле.",
+    },
+    MODULE_OFF_HINT = {
+        "This module is off. Enable it in Alert master switches.",
+        "此模块当前已关闭，请先在「提醒总开关」中开启。",
+        "此模組目前已關閉，請先在「提醒總開關」中開啟。",
+        "Модуль выключен. Включите его в «Главных переключателях».",
+    },
+    MASTER_PET_ENABLED = { "Class alerts (pets & stance)", "职业提醒（宠物与姿态）", "職業提醒（寵物與姿態）", "Классовые напоминания (питомец и стойка)" },
     MASTER_PET_HINT = { "On by default. Turning it off stops pet status, feeding, warrior stance and their voice reminders.", "默认开启。关闭后停止宠物状态、喂养、战士姿态及相关语音提醒。", "預設開啟。關閉後停止寵物狀態、餵食、戰士姿態及相關語音提醒。", "Включено по умолчанию. Отключает напоминания о питомце, кормлении и стойке воина, а также их озвучку." },
     MASTER_BUFF_ENABLED = { "Buff alerts", "增益提醒", "增益提醒", "Напоминания об эффектах" },
     MASTER_BUFF_HINT = { "Off by default. Turning it on starts the buff and supply reminders selected in Buff Alerts.", "默认关闭。开启后，按「增益提醒」里勾选的项目检查增益和补给。", "預設關閉。開啟後，按「增益提醒」裡勾選的項目檢查增益和補給。", "Выключено по умолчанию. Включает выбранные в разделе эффектов напоминания о баффах и припасах." },
@@ -629,16 +648,20 @@ local SETTINGS_STRINGS = {
     FOREVER_WARRIOR_FORM_MENU = { "Stance alerts", "姿态提醒", "姿態提醒", "Предупреждения о стойках" },
     FOREVER_WARRIOR_FORM_MENU_HINT = { "Right-click to choose stance alerts.", "右键选择要提醒的姿态。", "右鍵選擇要提醒的姿態。", "Щёлкните правой кнопкой, чтобы выбрать стойки." },
     SUPPORT_FOREVER_PALADIN = {
-        "Select the auras you want to be warned about when you activate them yourself. You can select more than one.\n"
+        "These switches warn when the checked auras are active. The missing-aura reminder is under Buff Alerts > Class Buffs > Paladin auras.\n"
+            .. "Select the auras you want to be warned about when you activate them yourself. You can select more than one.\n"
             .. "If you tank with Devotion Aura, select Retribution Aura and Concentration Aura. Activating either one shows an alert to remind you to switch back to Devotion Aura.\n"
             .. "Right-click the alert icon whenever it appears to change your selection.",
-        "勾选你想在自己开启时收到提醒的光环，可多选。\n"
+        "这些开关是在勾选的光环处于激活状态时提醒；缺少光环的提醒在「增益提醒 > 职业增益 > 圣骑士光环」。\n"
+            .. "勾选你想在自己开启时收到提醒的光环，可多选。\n"
             .. "比如你在副本里打坦克，平时开虔诚光环，可以勾选「惩罚光环」和「专注光环」。临时开了其中一个就会出现提醒，免得忘了切回虔诚光环。\n"
             .. "提醒图标出现时，右键点击即可修改勾选。",
-        "勾選你想在自己開啟時收到提醒的光環，可複選。\n"
+        "這些開關是在勾選的光環處於啟用狀態時提醒；缺少光環的提醒在「增益提醒 > 職業增益 > 聖騎士光環」。\n"
+            .. "勾選你想在自己開啟時收到提醒的光環，可複選。\n"
             .. "例如你在副本裡當坦克，平時開虔誠光環，可以勾選「懲罰光環」和「專注光環」。暫時開啟其中一個就會出現提醒，免得忘了切回虔誠光環。\n"
             .. "提醒圖示出現時，按右鍵即可修改勾選。",
-        "Выберите ауры, при включении которых вы хотите получать предупреждение. Можно выбрать несколько.\n"
+        "Эти переключатели предупреждают, когда выбранные ауры активны. Напоминание об отсутствии ауры находится в разделе «Напоминания об эффектах → Классовые эффекты → Ауры паладина».\n"
+            .. "Выберите ауры, при включении которых вы хотите получать предупреждение. Можно выбрать несколько.\n"
             .. "Если вы танкуете с аурой благочестия, отметьте ауру воздаяния и ауру сосредоточенности. Если вы включите любую из них, появится напоминание вернуться к ауре благочестия.\n"
             .. "Щёлкните правой кнопкой по значку предупреждения, чтобы изменить выбор.",
     },

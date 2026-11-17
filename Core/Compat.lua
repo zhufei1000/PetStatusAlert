@@ -268,25 +268,28 @@ local foreverPetStatuses = { "NO_PET", "PET_DEAD", "PASSIVE", "DEFENSIVE", "AGGR
 PSA.PET_STATUS_ORDER = isForever and foreverPetStatuses or retailPetStatuses
 
 local retailClasses = { "HUNTER", "WARLOCK", "MAGE", "DEATHKNIGHT", "WARRIOR" }
-local foreverClasses = { "HUNTER", "WARLOCK", "MAGE", "WARRIOR", "PALADIN" }
-local settingsClasses = { "HUNTER", "WARLOCK", "MAGE", "DEATHKNIGHT", "WARRIOR", "PALADIN" }
+local foreverClasses = { "HUNTER", "WARLOCK", "MAGE", "WARRIOR" }
+local settingsClasses = { "HUNTER", "WARLOCK", "MAGE", "DEATHKNIGHT", "WARRIOR" }
 PSA.WARRIOR_STATUS_KEY = "WARRIOR_DEFENSIVE_STANCE"
 PSA.WRONG_PET_STATUS_KEY = "WARLOCK_WRONG_PET"
 PSA.WARLOCK_SPECS = { 265, 266, 267 }
 local warriorStatuses = { PSA.WARRIOR_STATUS_KEY }
+-- Paladin wrong-aura alerts are intentionally disabled for now. Keep the aura
+-- rank table because the Class Buffs tab still uses it for the missing-aura
+-- reminder, and ForeverBuffs reads the active aura through the form API.
+local paladinAuraEntries = {
+    { "FOREVER_PALADIN_DEVOTION", {465, 10290, 643, 10291, 1032, 10292, 10293} },
+    { "FOREVER_PALADIN_RETRIBUTION", {7294, 10298, 10299, 10300, 10301} },
+    { "FOREVER_PALADIN_CONCENTRATION", {19746} },
+    { "FOREVER_PALADIN_SHADOW_RESISTANCE", {19876, 19895, 19896} },
+    { "FOREVER_PALADIN_FROST_RESISTANCE", {19888, 19897, 19898} },
+    { "FOREVER_PALADIN_FIRE_RESISTANCE", {19891, 19899, 19900} },
+}
 local foreverFormAlerts = {
     WARRIOR = {
         { "FOREVER_WARRIOR_BATTLE", {2457} },
         { "FOREVER_WARRIOR_DEFENSIVE", {71} },
         { "FOREVER_WARRIOR_BERSERKER", {2458} },
-    },
-    PALADIN = {
-        { "FOREVER_PALADIN_DEVOTION", {465, 10290, 643, 10291, 1032, 10292, 10293} },
-        { "FOREVER_PALADIN_RETRIBUTION", {7294, 10298, 10299, 10300, 10301} },
-        { "FOREVER_PALADIN_CONCENTRATION", {19746} },
-        { "FOREVER_PALADIN_SHADOW_RESISTANCE", {19876, 19895, 19896} },
-        { "FOREVER_PALADIN_FROST_RESISTANCE", {19888, 19897, 19898} },
-        { "FOREVER_PALADIN_FIRE_RESISTANCE", {19891, 19899, 19900} },
     },
 }
 local formStatuses, formKeysBySpell, formIconSpells = {}, {}, {}
@@ -312,11 +315,29 @@ function PSA.GetForeverFormAlertBySpell(classFile, spellID)
 end
 
 -- The missing-aura reminder prefers the highest known rank of Devotion Aura.
+-- Keep the Paladin spell mapping even though the wrong-aura status page is off.
 local paladinAuraSpells = {}
-for index = #foreverFormAlerts.PALADIN, 1, -1 do
-    for _, id in ipairs(foreverFormAlerts.PALADIN[index][2]) do paladinAuraSpells[#paladinAuraSpells + 1] = id end
+local paladinSpellKeys = formKeysBySpell.PALADIN or {}
+for index = #paladinAuraEntries, 1, -1 do
+    local key, ranks = paladinAuraEntries[index][1], paladinAuraEntries[index][2]
+    for _, id in ipairs(ranks) do
+        paladinSpellKeys[id] = key
+        paladinAuraSpells[#paladinAuraSpells + 1] = id
+    end
 end
+formKeysBySpell.PALADIN = paladinSpellKeys
 PSA.FOREVER_PALADIN_AURA_SPELLS = paladinAuraSpells
+
+-- Modern clients return icon, active, castable, spellID. Some Classic-era
+-- interfaces still return icon, name, active, castable, spellID. Normalize both
+-- so Forever/Wrath-era API differences cannot silently disable stance alerts.
+local function ReadShapeshiftForm(index)
+    local _, second, third, fourth, fifth = GetShapeshiftFormInfo(index)
+    if type(second) == "string" then
+        return third, fifth
+    end
+    return second, fourth
+end
 
 if isForever and type(GetNumShapeshiftForms) == "function" and type(GetShapeshiftFormInfo) == "function" then
     function PSA.ReadForeverFormAlert(classFile)
@@ -325,11 +346,30 @@ if isForever and type(GetNumShapeshiftForms) == "function" and type(GetShapeshif
         local count = GetNumShapeshiftForms()
         if not PSA.IsAccessibleValue(count) or type(count) ~= "number" then return end
         for index = 1, count do
-            local _, active, _, spellID = GetShapeshiftFormInfo(index)
+            local active, spellID = ReadShapeshiftForm(index)
             if PSA.IsAccessibleValue(active) and active and PSA.IsAccessibleValue(spellID) then
                 return spellKeys[spellID]
             end
         end
+    end
+
+    -- Any active aura on the Paladin bar satisfies the generic "Paladin auras"
+    -- reminder, including a rank this build does not know about. Do not require
+    -- the form spell ID to be in our rank table here: a missing rank would
+    -- otherwise trigger a false "no aura" warning while an aura is active.
+    function PSA.HasActiveForeverForm(classFile)
+        local spellKeys = formKeysBySpell[classFile]
+        if not spellKeys then return end
+        local count = GetNumShapeshiftForms()
+        if not PSA.IsAccessibleValue(count) or type(count) ~= "number" then return end
+        for index = 1, count do
+            local active, spellID = ReadShapeshiftForm(index)
+            if PSA.IsAccessibleValue(active) and active then
+                if classFile == "PALADIN" then return true end
+                if PSA.IsAccessibleValue(spellID) and spellKeys[spellID] then return true end
+            end
+        end
+        return false
     end
 end
 
@@ -388,7 +428,11 @@ function PSA.GetAlertClasses(forever)
 end
 
 function PSA.GetAlertSettingsClasses()
-    return settingsClasses
+    -- Paladin is a Forever-only class; do not add a dead Paladin page to the
+    -- Retail settings. Forever keeps all classes so the read-only Retail pages
+    -- remain available there.
+    if isForever then return settingsClasses end
+    return retailClasses
 end
 
 function PSA.GetClassAlertStatuses(classFile, forever)

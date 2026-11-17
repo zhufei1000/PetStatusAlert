@@ -132,7 +132,10 @@ local coverage = 0
 local enabled, watching, snapshotOK, inEncounter, inCombat = false, false, false, false, false
 local pending, planDirty, auraDirty
 local eventFrame
-local watchingAspectCasts = false
+local watchingAspectCasts, watchingCastEvents = false, false
+-- True only while the Paladin aura family is enabled: the form-bar and cast
+-- watchers are pure overhead when the missing-aura reminder is switched off.
+local watchPaladinAura = false
 local lastAspect, aspectInstance, combatAspect
 
 local function SetWatch(want)
@@ -159,9 +162,9 @@ local function Eligible()
         and not (C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret())
 end
 
-local function SetAspectCastWatch(want)
-    if want == watchingAspectCasts then return end
-    watchingAspectCasts = want
+local function SetCastWatch(want)
+    if want == watchingCastEvents then return end
+    watchingCastEvents = want
     if want then
         if not eventFrame.RegisterUnitEvent
             or not pcall(eventFrame.RegisterUnitEvent, eventFrame, SPELLCAST_SUCCEEDED, "player") then
@@ -171,6 +174,20 @@ local function SetAspectCastWatch(want)
         eventFrame:UnregisterEvent(SPELLCAST_SUCCEEDED)
         lastAspect, aspectInstance, combatAspect = nil, nil, nil
     end
+end
+
+local function UpdateCastWatch()
+    -- Paladins use the cast event as a backup for the aura/form bar. Their
+    -- aura choices also arrive as shapeshift events, but not every build emits
+    -- them for the aura bar.
+    SetCastWatch(watchingAspectCasts or watchPaladinAura)
+end
+
+local function SetAspectCastWatch(want)
+    if want == watchingAspectCasts then return end
+    watchingAspectCasts = want
+    if not want then lastAspect, aspectInstance, combatAspect = nil, nil, nil end
+    UpdateCastWatch()
 end
 
 local function RenderCombatAspect()
@@ -245,34 +262,53 @@ local function UpdateInstance(id, key)
     instances[id] = key
 end
 
+local snapshotAspect, snapshotAspectInstance
+local function RecordAura(aura)
+    local key, id, spell = Classify(aura)
+    if key == false then return false end
+    if key then UpdateInstance(id, key) end
+    if key == "ASPECT" then snapshotAspect, snapshotAspectInstance = spell, id end
+    return true
+end
+
 local function ReadSnapshot()
     instances, counts, coverage = {}, {}, 0
-    local foundAspect, foundInstance
-    local function Record(aura)
-        local key, id, spell = Classify(aura)
-        if key == false then return false end
-        if key then UpdateInstance(id, key) end
-        if key == "ASPECT" then foundAspect, foundInstance = spell, id end
-        return true
-    end
+    snapshotAspect, snapshotAspectInstance = nil, nil
     if C_UnitAuras.GetUnitAuras then
         local ok, auras = pcall(C_UnitAuras.GetUnitAuras, "player", "HELPFUL")
         if not ok or not ReadableTable(auras) then return false end
-        for _, aura in ipairs(auras) do if not Record(aura) then return false end end
+        for _, aura in ipairs(auras) do if not RecordAura(aura) then return false end end
     else
         for index = 1, 255 do
             local ok, aura = pcall(C_UnitAuras.GetAuraDataByIndex, "player", index, "HELPFUL")
             if not ok or not IsAccessible(aura) then return false end
             if not aura then break end
-            if not Record(aura) then return false end
+            if not RecordAura(aura) then return false end
         end
     end
-    lastAspect, aspectInstance = foundAspect, foundInstance
+    -- Paladin auras live on the aura/form bar and are not always returned by
+    -- UnitAura. Fall back to the form API so the missing-aura reminder does not
+    -- warn while an aura is actually active.
+    if not counts.PALADIN_AURA and watchPaladinAura and definitions.PALADIN_AURA then
+        local active
+        if PSA.HasActiveForeverForm then
+            active = PSA.HasActiveForeverForm("PALADIN")
+        elseif PSA.ReadForeverFormAlert then
+            active = PSA.ReadForeverFormAlert("PALADIN") ~= nil
+        end
+        if active then
+            counts.PALADIN_AURA = 1
+            coverage = coverage + definitions.PALADIN_AURA.coverageBit
+        end
+    end
+    lastAspect, aspectInstance = snapshotAspect, snapshotAspectInstance
     return true
 end
 
+local missingBuffer = {}
 local function Render()
-    local missing = {}
+    local missing = missingBuffer
+    for index = #missing, 1, -1 do missing[index] = nil end
     if snapshotOK then
         for _, entry in ipairs(active) do
             local key = entry.def.key
@@ -343,16 +379,26 @@ local events = {
     "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_DEAD", "PLAYER_ALIVE", "PLAYER_UNGHOST",
     "PLAYER_UPDATE_RESTING", "ADDON_RESTRICTION_STATE_CHANGED", "ENCOUNTER_START", "ENCOUNTER_END",
 }
+-- Paladin auras change on the form bar, which does not always emit UNIT_AURA.
+local paladinEvents = { "UPDATE_SHAPESHIFT_FORM", "UPDATE_SHAPESHIFT_FORMS" }
 local function OnEvent(_, event, unit, _, spell)
     if not enabled then return end
     if event == SPELLCAST_SUCCEEDED then
-        if not watchingAspectCasts or not IsAccessible(unit) or unit ~= "player"
+        if not watchingCastEvents or not IsAccessible(unit) or unit ~= "player"
             or not IsAccessible(spell) or type(spell) ~= "number" then return end
-        if bySpell[spell] ~= definitions.ASPECT then return end
-        if lastAspect ~= spell then
-            local wasTravel = IsTravelAspect(lastAspect)
-            lastAspect, aspectInstance = spell, nil
-            if wasTravel ~= IsTravelAspect(spell) and CombatActive() then RenderCombatAspect() end
+        if watchingAspectCasts and bySpell[spell] == definitions.ASPECT then
+            if lastAspect ~= spell then
+                local wasTravel = IsTravelAspect(lastAspect)
+                lastAspect, aspectInstance = spell, nil
+                if wasTravel ~= IsTravelAspect(spell) and CombatActive() then RenderCombatAspect() end
+            end
+            return
+        end
+        if watchPaladinAura and PSA.GetForeverFormAlertBySpell
+            and PSA.GetForeverFormAlertBySpell("PALADIN", spell) then
+            -- Backup for builds that do not fire a shapeshift event for the
+            -- Paladin aura bar: recasting any known aura re-reads the bar.
+            QueueRefresh(false, true)
         end
         return
     end
@@ -411,8 +457,21 @@ function PSA.RefreshForeverClassBuffs()
             inCombat = InCombatLockdown() and true or false
         else
             for _, event in ipairs(events) do eventFrame:UnregisterEvent(event) end
+            for _, event in ipairs(paladinEvents) do eventFrame:UnregisterEvent(event) end
+            watchingAspectCasts, watchPaladinAura = false, false
+            SetCastWatch(false)
             StandDown()
         end
     end
-    if enabled then QueueRefresh(true, true) end
+    if enabled then
+        watchPaladinAura = class == "PALADIN" and PSA.GetForeverClassBuffEnabled("PALADIN_AURA") or false
+        -- Register only when the player can actually use the aura/form bar and
+        -- the Paladin aura reminder is on. Stance events never fire for
+        -- Hunters, Warlocks or Mages.
+        for _, event in ipairs(paladinEvents) do
+            if watchPaladinAura then eventFrame:RegisterEvent(event) else eventFrame:UnregisterEvent(event) end
+        end
+        UpdateCastWatch()
+        QueueRefresh(true, true)
+    end
 end

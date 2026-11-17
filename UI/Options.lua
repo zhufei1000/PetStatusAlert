@@ -261,6 +261,15 @@ local function CreateButton(parent, label, width, height)
     return button
 end
 
+-- Contextual master switch for the tab row. Keeping it next to the settings it
+-- controls makes it obvious why a configured reminder is not firing.
+local function CreateMasterCheck(parent, labelText)
+    local check = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+    check:SetSize(22, 22)
+    local label = CreateText(parent, "GameFontNormal", labelText or "", 12, STYLE.text)
+    return check, label
+end
+
 local function CreateSection(parent, titleText, descText, yOffset, height)
     local box = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     box:SetSize(LAYOUT.contentWidth, height)
@@ -1400,10 +1409,11 @@ end
 
 local function DrawMasterPage(parent)
     local page, finish = CreateScrollablePage(parent)
-    CreatePageHeader(page, UI.MASTER_SWITCHES, "")
+    local _, masterDesc = CreatePageHeader(page, UI.MASTER_SWITCHES, UI.MASTER_PAGE_DESC)
+    local top = -math.max(52, 36 + math.ceil((masterDesc and masterDesc:GetStringHeight()) or 0))
 
     local refreshers = {}
-    local masterBox = CreateSection(page, UI.MASTER_MODULES, UI.MASTER_SWITCHES_HINT, -52, 160)
+    local masterBox = CreateSection(page, UI.MASTER_MODULES, UI.MASTER_SWITCHES_HINT, top, 160)
     local function AddMasterCheck(y, label, hint, getter, setter)
         local check = CreateRuleCheck(masterBox, label, 18, y, LAYOUT.contentWidth - 76, setter)
         TrackCheck(refreshers, check, getter)
@@ -1419,7 +1429,7 @@ local function DrawMasterPage(parent)
     masterY = AddMasterCheck(masterY, UI.MASTER_BUFF_ENABLED, UI.MASTER_BUFF_HINT,
         PSA.GetBuffAlertsEnabled, PSA.SetBuffAlertsEnabled)
     masterBox:SetHeight(-masterY + 4)
-    finish(66 + masterBox:GetHeight())
+    finish(-top + 14 + masterBox:GetHeight())
     return function()
         for _, refresh in ipairs(refreshers) do refresh() end
     end
@@ -1465,6 +1475,12 @@ local function DrawGeneralPage(parent)
 
     local aboutY = languageY - 188 - 12
     local aboutBox = CreateSection(page, TEXT.SECTION_ABOUT, UI.SUPPORT or "", aboutY, 220)
+    -- The support note length differs by client and language. Shift the info
+    -- block down and grow the panel instead of letting a long note collide.
+    local supportHeight = math.ceil((aboutBox.sectionDesc and aboutBox.sectionDesc:GetStringHeight()) or 0)
+    local supportExtra = math.max(0, supportHeight - 24)
+    aboutBox:SetHeight(220 + supportExtra)
+    local infoTop = -78 - supportExtra
 
     local version = GetAddonVersion()
 
@@ -1478,12 +1494,12 @@ local function DrawGeneralPage(parent)
     for index, lineText in ipairs(infoLines) do
         if lineText and lineText ~= "" then
             local line = CreateText(aboutBox, "GameFontNormal", lineText, 13, index == 2 and STYLE.gold or STYLE.text)
-            line:SetPoint("TOPLEFT", aboutBox, "TOPLEFT", 18, -78 - ((index - 1) * 30))
+            line:SetPoint("TOPLEFT", aboutBox, "TOPLEFT", 18, infoTop - ((index - 1) * 30))
             line:SetWidth(LAYOUT.contentWidth - 36)
         end
     end
 
-    finish(-aboutY + 240)
+    finish(-aboutY + 240 + supportExtra)
     return function()
         current:SetText(GetCurrentLanguageModeText())
     end
@@ -1501,9 +1517,10 @@ function PSA.GetAuraSettingsTabs()
         if PSA.GetForeverClassBuffOptions then
             tabs[#tabs + 1] = { key = "foreverClassBuffs", titleKey = "AURA_TAB_CLASS" }
         end
-        tabs[#tabs + 1] = { key = "consumables", titleKey = "AURA_TAB_FOOD", readOnly = not isForever }
+        -- Food and ammo are both Forever supplies; keep them in one tab instead
+        -- of adding another near-identical page to the tab row.
+        tabs[#tabs + 1] = { key = "consumables", titleKey = "AURA_TAB_FOOD_AMMO" }
     end
-    tabs[#tabs + 1] = { key = "ammo", titleKey = "AURA_TAB_AMMO", readOnly = not isForever }
     return tabs
 end
 
@@ -1520,7 +1537,7 @@ local function AddRetailSupplyCheck(section, refreshers, key, text, y)
 end
 
 local function DrawForeverFoodSection(page, refreshers, offset)
-    local title = isForever and UI.FOOD_BUFF_ALERT or UI.FOREVER_CLIENT
+    local title = isForever and UI.AURA_TAB_FOOD or UI.FOREVER_CLIENT
     local hint = isForever and UI.FOOD_BUFF_HINT or (UI.OTHER_CLIENT_SETTINGS .. "\n" .. UI.FOOD_BUFF_HINT)
     local food = CreateSection(page, title, hint, -offset, 128)
     local height = math.max(128, 106 + food.sectionDesc:GetStringHeight())
@@ -1535,9 +1552,14 @@ local function DrawForeverFoodSection(page, refreshers, offset)
     return height
 end
 
+local DrawAmmoSettings
+
 local function DrawConsumableSettings(page, refreshers)
     local offset = 52
-    if not PSA.RETAIL_BUFFS then return offset + DrawForeverFoodSection(page, refreshers, offset) + 14 end
+    if not PSA.RETAIL_BUFFS then
+        offset = offset + DrawForeverFoodSection(page, refreshers, offset) + 14
+        return DrawAmmoSettings(page, refreshers, offset)
+    end
     local personal = CreateSection(page, UI.AURA_TAB_CONSUMABLES, UI.RETAIL_SUPPLY_HINT .. "\n" .. UI.RETAIL_LEAD_HINT, -offset, 190)
     local personalY = -54 - math.ceil(personal.sectionDesc:GetStringHeight())
     local function AddLead(key, label, y)
@@ -1554,7 +1576,7 @@ local function DrawConsumableSettings(page, refreshers)
     personal:SetHeight(personalHeight)
 
     offset = offset + personalHeight + 12
-    return offset + DrawForeverFoodSection(page, refreshers, offset) + 14
+    return offset
 end
 
 local function DrawShamanSupplySettings(page, refreshers)
@@ -1619,12 +1641,13 @@ local function DrawForeverClassBuffSettings(page, finish)
     end
 end
 
-local function DrawAmmoSettings(page, refreshers)
+DrawAmmoSettings = function(page, refreshers, offset)
+    offset = offset or 52
     local hint = UI.AMMO_WEAPON_HINT .. "\n" .. UI.AMMO_THRESHOLD_HINT
     if not isForever then
         hint = UI.OTHER_CLIENT_SETTINGS .. "\n" .. hint
     end
-    local section = CreateSection(page, UI.AMMO_SETTINGS, hint, -52, 124)
+    local section = CreateSection(page, UI.AMMO_SETTINGS, hint, -offset, 124)
     section:SetHeight(math.max(124, 90 + section.sectionDesc:GetStringHeight()))
 
     local label = CreateText(section, "GameFontNormal", UI.AMMO_THRESHOLD, 14, STYLE.gold)
@@ -1640,7 +1663,7 @@ local function DrawAmmoSettings(page, refreshers)
     refreshers[#refreshers + 1] = function()
         input:SetText(tostring(isForever and PSA.GetAmmoThreshold() or PSA.DEFAULT_AMMO_THRESHOLD))
     end
-    local height = 66 + section:GetHeight()
+    local height = offset + section:GetHeight() + 14
     if not isForever then
         input:Disable()
         input:SetAlpha(0.5)
@@ -1659,12 +1682,12 @@ end
 
 local auraSettingsPages = {
     classBuffs = DrawClassBuffSettings, consumables = DrawConsumableSettings,
-    shaman = DrawShamanSupplySettings, ammo = DrawAmmoSettings,
+    shaman = DrawShamanSupplySettings,
 }
 
 local function DrawAuraSettingsPage(parent, tab)
     local page, finish = CreateScrollablePage(parent)
-    CreatePageHeader(page, UI.AURA_SETTINGS, "")
+    CreatePageHeader(page, UI.AURA_SETTINGS, UI.AURA_PAGE_DESC)
     if tab == "foreverClassBuffs" then return DrawForeverClassBuffSettings(page, finish) end
     local refreshers = {}
     finish(auraSettingsPages[tab](page, refreshers))
@@ -1786,7 +1809,7 @@ local function CreateOptionsFrame()
     frame.activePage = "masters"
     frame.viewForever = isForever
     local classes = PSA.GetAlertSettingsClasses()
-    local classesExpanded = false
+    local classesExpanded = true
     frame.navButtons = {}
     local settingsPages = {}
     local scrollOffsets = {}
@@ -1828,6 +1851,39 @@ local function CreateOptionsFrame()
         frame.auraButtons[tab.key] = button
     end
 
+    -- The module masters live in two places on purpose: here for the pages they
+    -- control, and on the master page for a single overview. The buff module is
+    -- off by default, so setting it right next to the buff options prevents the
+    -- "I configured it but nothing happens" trap.
+    local UpdateMasterChecks
+    frame.classMasterCheck, frame.classMasterLabel = CreateMasterCheck(clientTabs, UI.MASTER_PET_ENABLED)
+    frame.classMasterCheck:SetPoint("TOPRIGHT", clientTabs, "TOPRIGHT", -2, -3)
+    frame.classMasterLabel:SetPoint("RIGHT", frame.classMasterCheck, "LEFT", -4, 0)
+    AddTooltip(frame.classMasterCheck, UI.MASTER_PET_HINT)
+    frame.classMasterCheck:SetScript("OnClick", function(self)
+        PSA.SetPetAlertsEnabled(self:GetChecked() and true or false)
+        UpdateMasterChecks()
+    end)
+
+    frame.auraMasterCheck, frame.auraMasterLabel = CreateMasterCheck(auraTabs, UI.MASTER_BUFF_ENABLED)
+    frame.auraMasterCheck:SetPoint("TOPRIGHT", auraTabs, "TOPRIGHT", -2, -3)
+    frame.auraMasterLabel:SetPoint("RIGHT", frame.auraMasterCheck, "LEFT", -4, 0)
+    AddTooltip(frame.auraMasterCheck, UI.MASTER_BUFF_HINT)
+    frame.auraMasterCheck:SetScript("OnClick", function(self)
+        PSA.SetBuffAlertsEnabled(self:GetChecked() and true or false)
+        UpdateMasterChecks()
+    end)
+
+    UpdateMasterChecks = function()
+        local petEnabled = PSA.GetPetAlertsEnabled()
+        frame.classMasterCheck:SetChecked(petEnabled)
+        frame.classMasterLabel:SetTextColor(ColorRGBA(petEnabled and STYLE.text or STYLE.muted))
+        local buffEnabled = PSA.GetBuffAlertsEnabled()
+        frame.auraMasterCheck:SetChecked(buffEnabled)
+        frame.auraMasterLabel:SetTextColor(ColorRGBA(buffEnabled and STYLE.text or STYLE.muted))
+    end
+    UpdateMasterChecks()
+
     local function SetTabButtonSelected(button, selected, readOnly)
         SetIconModeButtonState(button, selected)
         button:SetButtonState(selected and "PUSHED" or "NORMAL", selected)
@@ -1835,11 +1891,16 @@ local function CreateOptionsFrame()
     end
 
     local function RefreshClientTabs(classPage)
-        clientTabs:SetShown(classPage)
+        local anySupported = false
         for key, button in pairs(frame.clientButtons) do
             local forever = key == "forever"
+            local supported = not classPage or PSA.GetClassAlertStatuses(frame.activePage, forever) ~= nil
+            button:SetShown(classPage and supported)
+            if supported then anySupported = true end
             SetTabButtonSelected(button, forever == frame.viewForever, forever ~= isForever)
         end
+        clientTabs:SetShown(classPage and anySupported)
+        UpdateMasterChecks()
     end
 
     local function RefreshAuraTabs(auraPage)
@@ -1847,6 +1908,7 @@ local function CreateOptionsFrame()
         for key, button in pairs(frame.auraButtons) do
             SetTabButtonSelected(button, key == frame.activeAuraTab, button.readOnly)
         end
+        UpdateMasterChecks()
     end
 
     local function RefreshNavButtons()
@@ -1871,6 +1933,11 @@ local function CreateOptionsFrame()
     local function DrawPage()
         local key = frame.activePage
         local classPage = frame.navButtons[key].isClass == true
+        if classPage and not PSA.GetClassAlertStatuses(key, frame.viewForever) then
+            -- Open the client tab that actually supports this class. Forever is
+            -- preferred when both exist, otherwise the other client's read-only view.
+            frame.viewForever = PSA.GetClassAlertStatuses(key, isForever) ~= nil and isForever or not isForever
+        end
         local auraPage = key == "auras"
         local pageKey = auraPage and (key .. ":" .. frame.activeAuraTab) or key
         local locale = GetActiveLocale()
@@ -1997,6 +2064,8 @@ local function CreateOptionsFrame()
             button:SetText(PSA.GetAuraSettingsTabTitle(tab))
             AutoFitButton(button, 84)
         end
+        if frame.classMasterLabel then frame.classMasterLabel:SetText(UI.MASTER_PET_ENABLED) end
+        if frame.auraMasterLabel then frame.auraMasterLabel:SetText(UI.MASTER_BUFF_ENABLED) end
     end
 
     statusLine = CreateText(frame, "GameFontHighlightSmall", UI.FOOTER or "/psa", 12, STYLE.text)

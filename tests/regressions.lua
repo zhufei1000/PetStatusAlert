@@ -409,6 +409,13 @@ Test("manager definition changes with language and ignores current specializatio
     assert(translated ~= original and translated.tabs[1].title == "Alert master switches"
         and translated.tabs[2].title == "Hunter", "manager reused old-language tabs")
     assert(session.GetSettingsDefinition({}) == translated)
+    local aurIndex, displayIndex
+    for index, tab in ipairs(translated.tabs) do
+        if tab.key == "auras" then aurIndex = index end
+        if tab.key == "display" then displayIndex = index end
+    end
+    assert(aurIndex and displayIndex and aurIndex < displayIndex,
+        "buff tabs must sit before display/voice/general")
     for index = #session.STATUS_ORDER, 1, -1 do session.STATUS_ORDER[index] = nil end
     session.STATUS_ORDER[1] = "WARRIOR_DEFENSIVE_STANCE"
     assert(session.GetSettingsDefinition({}) == translated, "player status list changed the class catalog")
@@ -422,10 +429,14 @@ Test("standalone navigation edits another class from an unsupported character", 
         statusEnabled = {NO_PET = true}, textColors = {NO_PET = {r = 0.5, g = 0.3, b = 0.2, a = 1}}})
     session.OpenOptionsFrame()
     local frame = Upvalue(session.RefreshOptionsFrameLocale, "optionsFrame")
-    assert(not frame.navButtons.HUNTER:IsShown() and not frame.clientButtons.retail:IsVisible())
-    assert(frame.navButtons.classes.text:GetText() == "+ Pet Alerts")
+    assert(frame.navButtons.HUNTER:IsShown() and not frame.clientButtons.retail:IsVisible())
+    assert(frame.navButtons.classes.text:GetText() == "- " .. session.UI.PET_SETTINGS)
     frame.navButtons.classes.scripts.OnClick()
-    assert(frame.navButtons.HUNTER:IsShown() and frame.navButtons.classes.text:GetText() == "- Pet Alerts")
+    assert(not frame.navButtons.HUNTER:IsShown()
+        and frame.navButtons.classes.text:GetText() == "+ " .. session.UI.PET_SETTINGS)
+    frame.navButtons.classes.scripts.OnClick()
+    assert(frame.navButtons.HUNTER:IsShown()
+        and frame.navButtons.classes.text:GetText() == "- " .. session.UI.PET_SETTINGS)
     frame.navButtons.WARLOCK.scripts.OnClick()
     local warlockPage = frame.currentPage
     assert(not frame.viewForever and frame.clientButtons.retail:IsVisible())
@@ -547,7 +558,6 @@ Test("Forever opens its own class tab and shows Retail Warrior defaults", functi
     local session = LoadLanguageSession({language = "zhCN"})
     session.OpenOptionsFrame()
     local frame = Upvalue(session.RefreshOptionsFrameLocale, "optionsFrame")
-    frame.navButtons.classes.scripts.OnClick()
     assert(frame.navButtons.WARRIOR:IsShown() and frame.navButtons.DEATHKNIGHT:IsShown())
     frame.navButtons.MAGE.scripts.OnClick()
     assert(frame.viewForever and frame.navButtons.MAGE.text:GetText() == "法师")
@@ -740,62 +750,33 @@ Test("Forever Warrior icon opens a multi-select menu that outlives the visible a
     GetNumShapeshiftForms, GetShapeshiftFormInfo, C_Spell.GetSpellTexture = oldCount, oldForm, oldTexture
 end)
 
-Test("Forever Paladin settings and the alert menu share the same aura selections", function()
-    local oldBuild, oldClass, oldMenu = GetBuildInfo, UnitClass, MenuUtil
-    local oldCount, oldForm, oldTexture = GetNumShapeshiftForms, GetShapeshiftFormInfo, C_Spell.GetSpellTexture
+Test("Forever Paladin keeps missing-aura buffs but has no wrong-aura page", function()
+    local oldBuild, oldClass, oldBook = GetBuildInfo, UnitClass, C_SpellBook
+    local oldAuras, oldTexture = C_UnitAuras, C_Spell.GetSpellTexture
     GetBuildInfo = function() return "1.60.1", "70938", "", 16001 end
     UnitClass = function() return "Paladin", "PALADIN" end
-    GetNumShapeshiftForms = function() return 1 end
-    GetShapeshiftFormInfo = function() return nil, true, true, 10293 end
+    C_SpellBook = {IsSpellKnown = function(id) return id == 465 end}
+    C_UnitAuras = {GetUnitAuras = function() return {} end}
     C_Spell.GetSpellTexture = function(id) return id end
-    local entries = {}
-    MenuUtil = { CreateContextMenu = function(_, build)
-        build(UIParent, {
-            CreateTitle = function(_, title) assert(title == "光环提醒") end,
-            CreateCheckbox = function(_, _, selected, toggle, key)
-                entries[key] = { selected = selected, toggle = toggle }
-            end,
-        })
-    end }
-
-    local session = LoadLanguageSession({language = "zhCN"})
-    local keys = session.GetClassAlertStatuses("PALADIN", true)
-    session.OpenOptionsFrame()
-    local frame = Upvalue(session.RefreshOptionsFrameLocale, "optionsFrame")
-    frame.navButtons.classes.scripts.OnClick()
-    frame.navButtons.PALADIN.scripts.OnClick()
-    local page = frame.currentPage.children[1].children[1]
-    assert(#page.children == 9 and page.children[1]:GetText() == "圣骑士")
-    local check = assert(FindNode(page.children[3], function(node) return node.template == "UICheckButtonTemplate" end))
-    assert(not check:GetChecked())
-    check:SetChecked(true)
-    check.scripts.OnClick(check)
-    assert(session.currentStatusKey == keys[1] and session.alertText:GetText() == "已开启虔诚光环")
-    assert(session.alertText.parent.icon.texture == 465)
-    local button = assert(FindNode(session.alertText.parent, function(node)
-        return node.clicks and node.clicks[1] == "RightButtonUp"
-    end))
-    button.scripts.OnClick(button, "RightButton")
-    for index, key in ipairs(keys) do assert(entries[key].selected(key) == (index == 1)) end
-    entries[keys[2]].toggle(keys[2])
-    entries[keys[6]].toggle(keys[6])
-    entries[keys[1]].toggle(keys[1])
-    assert(not button:IsVisible() and not session.currentStatusKey)
-
-    local managerTab
-    for _, tab in ipairs(session.GetSettingsDefinition({}).tabs) do
-        if tab.key == "PALADIN" then managerTab = tab end
-    end
-    assert(managerTab and managerTab.subtabs[1].key == "forever")
-    local states = {}
-    managerTab.subtabs[1].build({ NewSection = function(_, title)
-        return setmetatable({ Check = function(_, _, get, set) assert(set); states[title] = get() end },
-            { __index = function() return noop end })
-    end, AddSection = noop })
-    for index, key in ipairs(keys) do assert(states[session.UI[key]] == (index == 2 or index == 6)) end
-
-    GetBuildInfo, UnitClass, MenuUtil = oldBuild, oldClass, oldMenu
-    GetNumShapeshiftForms, GetShapeshiftFormInfo, C_Spell.GetSpellTexture = oldCount, oldForm, oldTexture
+    local ok, err = pcall(function()
+        local session = LoadLanguageSession({language = "enUS"})
+        assert(not session.GetClassAlertStatuses("PALADIN", true))
+        assert(not session.GetForeverFormAlertStatuses("PALADIN"))
+        local hasAura = false
+        for _, option in ipairs(session.GetForeverClassBuffOptions()) do
+            if option.key == "PALADIN_AURA" then hasAura = true end
+        end
+        assert(hasAura, "the missing-aura Class Buffs option must remain")
+        for _, tab in ipairs(session.GetSettingsDefinition({}).tabs) do
+            assert(tab.key ~= "PALADIN", "Forever Paladin must not expose a class-alert page")
+        end
+        session.OpenOptionsFrame()
+        local frame = Upvalue(session.RefreshOptionsFrameLocale, "optionsFrame")
+        assert(not frame.navButtons.PALADIN)
+    end)
+    GetBuildInfo, UnitClass, C_SpellBook, C_UnitAuras, C_Spell.GetSpellTexture =
+        oldBuild, oldClass, oldBook, oldAuras, oldTexture
+    assert(ok, err)
 end)
 
 Test("Forever Mage page updates eligibility when the summon ability is learned", function()
@@ -979,9 +960,13 @@ Test("Forever threshold settings share the saved numeric value", function()
     assert(session.GetAmmoThreshold() == 100)
     assert(not session.GetBuffAlertsEnabled())
     local tabs = session.GetSettingsDefinition({}).tabs
-    local tab = tabs[#tabs]
-    assert(tab.key == "auras" and tab.title == "增益提醒")
-    assert(#tab.subtabs == 2 and tab.subtabs[1].key == "consumables" and tab.subtabs[2].key == "ammo")
+    local tab
+    for _, candidate in ipairs(tabs) do
+        if candidate.key == "auras" then tab = candidate; break end
+    end
+    assert(tab and tab.title == "增益提醒")
+    local consumablesTab = tab.subtabs[#tab.subtabs]
+    assert(consumablesTab.key == "consumables")
     local section = {Check = function(_, _, get, set)
         assert(get(), "Forever food suboptions must be checked by default")
         set(false)
@@ -994,18 +979,16 @@ Test("Forever threshold settings share the saved numeric value", function()
         assert(set("160") == 160 and get() == 160)
     end}
     local managerPage = {NewSection = function() return section end, AddSection = noop}
-    tab.subtabs[1].build(managerPage)
-    tab.subtabs[2].build(managerPage)
+    consumablesTab.build(managerPage)
 
     session.OpenOptionsFrame()
     local foreverFrame = Upvalue(session.RefreshOptionsFrameLocale, "optionsFrame")
     foreverFrame.navButtons.auras.scripts.OnClick()
+    foreverFrame.auraButtons.consumables.scripts.OnClick()
     for _, key in ipairs({"FOOD_BUFF_ALERT", "FOOD_PICKER_ENABLE"}) do
         local label = assert(FindText(foreverFrame.currentPage, session.UI[key]))
         assert(not label.point[2]:GetChecked(), "standalone must preserve the saved opt-out")
     end
-    foreverFrame.auraButtons.ammo.scripts.OnClick()
-    assert(not FindText(foreverFrame.currentPage, session.UI.FOOD_PICKER_ENABLE))
     local page = foreverFrame.currentPage.children[1].children[1]
     local standaloneSection = page.children[#page.children]
     local input = standaloneSection.children[#standaloneSection.children]
@@ -1026,11 +1009,7 @@ Test("Forever threshold settings share the saved numeric value", function()
     retail.OpenOptionsFrame()
     local frame = Upvalue(retail.RefreshOptionsFrameLocale, "optionsFrame")
     frame.navButtons.auras.scripts.OnClick()
-    frame.auraButtons.ammo.scripts.OnClick()
-    local retailPage = frame.currentPage.children[1].children[1]
-    local retailSection = retailPage.children[#retailPage.children]
-    local retailInput = retailSection.children[#retailSection.children]
-    assert(retailInput.disabled and retailInput:GetText() == "100" and not retailInput.scripts.OnEditFocusLost)
+    assert(not frame.auraButtons.ammo, "Retail must not expose the Forever-only ammo tab")
     assert(retail.GetAmmoThreshold() == 250)
 end)
 
@@ -2228,8 +2207,8 @@ Test("Retail weapon alerts follow both equipped weapons and share the pet drag a
         local tabs = s.session.GetSettingsDefinition({}).tabs
         local found
         for _, tab in ipairs(tabs) do if tab.key == "auras" then found = tab end end
-        assert(found and found.title == "增益提醒" and #found.subtabs == 3)
-        assert(found.subtabs[1].title == "职业增益" and found.subtabs[3].key == "ammo")
+        assert(found and found.title == "增益提醒" and #found.subtabs == 2)
+        assert(found.subtabs[1].title == "职业增益" and found.subtabs[2].key == "consumables")
         s.session.SetRetailSupplySetting("WEAPON", false)
         s.Flush()
         assert(not s.row:IsShown() and not s.session.addonFrame.events.UNIT_AURA and s.Pending() == 0)
@@ -2497,7 +2476,7 @@ Test("Retail shaman imbues follow specialization, weapon/shield slots, and known
         }
         for _, tab in ipairs(s.session.GetSettingsDefinition({}).tabs) do
             if tab.key == "auras" then
-                assert(#tab.subtabs == 4)
+                assert(#tab.subtabs == 3)
                 for _, sub in ipairs(tab.subtabs) do sub.build(page) end
             end
         end
@@ -2519,6 +2498,16 @@ Test("alert master switches default to pet alerts on and buff alerts off", funct
     assert(session.GetBuffAlertsEnabled() == false)
     assert(session.addonFrame.events.UNIT_PET)
     assert(not session.addonFrame.events.UNIT_AURA)
+end)
+Test("standalone pages expose the master switch they depend on", function()
+    local session = LoadLanguageSession({language = "enUS"})
+    session.OpenOptionsFrame()
+    local frame = Upvalue(session.RefreshOptionsFrameLocale, "optionsFrame")
+    assert(frame.classMasterCheck and frame.classMasterLabel and frame.auraMasterCheck and frame.auraMasterLabel)
+    assert(frame.classMasterCheck:GetChecked() == true)
+    assert(frame.auraMasterCheck:GetChecked() == false)
+    assert(frame.classMasterLabel:GetText() == session.UI.MASTER_PET_ENABLED)
+    assert(frame.auraMasterLabel:GetText() == session.UI.MASTER_BUFF_ENABLED)
 end)
 
 Test("pet master switch unregisters pet events and hides alerts", function()
@@ -2588,7 +2577,7 @@ Test("master switches open first, followed by pet settings", function()
         assert(frame.activePage == "masters")
         local nav = frame.navButtons
         assert(nav.masters.point[5] == -2 and nav.classes.point[5] == -2 - nav.masters:GetHeight())
-        assert(nav.classes.text:GetText() == "+ Pet Alerts")
+        assert(nav.classes.text:GetText() == "- " .. session.UI.PET_SETTINGS)
         assert(FindText(frame.currentPage, session.UI.MASTER_SWITCHES))
         assert(FindText(frame.currentPage, session.UI.MASTER_PET_ENABLED))
         assert(FindText(frame.currentPage, session.UI.MASTER_BUFF_ENABLED))
@@ -3009,6 +2998,14 @@ for _, example in ipairs({
             assert(reads == 0 and not anchor.events.UNIT_AURA and not anchor:IsShown())
             RestChanged(false)
             assert(reads == 1 and anchor.events.UNIT_AURA == "player")
+            if class == "PALADIN" then
+                assert(listener.events.UPDATE_SHAPESHIFT_FORM and listener.events.UPDATE_SHAPESHIFT_FORMS,
+                    "Paladin auras must watch the aura form bar")
+                assert(listener.events.UNIT_SPELLCAST_SUCCEEDED == "player")
+            else
+                assert(not listener.events.UPDATE_SHAPESHIFT_FORM and not listener.events.UPDATE_SHAPESHIFT_FORMS,
+                    "only Paladins need form-bar events")
+            end
             for _, buff in ipairs(buffs) do assert(Icon(buff[1]), "missing buff did not warn: " .. buff[1]) end
             anchor.scripts.OnEvent(anchor, "UNIT_AURA", "player", {addedAuras = added})
             assert(not anchor:IsShown(), "an alternate rank or group cast should clear the warning")
@@ -3022,6 +3019,68 @@ for _, example in ipairs({
         assert(ok, err)
     end)
 end
+
+Test("Forever Paladin missing-aura reminder reads the aura form when UnitAura omits it", function()
+    local oldBuild, oldClass, oldBook, oldAuras = GetBuildInfo, UnitClass, C_SpellBook, C_UnitAuras
+    local oldAfter, oldSpell, oldResting, oldForms, oldFormInfo =
+        C_Timer.After, C_Spell, IsResting, GetNumShapeshiftForms, GetShapeshiftFormInfo
+    local known, activeForm, reads = {[465] = true}, 465, 0
+    GetBuildInfo = function() return "1.60.1", "70888", "", 16001 end
+    UnitClass = function() return "Paladin", "PALADIN" end
+    IsResting = function() return false end
+    C_Timer.After = function(_, callback) callback() end
+    C_SpellBook = {IsSpellKnown = function(id) return known[id] == true end}
+    C_UnitAuras = {GetUnitAuras = function() reads = reads + 1; return {} end}
+    C_Spell = {GetSpellTexture = function(id) return id end, GetSpellName = function() return "Well Fed" end}
+    GetNumShapeshiftForms = function() return 1 end
+    GetShapeshiftFormInfo = function()
+        return nil, activeForm ~= nil, true, activeForm
+    end
+    local ok, err = pcall(function()
+        local session = LoadLanguageSession({buffAlertsEnabled = true, petAlertsEnabled = false,
+            foodBuffAlertEnabled = false})
+        session.RefreshForeverClassBuffs()
+        local anchor = session.addonFrame
+        local listener = Upvalue(session.RefreshForeverClassBuffs, "eventFrame")
+        assert(listener.events.UPDATE_SHAPESHIFT_FORM and listener.events.UPDATE_SHAPESHIFT_FORMS,
+            "Paladin aura changes must refresh from the form bar")
+        assert(listener.events.UNIT_SPELLCAST_SUCCEEDED == "player",
+            "Paladin aura casts are the backup for missing form events")
+        local function Icon(key)
+            return FindNode(anchor, function(node) return node.classBuffKey == key and node:IsVisible() end)
+        end
+        assert(not Icon("PALADIN_AURA"), "an active aura form must satisfy the Paladin aura reminder")
+
+        -- An unrelated cast must not force an aura scan.
+        local baseline = reads
+        listener.scripts.OnEvent(listener, "UNIT_SPELLCAST_SUCCEEDED", "player", nil, 635)
+        assert(reads == baseline and not Icon("PALADIN_AURA"))
+
+        -- A mapped aura recast refreshes even without a shapeshift event.
+        activeForm = nil
+        listener.scripts.OnEvent(listener, "UNIT_SPELLCAST_SUCCEEDED", "player", nil, 465)
+        local icon = assert(Icon("PALADIN_AURA"))
+        assert(icon.icon.texture == 465 and reads == baseline + 1)
+
+        -- Any active aura counts, including a rank this build does not know.
+        activeForm = 1234567
+        listener.scripts.OnEvent(listener, "UPDATE_SHAPESHIFT_FORM")
+        assert(not Icon("PALADIN_AURA"), "an unknown aura rank must not false-alarm")
+
+        activeForm = nil
+        listener.scripts.OnEvent(listener, "UPDATE_SHAPESHIFT_FORMS")
+        assert(Icon("PALADIN_AURA"))
+
+        session.SetForeverClassBuffEnabled("PALADIN_AURA", false)
+        assert(not listener.events.UPDATE_SHAPESHIFT_FORM and not listener.events.UPDATE_SHAPESHIFT_FORMS
+            and not listener.events.UNIT_SPELLCAST_SUCCEEDED,
+            "disabling the aura reminder must stop the form and cast watchers")
+    end)
+    GetBuildInfo, UnitClass, C_SpellBook, C_UnitAuras, C_Timer.After, C_Spell, IsResting,
+        GetNumShapeshiftForms, GetShapeshiftFormInfo =
+        oldBuild, oldClass, oldBook, oldAuras, oldAfter, oldSpell, oldResting, oldForms, oldFormInfo
+    assert(ok, err)
+end)
 
 Test("turning both alert masters off leaves no central event subscriptions after initialization", function()
     local session = LoadLanguageSession({language = "enUS", petAlertsEnabled = false,
@@ -3047,6 +3106,12 @@ Test("Retail and Forever runtime modules stay isolated", function()
         Enum = {ChatWhisperTargetStatus = {CanWhisper = 1, CanWhisperGuild = 2}}
         IsResting = function() return false end
 
+        local function HasClass(classes, classFile)
+            for _, name in ipairs(classes) do
+                if name == classFile then return true end
+            end
+        end
+
         local retail = LoadLanguageSession({language = "enUS"})
         assert(retail.RETAIL_BUFFS and retail.GetRetailSupplySetting
             and retail.HandleRetailSupplyAuraUpdate and retail.SetRetailSupplyAuraWatch)
@@ -3054,6 +3119,9 @@ Test("Retail and Forever runtime modules stay isolated", function()
             and not retail.SetForeverClassAuraWatch and not retail.SetForeverFoodAuraWatch
             and not retail.GetForeverAmmo and not retail.ReadFoodBuff)
         assert(not retail.HandleWarriorAuraChanged and not retail.WantsWarriorAuraWatch)
+        assert(HasClass(retail.GetAlertSettingsClasses(), "WARRIOR")
+            and not HasClass(retail.GetAlertSettingsClasses(), "PALADIN"),
+            "Retail settings must not contain a dead Paladin page")
         assert(not retail.addonFrame.events.UNIT_AURA and not retail.addonFrame.events.UNIT_INVENTORY_CHANGED
             and not retail.addonFrame.events.UNIT_SPELLCAST_SUCCEEDED)
 
@@ -3064,6 +3132,8 @@ Test("Retail and Forever runtime modules stay isolated", function()
         assert(forever.GetForeverClassBuffOptions and forever.HandleForeverClassAuraUpdate
             and forever.SetForeverClassAuraWatch and forever.SetForeverFoodAuraWatch)
         assert(not forever.HandleWarriorAuraChanged and not forever.WantsWarriorAuraWatch)
+        assert(not HasClass(forever.GetAlertSettingsClasses(), "PALADIN"),
+            "Paladin wrong-aura alerts are disabled for now")
         assert(not forever.addonFrame.events.UNIT_AURA and not forever.addonFrame.events.UNIT_INVENTORY_CHANGED
             and not forever.addonFrame.events.UNIT_SPELLCAST_SUCCEEDED)
     end)

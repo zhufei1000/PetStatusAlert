@@ -184,6 +184,7 @@ local function BuildClassAlerts(page, classFile, forever)
     local readOnly = forever ~= PSA.IsForeverClient()
     local notes = {}
     if readOnly then notes[#notes + 1] = PSA.UI.OTHER_CLIENT_SETTINGS end
+    if not PSA.GetPetAlertsEnabled() then notes[#notes + 1] = PSA.UI.MODULE_OFF_HINT end
     notes[#notes + 1] = PSA.GetClassSupportNote(classFile, forever)
     page:AddSection(page:NewSection(PSA.GetAlertClassLabel(classFile, forever), notes))
     local availability = { enabled = not readOnly, disabledTooltip = PSA.UI.OTHER_CLIENT_SETTINGS }
@@ -207,14 +208,18 @@ local function ClassTabs(forever)
     for _, classFile in ipairs(PSA.GetAlertSettingsClasses()) do
         local versions = {}
         for _, version in ipairs({ forever, not forever }) do
-            local title = PSA.GetAlertClientName(version)
-            if version ~= forever then
-                title = "|cff9a9a9a" .. title .. " · " .. PSA.UI.READ_ONLY_TAB .. "|r"
+            -- Do not expose a client tab for a class that client does not support
+            -- (for example Retail Paladin or Forever Death Knight).
+            if PSA.GetClassAlertStatuses(classFile, version) then
+                local title = PSA.GetAlertClientName(version)
+                if version ~= forever then
+                    title = "|cff9a9a9a" .. title .. " · " .. PSA.UI.READ_ONLY_TAB .. "|r"
+                end
+                versions[#versions + 1] = {
+                    key = version and "forever" or "retail", title = title,
+                    build = function(page) BuildClassAlerts(page, classFile, version) end,
+                }
             end
-            versions[#versions + 1] = {
-                key = version and "forever" or "retail", title = title,
-                build = function(page) BuildClassAlerts(page, classFile, version) end,
-            }
         end
         tabs[#tabs + 1] = {
             key = classFile,
@@ -239,7 +244,9 @@ end
 local auraPages = {
     classBuffs = function(page)
         local ui = PSA.UI
-        local section = page:NewSection(ui.RETAIL_CLASS, { ui.RETAIL_CLASS_HINT })
+        local notes = { ui.RETAIL_CLASS_HINT }
+        if not PSA.GetBuffAlertsEnabled() then table.insert(notes, 1, ui.MODULE_OFF_HINT) end
+        local section = page:NewSection(ui.RETAIL_CLASS, notes)
         AddRetailSupplyCheck(section, "CLASS", ui.RETAIL_CLASS)
         for _, buff in ipairs(PSA.RETAIL_BUFFS) do AddRetailSupplyCheck(section, buff.key, PSA.GetRetailBuffName(buff)) end
         page:AddSection(section)
@@ -247,8 +254,10 @@ local auraPages = {
     foreverClassBuffs = function(page)
         local ui = PSA.UI
         local options = PSA.GetForeverClassBuffOptions()
-        local section = page:NewSection(ui.AURA_TAB_CLASS, #options > 0 and { ui.FOREVER_CLASS_BUFF_HINT }
-            or { ui.FOREVER_CLASS_BUFF_HINT, ui.FOREVER_CLASS_BUFF_NONE })
+        local notes = { ui.FOREVER_CLASS_BUFF_HINT }
+        if #options == 0 then notes[#notes + 1] = ui.FOREVER_CLASS_BUFF_NONE end
+        if not PSA.GetBuffAlertsEnabled() then table.insert(notes, 1, ui.MODULE_OFF_HINT) end
+        local section = page:NewSection(ui.AURA_TAB_CLASS, notes)
         for _, option in ipairs(options) do
             local key = option.key
             section:Check(option.label, function() return PSA.GetForeverClassBuffEnabled(key) end,
@@ -259,25 +268,38 @@ local auraPages = {
     consumables = function(page, forever)
         local ui = PSA.UI
         if PSA.RETAIL_BUFFS then
-            local personal = page:NewSection(ui.AURA_TAB_CONSUMABLES, { ui.RETAIL_SUPPLY_HINT, ui.RETAIL_LEAD_HINT })
+            local notes = { ui.RETAIL_SUPPLY_HINT, ui.RETAIL_LEAD_HINT }
+            if not PSA.GetBuffAlertsEnabled() then table.insert(notes, 1, ui.MODULE_OFF_HINT) end
+            local personal = page:NewSection(ui.AURA_TAB_CONSUMABLES, notes)
             AddRetailSupplyCheck(personal, "FOOD", ui.RETAIL_FOOD)
             AddRetailLeadTime(personal, "FOOD", ui.RETAIL_FOOD_LEAD)
             AddRetailSupplyCheck(personal, "WEAPON", ui.RETAIL_WEAPON)
             AddRetailLeadTime(personal, "WEAPON", ui.RETAIL_WEAPON_LEAD)
             page:AddSection(personal)
         end
-        local food = page:NewSection(forever and ui.FOOD_BUFF_ALERT or ui.FOREVER_CLIENT,
-            not forever and { ui.OTHER_CLIENT_SETTINGS } or nil)
+        if not forever then return end
+        local notes
+        if not PSA.GetBuffAlertsEnabled() then notes = { ui.MODULE_OFF_HINT } end
+        local food = page:NewSection(ui.FOOD_BUFF_ALERT, notes)
         local availability = { enabled = forever, disabledTooltip = ui.OTHER_CLIENT_SETTINGS }
         food:Check(ui.FOOD_BUFF_ALERT, function() return not forever or PSA.GetFoodBuffAlertEnabled() end,
             forever and PSA.SetFoodBuffAlertEnabled or nil, ui.FOOD_BUFF_HINT, availability)
         food:Check(ui.FOOD_PICKER_ENABLE, function() return not forever or PSA.GetFoodPickerEnabled() end,
             forever and PSA.SetFoodPickerEnabled or nil, ui.FOOD_PICKER_HINT, availability)
         page:AddSection(food)
+        local ammoNotes = { ui.AMMO_WEAPON_HINT, ui.AMMO_THRESHOLD_HINT }
+        if not PSA.GetBuffAlertsEnabled() then table.insert(ammoNotes, 1, ui.MODULE_OFF_HINT) end
+        local ammo = page:NewSection(ui.AMMO_SETTINGS, ammoNotes)
+        ammo:EditBox(ui.AMMO_THRESHOLD, function()
+            return PSA.GetAmmoThreshold()
+        end, PSA.SetAmmoThreshold, nil, 84, { numeric = true })
+        page:AddSection(ammo)
     end,
     shaman = function(page)
         local ui = PSA.UI
-        local section = page:NewSection(ui.RETAIL_ENHANCEMENT, { ui.RETAIL_ENHANCEMENT_HINT })
+        local notes = { ui.RETAIL_ENHANCEMENT_HINT }
+        if not PSA.GetBuffAlertsEnabled() then table.insert(notes, 1, ui.MODULE_OFF_HINT) end
+        local section = page:NewSection(ui.RETAIL_ENHANCEMENT, notes)
         for _, imbue in ipairs(PSA.RETAIL_IMBUES or {}) do
             AddRetailSupplyCheck(section, imbue.key, ui["RETAIL_" .. imbue.key])
         end
@@ -288,17 +310,6 @@ local auraPages = {
             AddRetailSupplyCheck(shield, def.key, ui["RETAIL_" .. def.key])
         end
         page:AddSection(shield)
-    end,
-    ammo = function(page, forever)
-        local ui = PSA.UI
-        local note = { ui.AMMO_WEAPON_HINT, ui.AMMO_THRESHOLD_HINT }
-        if not forever then table.insert(note, 1, ui.OTHER_CLIENT_SETTINGS) end
-        local section = page:NewSection(ui.AMMO_SETTINGS, note)
-        section:EditBox(ui.AMMO_THRESHOLD, function()
-            return forever and PSA.GetAmmoThreshold() or PSA.DEFAULT_AMMO_THRESHOLD
-        end, forever and PSA.SetAmmoThreshold or nil, nil, 84, { numeric = true, enabled = forever,
-            disabledTooltip = ui.OTHER_CLIENT_SETTINGS })
-        page:AddSection(section)
     end,
 }
 
@@ -385,7 +396,9 @@ function PSA.GetSettingsDefinition(context)
             end},
         }
         for _, tab in ipairs(shared) do definition.tabs[#definition.tabs + 1] = tab end
-        definition.tabs[#definition.tabs + 1] = BuildAuraTabs(forever)
+        -- Same order as the standalone panel: modules, classes, buffs, display,
+        -- voice, general.
+        table.insert(definition.tabs, #definition.tabs - #shared + 1, BuildAuraTabs(forever))
     end
     -- 外部插件设置页由 UI.RefreshToolboxSettings 提供 Rebuild；管理器内部页面
     -- 只有 Refresh（W:Refresh）。两者都保留，按钮/语言切换后控件不会停在旧值。
