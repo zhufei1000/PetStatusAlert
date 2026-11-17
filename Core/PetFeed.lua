@@ -208,27 +208,25 @@ local function HideTooltip(button)
     end
 end
 
-local function AddFoodChoices(root, canChoose, onChange, useCache)
-    local function IsSelected(itemID)
-        return (GetPreferredFood() or 0) == itemID
-    end
-    local function SelectFood(itemID)
-        if InCombatLockdown() or not canChoose() then
-            return
-        end
-        if itemID ~= 0 and (not HasLivingHunterPet() or not FindFood(itemID)) then
-            return
-        end
-        SetPreferredFood(itemID ~= 0 and itemID or nil)
-        PSA.RefreshPetCare()
-        if onChange then onChange() end
-    end
+function PSA.GetPetFeedFoodChoice()
+    return GetPreferredFood() or 0
+end
 
-    root:CreateTitle(PSA.UI.FEED_CHOOSE_TITLE)
-    root:CreateRadio(PSA.UI.FEED_CHOOSE_AUTO, IsSelected, SelectFood, 0)
+function PSA.SetPetFeedFoodChoice(itemID)
+    if InCombatLockdown() then return false end
+    if itemID ~= 0 and (not HasLivingHunterPet() or not FindFood(itemID)) then
+        return false
+    end
+    SetPreferredFood(itemID ~= 0 and itemID or nil)
+    PSA.RefreshPetCare()
+    return true
+end
+
+local function ForEachFoodChoice(addChoice, showHint, useCache)
+    addChoice(0, PSA.UI.FEED_CHOOSE_AUTO)
     if not HasLivingHunterPet() then
-        root:CreateTitle(PSA.UI.FEED_REQUIRES_PET)
-        return
+        showHint(PSA.UI.FEED_REQUIRES_PET)
+        return false
     end
     local seen = {}
     FindFood(nil, function(food)
@@ -236,14 +234,36 @@ local function AddFoodChoices(root, canChoose, onChange, useCache)
         if not seen[itemID] then
             seen[itemID] = true
             local label = ("%s ×%d"):format(GetFoodName(itemID, food.itemName), C_Item.GetItemCount(itemID))
-            root:CreateRadio(label, IsSelected, SelectFood, itemID)
+            addChoice(itemID, label)
         end
     end, useCache)
-    if next(seen) then
-        root:SetScrollMode(240)
-    else
-        root:CreateTitle(PSA.UI.FEED_FOOD_UNAVAILABLE)
+    if next(seen) then return true end
+    showHint(PSA.UI.FEED_FOOD_UNAVAILABLE)
+    return false
+end
+
+function PSA.GetPetFeedFoodChoices()
+    local choices = {}
+    ForEachFoodChoice(function(itemID, label)
+        choices[#choices + 1] = {key = itemID, label = label}
+    end, function(label)
+        choices[#choices + 1] = {label = label, disabled = true}
+    end)
+    return choices
+end
+
+local function AddFoodChoices(root, canChoose, onChange, useCache)
+    local function IsSelected(itemID) return PSA.GetPetFeedFoodChoice() == itemID end
+    local function SelectFood(itemID)
+        if canChoose() and PSA.SetPetFeedFoodChoice(itemID) and onChange then onChange() end
     end
+    root:CreateTitle(PSA.UI.FEED_CHOOSE_TITLE)
+    local hasFood = ForEachFoodChoice(function(itemID, label)
+        root:CreateRadio(label, IsSelected, SelectFood, itemID)
+    end, function(label)
+        root:CreateTitle(label)
+    end, useCache)
+    if hasFood then root:SetScrollMode(240) end
 end
 
 local function BuildFoodMenu(button, root)
@@ -330,9 +350,8 @@ function PSA.SetPetFeedMouseEnabled(enabled)
 end
 
 function PSA.RefreshPetCare(refreshFoodMenu)
-    local enabled = PSA.GetPetAlertsEnabled()
-    local feedingEnabled = enabled and PSA.GetClassOption("petFeedEnabled")
-    local unhappyEnabled = enabled and PSA.GetClassOption("petUnhappyAlertEnabled")
+    local feedingEnabled = PSA.GetClassOption("petFeedEnabled")
+    local unhappyEnabled = PSA.GetClassOption("petUnhappyAlertEnabled")
     if not feedingEnabled and not unhappyEnabled then
         if feedButton then feedButton:Hide() end
         PSA.SetPetCareAlert(nil)

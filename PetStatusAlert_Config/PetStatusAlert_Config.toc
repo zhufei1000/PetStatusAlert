@@ -1,0 +1,9 @@
+## Interface: 120105, 120100, 16001
+## Title: PetStatusAlert Settings | 宠物状态提醒设置
+## Notes: Shared controls loaded when the PetStatusAlert settings panel opens.
+## Author: zhufei1000
+## Version: 1.7.0
+## Dependencies: PetStatusAlert
+## LoadOnDemand: 1
+
+Libs/QFXWidgets.lua

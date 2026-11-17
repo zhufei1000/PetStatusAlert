@@ -74,16 +74,6 @@ local function InitDB(force)
         PetStatusAlertDB.alertLocked = true
     end
 
-    -- 模块总开关：宠物提醒默认开启；增益提醒默认关闭。
-    if PetStatusAlertDB.petAlertsEnabled == nil then
-        PetStatusAlertDB.petAlertsEnabled = true
-    end
-    PetStatusAlertDB.petAlertsEnabled = PetStatusAlertDB.petAlertsEnabled ~= false
-    if PetStatusAlertDB.buffAlertsEnabled == nil then
-        PetStatusAlertDB.buffAlertsEnabled = false
-    end
-    PetStatusAlertDB.buffAlertsEnabled = PetStatusAlertDB.buffAlertsEnabled == true
-
     -- 默认关闭：战斗中 TTS 语音提醒。
     if PetStatusAlertDB.combatTTSEnabled == nil then
         PetStatusAlertDB.combatTTSEnabled = false
@@ -246,6 +236,7 @@ function PSA.ResetClassSettings(classFile)
     elseif forever and classFile == "HUNTER" then
         db.petFeedEnabled, db.petUnhappyAlertEnabled = nil, nil
         if PSA.ApplyPetCareSettings then PSA.ApplyPetCareSettings() end
+        if PSA.SetCombatAspectAlertEnabled then PSA.SetCombatAspectAlertEnabled(true) end
     elseif forever and PSA.ApplyForeverFormAlertSettings and classFile == PSA.GetPlayerClassFile() then
         PSA.ApplyForeverFormAlertSettings()
     end
@@ -340,42 +331,6 @@ end
 
 function PSA.GetAmmoThreshold()
     return NormalizeAmmoThreshold(InitDB().ammoThreshold) or DEFAULT_AMMO_THRESHOLD
-end
-
-function PSA.GetPetAlertsEnabled()
-    return InitDB().petAlertsEnabled ~= false
-end
-
-function PSA.SetPetAlertsEnabled(enabled)
-    InitDB().petAlertsEnabled = enabled ~= false
-    if PSA.ApplyAlertMasterSwitches then PSA.ApplyAlertMasterSwitches() end
-end
-
-function PSA.GetBuffAlertsEnabled()
-    return InitDB().buffAlertsEnabled == true
-end
-
-function PSA.SetBuffAlertsEnabled(enabled)
-    InitDB().buffAlertsEnabled = enabled == true
-    if PSA.ApplyAlertMasterSwitches then PSA.ApplyAlertMasterSwitches() end
-end
-
-function PSA.GetFoodBuffAlertEnabled()
-    return InitDB().foodBuffAlertEnabled ~= false
-end
-
-function PSA.SetFoodBuffAlertEnabled(enabled)
-    InitDB().foodBuffAlertEnabled = enabled == true
-    if PSA.RefreshFoodBuffAlert then PSA.RefreshFoodBuffAlert() end
-end
-
-function PSA.GetFoodPickerEnabled()
-    return InitDB().foodPickerEnabled ~= false
-end
-
-function PSA.SetFoodPickerEnabled(enabled)
-    InitDB().foodPickerEnabled = enabled == true
-    if PSA.RefreshFoodPicker then PSA.RefreshFoodPicker() end
 end
 
 function PSA.SetAmmoThreshold(value)

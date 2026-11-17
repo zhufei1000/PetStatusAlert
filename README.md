@@ -3,27 +3,23 @@ Alerts for supported pet classes and Warrior stance mistakes. Pet alerts cover H
 
 Forever (Interface 16001): pet alerts use learned summon abilities rather than specializations. Passive and Defensive trigger alerts by default. Aggressive is off by default and can be enabled in the class settings. Missing and dead pet alerts remain available. Mage alerts require the Water Elemental summon ability.
 
-**Warrior → Forever** lets you select which active stances should trigger an alert. Each starts off. Right-click a visible stance alert icon to change the selection.
+**Forever → Warrior** lets you select which active stances should trigger an alert. Each starts off. Right-click a visible stance alert icon to change the selection.
 
-Paladin → Forever wrong-aura alerts are temporarily disabled. The missing-aura reminder remains under **Buff Alerts → Class Buffs → Paladin auras**.
+Open `/psa` or the settings button in QFXAddonManager. Choose **Retail** or **Forever** above the navigation. **Pet Alerts** groups the supported classes with display and voice settings. The other client tab shows read-only defaults for its classes and features.
 
-Open `/psa` or the settings button in QFXAddonManager. **Class Alerts** is expanded by default; select a class, then switch between **Retail** and **Forever**. The active client saves alert switches, custom messages, and colors per class and uses existing shared values until a class setting is edited. The other client tab shows its read-only defaults.
+Each reminder uses its own switch or threshold. Per-alert choices, custom text, colors, and the ammo threshold are preserved; former master switch values are ignored.
 
-**Alert master switches** is the first settings page. Class alerts are on by default. Buff alerts are off by default; their individual checkboxes start checked and take effect when you turn on the master switch. The same master checkbox also appears at the top of the class and buff pages, so a configured reminder can be enabled where it is set up.
+Install both `PetStatusAlert` and `PetStatusAlert_Config` from the package. The companion loads its widgets the first time you open settings.
 
 The **Warlock** page groups the wrong-summon switch and demon choices together. Sayaad covers both Succubus and Incubus. Retail saves a list for each specialization and suppresses the warning by default when the configured Grimoire of Sacrifice talent is active. Its talent ID is under **Advanced**. Forever uses one list. The **Mage** page lets you change or disable the Water Elemental requirement. Its default ID is 31687. The bottom of each editable class page has a class-only reset for alert switches, text, colors, and rules.
 
 **Display** has a preview you can start or stop while adjusting the settings, on any class. **Voice** lets you listen outside combat and choose between a single announcement and repeating every 2–15 seconds. The default remains every 3 seconds. Alerts without visible text are silent.
 
-In Retail, **Buff Alerts → Class Buffs** shows missing buffs that suit your specialization when you or a group member can provide them. Click to cast a buff you know or to ask an eligible teammate by whisper. **Food & Weapons** has separate warning times for Well Fed and temporary weapon enhancements. Set either to 0 for missing-only alerts. Shaman characters also have a **Shaman Imbues** tab, visible to every specialization. It checks the imbues for the current spec: Enhancement (Windfury main hand / Flametongue off hand), Elemental (Flametongue main hand / Thunderstrike Ward shield), and Restoration (Earthliving main hand / Tidecaller's Guard shield). A separate **Shields** section checks Earth Shield, Water Shield, and Lightning Shield; with Elemental Orbit, Earth Shield and the current specialization's shield are both required.
+Open **Forever → Ammo** to set the low ammo threshold. Bows, crossbows, and guns that require ammo are checked after combat. The icon shows the remaining count when it falls below the threshold (100 by default); set it to 0 to disable the warning.
 
-In Forever, **Buff Alerts → Class Buffs** lists the supported personal buffs your character has learned. Different ranks and alternatives such as mage armors or hunter aspects count as one group. Thorns, Righteous Fury, and Shadowform are optional and off by default. The reminder checks only your character, outside combat and rest areas. **Buff Alerts → Food & Ammo** checks for your food buff and ammo in the same situations. Below max level, the food icon shows **+5% XP** underneath to indicate the kill XP bonus from XP food. The ammo icon shows only the remaining count underneath. The threshold defaults to 100, and 0 disables the ammo alert.
+**Forever → Hunter Tools → Combat Aspect** has its own switch. The reminder appears in combat only while your own Aspect of the Cheetah or Aspect of the Pack is active. It suggests Aspect of the Falcon if learned, or the highest known rank of Aspect of the Hawk. Switching aspects or leaving combat clears the icon.
 
-Supply icons glow by default. The **Display** glow setting also controls these icons. Personal class buffs use just the icon and glow; Retail food and weapon countdowns appear underneath their icons. On both clients, unlock the position under **Display** to move the pet and personal alerts together using the saved pet alert position.
-
-With **Click to eat** enabled and the alert row locked, right-click the missing food buff icon to choose usable buff food from your bags. Left-click to eat the selection. Your character keeps the choice after relogging or running out. The menu reads your bags only while open.
-
-Under **Hunter → Forever → One-click pet feeding**, the feed button and the unhappy pet reminder have separate switches. Choose food automatically or select a suitable item from your bags. Hunters can also right-click the on-screen pet food icon to choose and left-click to feed out of combat.
+Under **Forever → Hunter Tools → One-click pet feeding**, the feed button and the unhappy pet reminder have separate switches. Choose food automatically or select a suitable item from your bags. Hunters can also right-click the on-screen pet food icon to choose and left-click to feed out of combat.
 
 Validation: `lua tests/regressions.lua` and `lua tests/compatibility.lua`. In game, verify missing/dead pets, each available pet mode, learning a summon ability, mounting/dismounting, combat TTS, and `/reload` on both clients.
 

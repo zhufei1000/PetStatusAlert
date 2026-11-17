@@ -1,4 +1,6 @@
 package-as: PetStatusAlert
+move-folders:
+  PetStatusAlert/PetStatusAlert_Config: PetStatusAlert_Config
 manual-changelog:
   filename: CHANGELOG.md
   markup-type: markdown

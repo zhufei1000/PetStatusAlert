@@ -68,12 +68,7 @@ function PSA.HandleForeverFormAlertCast(unit, spellID)
     local key = PSA.GetForeverFormAlertBySpell(playerClass, spellID)
     if not key then return end
 
-    -- A paladin can turn off the current aura by activating it again.
-    if playerClass == "PALADIN" and activeKey == key then
-        activeKey = nil
-    else
-        activeKey = key
-    end
+    activeKey = key
     if InCombatLockdown() then Render() else PSA.QueueRefresh(0.08) end
 end
 

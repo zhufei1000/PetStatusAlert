@@ -223,7 +223,7 @@ if textFrame.SetFrameLevel then
 end
 
 -- 内容层：textFrame 作为层级容器（始终覆盖 addonFrame）。
--- contentFrame 是整行提醒的浮动基点，宠物、增益和补给跟随同一个 Y 偏移。
+-- contentFrame 是整行提醒的浮动基点，职业、守护和弹药提醒跟随同一个 Y 偏移。
 local contentFrame = CreateFrame("Frame", nil, textFrame)
 contentFrame:SetPoint("CENTER", textFrame, "CENTER", 0, 0)
 contentFrame:SetSize(240, 58)
@@ -394,16 +394,14 @@ local supplyWidth, supplyIconSize, supplyBadgeHeight = 0, 0, 0
 local supplyFirstIconOffset = 0
 local ammoFrame, ammoIcon, ammoText
 local ammoKind, ammoCount, ammoTexture
-local foodFrame, foodLabel
-local foodMissing, foodXP
-local retailSupplyIcons = {}
-local retailSupplyOrder = { "FOOD", "MAIN_HAND", "OFF_HAND", "EARTH_SHIELD", "WATER_SHIELD", "LIGHTNING_SHIELD", "SHIELD", "BATTLE_SHOUT", "ARCANE_INTELLECT", "SKYFURY", "MARK_OF_THE_WILD", "FORTITUDE" }
-local foreverSupplyIcons, foreverSupplyItems = {}, {}
+local aspectFrame, aspectIcon, aspectSpell
 
-do
+if isForever then
     supplyFrame = CreateFrame("Frame", "PetStatusAlertSupplyFrame", textFrame)
     supplyFrame:EnableMouse(false)
     supplyFrame:Hide()
+end
+do
     positionLabel = textFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     positionLabel:SetPoint("CENTER")
     positionLabel:Hide()
@@ -841,18 +839,13 @@ local function CreateSupplyBadge(frame)
 end
 
 local function LayoutSupplyRow(updateBoxes)
-    local moving = not PetStatusAlertDB.alertLocked
-    local items = {}
-    if isForever then
-        if ammoKind then items[#items + 1] = ammoFrame end
-        if foodMissing then items[#items + 1] = foodFrame end
-        for _, button in ipairs(foreverSupplyItems) do items[#items + 1] = button end
-    else
-        for _, key in ipairs(retailSupplyOrder) do
-            local button = retailSupplyIcons[key]
-            if button and button.active then items[#items + 1] = button end
-        end
+    if not supplyFrame then
+        if updateBoxes then RefreshAlertBoxSize() else LayoutAlertRow() end
+        return
     end
+    local items = {}
+    if ammoKind then items[#items + 1] = ammoFrame end
+    if aspectSpell then items[#items + 1] = aspectFrame end
     local count = #items
     local previousWidth = supplyWidth
     supplyWidth, supplyIconSize, supplyBadgeHeight = 0, 0, 0
@@ -869,8 +862,7 @@ local function LayoutSupplyRow(updateBoxes)
             local cellWidth = size
             local label = item.supplyLabel
             if label and label:IsShown() then
-                local labelWidth = item == foodFrame and math.ceil(label:GetUnboundedStringWidth()) + 2 or SUPPLY_NUMERIC_WIDTH
-                cellWidth = math.min(maxCellWidth, math.max(size, labelWidth))
+                cellWidth = math.min(maxCellWidth, math.max(size, SUPPLY_NUMERIC_WIDTH))
                 label:SetWidth(cellWidth)
                 badgeHeight = SUPPLY_BADGE_GAP + SUPPLY_BADGE_HEIGHT
             end
@@ -879,7 +871,6 @@ local function LayoutSupplyRow(updateBoxes)
             local center = x + cellWidth / 2
             if index == 1 then supplyFirstIconOffset = center end
             item:SetPoint("TOP", supplyFrame, "TOPLEFT", center, -ALERT_ROW_EDGE_PADDING)
-            if item.alertKey then item:EnableMouse(not moving) end
             x = x + cellWidth + ALERT_ROW_GAP
         end
         supplyWidth = x - ALERT_ROW_GAP + ALERT_ROW_EDGE_PADDING
@@ -902,174 +893,44 @@ local function RefreshAmmoTooltip(frame)
     end
 end
 
-local function HideAmmoTooltip(frame)
+local function HideSupplyTooltip(frame)
     if GameTooltip and not GameTooltip:IsForbidden() and GameTooltip:IsOwned(frame) then
         GameTooltip:Hide()
     end
 end
 
-local function ShowRetailSupplyTooltip(button)
-    if not GameTooltip or GameTooltip:IsForbidden() then return end
-    local label, hint = PSA.GetRetailSupplyTooltip(button.alertKey)
-    if not label then return end
-    GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
-    GameTooltip:SetText(label)
-    if hint then GameTooltip:AddLine(hint, 0.8, 0.8, 0.8, true) end
-    GameTooltip:Show()
-end
-
-local function CreateRetailSupplyIcon(key)
-    local button = CreateFrame("Button", nil, supplyFrame, "InsecureActionButtonTemplate")
-    button.alertKey = key
-    button.isRetailClassBuff = key ~= "FOOD" and key ~= "MAIN_HAND" and key ~= "OFF_HAND"
-    button.icon = button:CreateTexture(nil, "ARTWORK")
-    button.icon:SetAllPoints(button)
-    button:RegisterForClicks("LeftButtonUp")
-    button:SetAttribute("useOnKeyDown", false)
-    button:SetAttribute("unit1", "player")
-    button:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
-    button:SetScript("PreClick", function(self)
-        if InCombatLockdown() or not InitDB().alertLocked then return end
-        local spell = PSA.ActivateRetailSupplyAlert(self.alertKey)
-        if spell then
-            self:SetAttribute("spell1", spell)
-            self:SetAttribute("type1", "spell")
-        end
-    end)
-    button:SetScript("PostClick", function(self)
-        self:SetAttribute("type1", nil)
-        self:SetAttribute("spell1", nil)
-    end)
-    button:SetScript("OnEnter", ShowRetailSupplyTooltip)
-    button:SetScript("OnLeave", HideAmmoTooltip)
-    button:SetScript("OnHide", HideAmmoTooltip)
-    retailSupplyIcons[key] = button
-    return button
-end
-
-local supplyTimeFormatter
-local function ApplyRetailSupplyCountdown(button, expiration, lead)
-    if expiration == button.expiration and lead == button.lead then return end
-    button.expiration, button.lead = expiration, lead
-    local binding = button.timeBinding
-    if not expiration then
-        if binding then
-            binding:SetEnabled(false)
-            button.timeText:Hide()
-        end
-        return
-    end
-    if not binding then
-        if not (C_DurationUtil and C_DurationUtil.CreateDuration and C_DurationUtil.CreateDurationTextBinding) then return end
-        local text = CreateSupplyBadge(button)
-        button.timeText = text
-        button.duration = C_DurationUtil.CreateDuration()
-        binding = C_DurationUtil.CreateDurationTextBinding()
-        binding:SetFontString(text)
-        binding:SetDuration(button.duration)
-        if not supplyTimeFormatter and C_StringUtil and C_StringUtil.CreateSecondsFormatter then
-            supplyTimeFormatter = C_StringUtil.CreateSecondsFormatter()
-            supplyTimeFormatter:SetDefaultAbbreviation(Enum.SecondsFormatterAbbreviation.OneLetter)
-            supplyTimeFormatter:SetDesiredUnitCount(1)
-        end
-        if supplyTimeFormatter then binding:SetFormatter(supplyTimeFormatter) end
-        button.timeBinding = binding
-    end
-    button.duration:SetTimeFromEnd(expiration, lead)
-    binding:SetEnabled(true)
-    button.timeText:Show()
-end
-
-function PSA.RenderRetailSupplyAlerts(alerts)
-    if isForever then return end
-    if not PSA.GetBuffAlertsEnabled() then
-        alerts = {}
-    end
-    local layoutChanged
-    local newlyActive
-    for _, key in ipairs(retailSupplyOrder) do
-        local alert, button = alerts[key], retailSupplyIcons[key]
-        if alert then
-            button = button or CreateRetailSupplyIcon(key)
-            if button.texture ~= alert.icon then
-                button.texture = alert.icon
-                button.icon:SetTexture(alert.icon)
-            end
-            if not button.active then
-                button.active = true
-                button:Show()
-                layoutChanged = true
-                newlyActive = newlyActive or {}
-                newlyActive[#newlyActive + 1] = button
-            end
-            local hadCountdown = button.timeText and button.timeText:IsShown()
-            ApplyRetailSupplyCountdown(button, alert.expiration, alert.lead)
-            if hadCountdown ~= (button.timeText and button.timeText:IsShown()) then layoutChanged = true end
-            if GameTooltip and not GameTooltip:IsForbidden() and GameTooltip:IsOwned(button) then
-                ShowRetailSupplyTooltip(button)
-            end
-        elseif button and button.active then
-            button.active = false
-            ApplyRetailSupplyCountdown(button)
-            RefreshAccessoryGlow(button, false)
-            button:Hide()
-            layoutChanged = true
-        end
-    end
-    if layoutChanged then LayoutSupplyRow() end
-    if newlyActive then
-        for _, button in ipairs(newlyActive) do RefreshAccessoryGlow(button, true) end
+local function RefreshAspectTooltip()
+    if aspectSpell and GameTooltip and not GameTooltip:IsForbidden() and GameTooltip:IsOwned(aspectFrame) then
+        GameTooltip:SetText(PSA.UI.COMBAT_ASPECT_ALERT)
+        GameTooltip:Show()
     end
 end
 
--- Personal Forever class alerts are indicators only; food and ammo retain their own behavior.
-function PSA.RenderForeverClassBuffAlerts(alerts)
-    if not isForever then return end
-    if #foreverSupplyItems == 0 and #alerts == 0 then return end
-    if not PSA.GetBuffAlertsEnabled() then alerts = {} end
-    for _, button in ipairs(foreverSupplyItems) do button.pending = false end
-    local layoutChanged
-    for index, alert in ipairs(alerts) do
-        local button = foreverSupplyIcons[alert.key]
-        if not button then
-            button = CreateFrame("Frame", nil, supplyFrame)
-            button:Hide()
-            button.classBuffKey = alert.key
-            button.icon = button:CreateTexture(nil, "ARTWORK")
-            button.icon:SetAllPoints(button)
-            foreverSupplyIcons[alert.key] = button
+function PSA.SetCombatAspectAlert(spell)
+    if not supplyFrame or spell == aspectSpell then return end
+    local wasShown = aspectSpell ~= nil
+    aspectSpell = spell
+    if spell then
+        if not aspectFrame then
+            aspectFrame = CreateFrame("Frame", nil, supplyFrame)
+            aspectFrame:SetMouseMotionEnabled(PetStatusAlertDB.alertLocked)
+            aspectIcon = aspectFrame:CreateTexture(nil, "ARTWORK")
+            aspectIcon:SetAllPoints(aspectFrame)
+            aspectFrame:SetScript("OnEnter", function(self)
+                if GameTooltip and not GameTooltip:IsForbidden() then
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    RefreshAspectTooltip()
+                end
+            end)
+            aspectFrame:SetScript("OnLeave", HideSupplyTooltip)
+            aspectFrame:SetScript("OnHide", HideSupplyTooltip)
         end
-        button.pending = true
-        if foreverSupplyItems[index] ~= button then layoutChanged = true end
-        local texture = GetSpellTextureByID(alert.spell) or 134400
-        if texture ~= button.texture then
-            button.texture = texture
-            button.icon:SetTexture(texture)
-        end
+        aspectIcon:SetTexture(GetSpellTextureByID(spell) or 134400)
     end
-    for _, button in ipairs(foreverSupplyItems) do
-        if not button.pending then
-            RefreshAccessoryGlow(button, false)
-            button:Hide()
-            layoutChanged = true
-        end
-    end
-    if not layoutChanged then return end
-    for index = #foreverSupplyItems, 1, -1 do foreverSupplyItems[index] = nil end
-    for index, alert in ipairs(alerts) do
-        local button = foreverSupplyIcons[alert.key]
-        foreverSupplyItems[index] = button
-        if not button:IsShown() then
-            button.needsGlow = true
-            button:Show()
-        end
-    end
-    LayoutSupplyRow()
-    for _, button in ipairs(foreverSupplyItems) do
-        if button.needsGlow then
-            button.needsGlow = nil
-            RefreshAccessoryGlow(button, true)
-        end
+    if wasShown ~= (spell ~= nil) then
+        aspectFrame:SetShown(spell ~= nil)
+        LayoutSupplyRow()
+        RefreshAccessoryGlow(aspectFrame, spell)
     end
 end
 
@@ -1080,9 +941,6 @@ end
 
 function PSA.SetAmmoAlert(kind, count, texture)
     if not isForever then return end
-    if not PSA.GetBuffAlertsEnabled() then
-        kind, count, texture = nil, nil, nil
-    end
     if not supplyFrame or (kind == ammoKind and count == ammoCount and texture == ammoTexture) then
         return
     end
@@ -1108,8 +966,8 @@ function PSA.SetAmmoAlert(kind, count, texture)
                 RefreshAmmoTooltip(self)
             end
         end)
-        ammoFrame:SetScript("OnLeave", HideAmmoTooltip)
-        ammoFrame:SetScript("OnHide", HideAmmoTooltip)
+        ammoFrame:SetScript("OnLeave", HideSupplyTooltip)
+        ammoFrame:SetScript("OnHide", HideSupplyTooltip)
     end
     local wasShown = ammoFrame:IsShown()
     if textureChanged or not wasShown then
@@ -1123,47 +981,10 @@ function PSA.SetAmmoAlert(kind, count, texture)
     end
 end
 
-local function UpdateFoodLabel()
-    foodLabel:SetText(foodXP and PSA.UI.FOOD_BUFF_XP or PSA.UI.FOOD_BUFF_MISSING)
-end
-
-function PSA.RefreshFoodPicker()
-    if PSA.SetFoodPickerOwner then
-        PSA.SetFoodPickerOwner(foodMissing and PSA.GetBuffAlertsEnabled()
-            and PetStatusAlertDB.alertLocked and foodFrame or nil)
-    end
-end
-
-function PSA.SetFoodBuffAlert(missing, showXP)
-    if not isForever then return end
-    if not PSA.GetBuffAlertsEnabled() then
-        missing, showXP = nil, nil
-    end
-    if not supplyFrame or (foodMissing == missing and foodXP == showXP) then return end
-    local visibilityChanged = (not not foodMissing) ~= (not not missing)
-    foodMissing, foodXP = missing, showXP
-    if missing then
-        if not foodFrame then
-            foodFrame = CreateFrame("Frame", nil, supplyFrame)
-            local texture = foodFrame:CreateTexture(nil, "ARTWORK")
-            texture:SetAllPoints(foodFrame)
-            texture:SetTexture(136000)
-            foodLabel = CreateSupplyBadge(foodFrame)
-        end
-        UpdateFoodLabel()
-        foodFrame:Show()
-    elseif foodFrame then
-        foodFrame:Hide()
-    end
-    LayoutSupplyRow()
-    if visibilityChanged then RefreshAccessoryGlow(foodFrame, foodMissing) end
-    PSA.RefreshFoodPicker()
-end
-
 function PSA.RefreshSupplyAlertLabels()
     positionLabel:SetText(PSA.UI.PET_ALERTS_POSITION)
     if ammoKind then UpdateAmmoText() end
-    if foodMissing then UpdateFoodLabel() end
+    RefreshAspectTooltip()
     LayoutSupplyRow()
 end
 
@@ -1180,9 +1001,6 @@ end
 
 function PSA.SetPetCareAlert(kind, texture, desaturated)
     if not isForever then return end
-    if not PSA.GetPetAlertsEnabled() then
-        kind, texture, desaturated = nil, nil, false
-    end
     if kind == nil and not petCareFrame then return end
     desaturated = not not desaturated
     if kind == petCareKind and texture == petCareTexture and desaturated == petCareDesaturated then
@@ -1228,11 +1046,7 @@ RefreshAlertVisuals = function()
     end
     RefreshAccessoryGlow(petCareFrame, petCareKind)
     RefreshAccessoryGlow(ammoFrame, ammoKind)
-    RefreshAccessoryGlow(foodFrame, foodMissing)
-    for _, button in pairs(retailSupplyIcons) do
-        if button.active then RefreshAccessoryGlow(button, true) end
-    end
-    for _, button in ipairs(foreverSupplyItems) do RefreshAccessoryGlow(button, true) end
+    RefreshAccessoryGlow(aspectFrame, aspectSpell)
     if PSA.RefreshCombatTTSReminder then
         PSA.RefreshCombatTTSReminder(true)
     end
@@ -1344,10 +1158,10 @@ local function SetAlertPositionLocked(locked)
     db.alertLocked = not not locked
     addonFrame:EnableMouse(not db.alertLocked)
     if ammoFrame then ammoFrame:SetMouseMotionEnabled(db.alertLocked) end
+    if aspectFrame then aspectFrame:SetMouseMotionEnabled(db.alertLocked) end
     if PSA.SetPetFeedMouseEnabled then PSA.SetPetFeedMouseEnabled(db.alertLocked) end
     SetAlertStrata(PSA.currentStatusForce and ALERT_STRATA_PREVIEW or ALERT_STRATA_DEFAULT)
     PSA.RefreshSupplyAlertLabels()
-    PSA.RefreshFoodPicker()
     RefreshFormAlertMenuButton()
 end
 
@@ -1395,10 +1209,6 @@ end
 local HideStatus
 
 local function ShowStatus(statusKey, force, classFile)
-    if not PSA.GetPetAlertsEnabled() then
-        HideStatus(true)
-        return
-    end
     if displayPreview and not force then return end
     displayPreview = nil
     classFile = (force and classFile) or GetPlayerClassFile()
@@ -1458,7 +1268,6 @@ HideStatus = function(force)
 end
 
 function PSA.PreviewDisplay()
-    if not PSA.GetPetAlertsEnabled() then return end
     displayPreview = true
     PSA.currentStatusForce = true
     SetAlertStrata(ALERT_STRATA_PREVIEW)

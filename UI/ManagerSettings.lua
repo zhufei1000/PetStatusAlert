@@ -94,32 +94,30 @@ local function BuildClassRules(page, classFile, forever, readOnly, availability)
             PSA.RefreshClassPetSettings("MAGE")
         end, nil, 100, { numeric = true, enabled = availability.enabled, disabledTooltip = availability.disabledTooltip })
         page:AddSection(section)
-    elseif forever and classFile == "HUNTER" then
-        local section = page:NewSection(ui.FEED_SETTINGS, ui.FEED_SETTINGS_HINT)
-        section:Check(ui.FEED_ENABLED, function()
-            return PSA.GetClassOption("petFeedEnabled", readOnly)
-        end, not readOnly and function(on)
-            PSA.SetClassOption("petFeedEnabled", on)
-        end, nil, availability)
-        section:Check(ui.PET_UNHAPPY_ENABLED, function()
-            return PSA.GetClassOption("petUnhappyAlertEnabled", readOnly)
-        end, not readOnly and function(on)
-            PSA.SetClassOption("petUnhappyAlertEnabled", on)
-        end, nil, availability)
-        local openMenu = not readOnly and PSA.OpenPetFoodSettingsMenu
-        local row
-        row = section:ButtonRow({{
-            text = ui.FEED_CHOOSE_AUTO, width = 220,
-            getText = openMenu and PSA.GetPetFeedFoodLabel,
-            getEnabled = function()
-                if readOnly then return false, ui.OTHER_CLIENT_SETTINGS end
-                if not openMenu then return false, ui.FEED_REQUIRES_HUNTER end
-                return not InCombatLockdown(), ui.SETTING_OUT_OF_COMBAT
-            end,
-            onClick = openMenu and function() if row then openMenu(row, rebuild) end end,
-        }})
-        page:AddSection(section)
     end
+end
+
+local function BuildFeeding(page)
+    local ui = PSA.UI
+    local section = page:NewSection(ui.FEED_SETTINGS, ui.FEED_SETTINGS_HINT)
+    section:Check(ui.FEED_ENABLED, function()
+        return PSA.GetClassOption("petFeedEnabled")
+    end, function(on) PSA.SetClassOption("petFeedEnabled", on) end)
+    section:Check(ui.PET_UNHAPPY_ENABLED, function()
+        return PSA.GetClassOption("petUnhappyAlertEnabled")
+    end, function(on) PSA.SetClassOption("petUnhappyAlertEnabled", on) end)
+    local openMenu = PSA.OpenPetFoodSettingsMenu
+    local row
+    row = section:ButtonRow({{
+        text = ui.FEED_CHOOSE_AUTO, width = 220,
+        getText = openMenu and PSA.GetPetFeedFoodLabel,
+        getEnabled = function()
+            if not openMenu then return false, ui.FEED_REQUIRES_HUNTER end
+            return not InCombatLockdown(), ui.SETTING_OUT_OF_COMBAT
+        end,
+        onClick = openMenu and function() if row then openMenu(row, rebuild) end end,
+    }})
+    page:AddSection(section)
 end
 
 AddAlertSettings = function(s, statusKey, classFile, readOnly, availability, enableLabel)
@@ -184,7 +182,6 @@ local function BuildClassAlerts(page, classFile, forever)
     local readOnly = forever ~= PSA.IsForeverClient()
     local notes = {}
     if readOnly then notes[#notes + 1] = PSA.UI.OTHER_CLIENT_SETTINGS end
-    if not PSA.GetPetAlertsEnabled() then notes[#notes + 1] = PSA.UI.MODULE_OFF_HINT end
     notes[#notes + 1] = PSA.GetClassSupportNote(classFile, forever)
     page:AddSection(page:NewSection(PSA.GetAlertClassLabel(classFile, forever), notes))
     local availability = { enabled = not readOnly, disabledTooltip = PSA.UI.OTHER_CLIENT_SETTINGS }
@@ -203,128 +200,32 @@ local function BuildClassAlerts(page, classFile, forever)
     end
 end
 
+local function BuildCombatAspect(page)
+    local ui = PSA.UI
+    local section = page:NewSection(ui.COMBAT_ASPECT, ui.COMBAT_ASPECT_HINT)
+    section:Check(ui.ENABLE_ALERT, PSA.GetCombatAspectAlertEnabled, PSA.SetCombatAspectAlertEnabled)
+    page:AddSection(section)
+end
+
 local function ClassTabs(forever)
     local tabs = {}
-    for _, classFile in ipairs(PSA.GetAlertSettingsClasses()) do
-        local versions = {}
-        for _, version in ipairs({ forever, not forever }) do
-            -- Do not expose a client tab for a class that client does not support
-            -- (for example Retail Paladin or Forever Death Knight).
-            if PSA.GetClassAlertStatuses(classFile, version) then
-                local title = PSA.GetAlertClientName(version)
-                if version ~= forever then
-                    title = "|cff9a9a9a" .. title .. " · " .. PSA.UI.READ_ONLY_TAB .. "|r"
-                end
-                versions[#versions + 1] = {
-                    key = version and "forever" or "retail", title = title,
-                    build = function(page) BuildClassAlerts(page, classFile, version) end,
-                }
-            end
+    for _, classFile in ipairs(PSA.SETTINGS_CLASS_ORDER) do
+        if PSA.GetClassAlertStatuses(classFile, forever) then
+            tabs[#tabs + 1] = {
+                key = classFile,
+                title = PSA.GetAlertClassLabel(classFile),
+                build = function(page) BuildClassAlerts(page, classFile, forever) end,
+            }
         end
-        tabs[#tabs + 1] = {
-            key = classFile,
-            title = PSA.GetAlertClassLabel(classFile),
-            subtabs = versions,
-        }
     end
     return tabs
 end
 
-local function AddRetailSupplyCheck(section, key, label)
-    section:Check(label, function() return PSA.GetRetailSupplySetting(key) end,
-        function(value) PSA.SetRetailSupplySetting(key, value) end)
-end
-
-local function AddRetailLeadTime(section, key, label)
-    section:EditBox(label, function() return PSA.GetRetailSupplyLeadMinutes(key) end,
-        function(value) PSA.SetRetailSupplyLeadMinutes(key, value) end, nil, 84,
-        { numeric = true, note = PSA.UI.RETAIL_LEAD_HINT })
-end
-
-local auraPages = {
-    classBuffs = function(page)
-        local ui = PSA.UI
-        local notes = { ui.RETAIL_CLASS_HINT }
-        if not PSA.GetBuffAlertsEnabled() then table.insert(notes, 1, ui.MODULE_OFF_HINT) end
-        local section = page:NewSection(ui.RETAIL_CLASS, notes)
-        AddRetailSupplyCheck(section, "CLASS", ui.RETAIL_CLASS)
-        for _, buff in ipairs(PSA.RETAIL_BUFFS) do AddRetailSupplyCheck(section, buff.key, PSA.GetRetailBuffName(buff)) end
-        page:AddSection(section)
-    end,
-    foreverClassBuffs = function(page)
-        local ui = PSA.UI
-        local options = PSA.GetForeverClassBuffOptions()
-        local notes = { ui.FOREVER_CLASS_BUFF_HINT }
-        if #options == 0 then notes[#notes + 1] = ui.FOREVER_CLASS_BUFF_NONE end
-        if not PSA.GetBuffAlertsEnabled() then table.insert(notes, 1, ui.MODULE_OFF_HINT) end
-        local section = page:NewSection(ui.AURA_TAB_CLASS, notes)
-        for _, option in ipairs(options) do
-            local key = option.key
-            section:Check(option.label, function() return PSA.GetForeverClassBuffEnabled(key) end,
-                function(value) PSA.SetForeverClassBuffEnabled(key, value) end)
-        end
-        page:AddSection(section)
-    end,
-    consumables = function(page, forever)
-        local ui = PSA.UI
-        if PSA.RETAIL_BUFFS then
-            local notes = { ui.RETAIL_SUPPLY_HINT, ui.RETAIL_LEAD_HINT }
-            if not PSA.GetBuffAlertsEnabled() then table.insert(notes, 1, ui.MODULE_OFF_HINT) end
-            local personal = page:NewSection(ui.AURA_TAB_CONSUMABLES, notes)
-            AddRetailSupplyCheck(personal, "FOOD", ui.RETAIL_FOOD)
-            AddRetailLeadTime(personal, "FOOD", ui.RETAIL_FOOD_LEAD)
-            AddRetailSupplyCheck(personal, "WEAPON", ui.RETAIL_WEAPON)
-            AddRetailLeadTime(personal, "WEAPON", ui.RETAIL_WEAPON_LEAD)
-            page:AddSection(personal)
-        end
-        if not forever then return end
-        local notes
-        if not PSA.GetBuffAlertsEnabled() then notes = { ui.MODULE_OFF_HINT } end
-        local food = page:NewSection(ui.FOOD_BUFF_ALERT, notes)
-        local availability = { enabled = forever, disabledTooltip = ui.OTHER_CLIENT_SETTINGS }
-        food:Check(ui.FOOD_BUFF_ALERT, function() return not forever or PSA.GetFoodBuffAlertEnabled() end,
-            forever and PSA.SetFoodBuffAlertEnabled or nil, ui.FOOD_BUFF_HINT, availability)
-        food:Check(ui.FOOD_PICKER_ENABLE, function() return not forever or PSA.GetFoodPickerEnabled() end,
-            forever and PSA.SetFoodPickerEnabled or nil, ui.FOOD_PICKER_HINT, availability)
-        page:AddSection(food)
-        local ammoNotes = { ui.AMMO_WEAPON_HINT, ui.AMMO_THRESHOLD_HINT }
-        if not PSA.GetBuffAlertsEnabled() then table.insert(ammoNotes, 1, ui.MODULE_OFF_HINT) end
-        local ammo = page:NewSection(ui.AMMO_SETTINGS, ammoNotes)
-        ammo:EditBox(ui.AMMO_THRESHOLD, function()
-            return PSA.GetAmmoThreshold()
-        end, PSA.SetAmmoThreshold, nil, 84, { numeric = true })
-        page:AddSection(ammo)
-    end,
-    shaman = function(page)
-        local ui = PSA.UI
-        local notes = { ui.RETAIL_ENHANCEMENT_HINT }
-        if not PSA.GetBuffAlertsEnabled() then table.insert(notes, 1, ui.MODULE_OFF_HINT) end
-        local section = page:NewSection(ui.RETAIL_ENHANCEMENT, notes)
-        for _, imbue in ipairs(PSA.RETAIL_IMBUES or {}) do
-            AddRetailSupplyCheck(section, imbue.key, ui["RETAIL_" .. imbue.key])
-        end
-        page:AddSection(section)
-        local shield = page:NewSection(ui.RETAIL_SHIELD, { ui.RETAIL_SHIELD_HINT })
-        AddRetailSupplyCheck(shield, "SHIELD", ui.RETAIL_SHIELD)
-        for _, def in ipairs(PSA.RETAIL_SHIELDS or {}) do
-            AddRetailSupplyCheck(shield, def.key, ui["RETAIL_" .. def.key])
-        end
-        page:AddSection(shield)
-    end,
-}
-
-local function BuildAuraTabs(forever)
-    local subtabs = {}
-    for _, tab in ipairs(PSA.GetAuraSettingsTabs()) do
-        local draw = auraPages[tab.key]
-        local title = PSA.GetAuraSettingsTabTitle(tab)
-        subtabs[#subtabs + 1] = {
-            key = tab.key,
-            title = tab.readOnly and ("|cff9a9a9a" .. title .. "|r") or title,
-            build = function(page) draw(page, forever) end,
-        }
-    end
-    return { key = "auras", title = PSA.UI.AURA_SETTINGS, subtabs = subtabs }
+local function BuildAmmo(page)
+    local ui = PSA.UI
+    local section = page:NewSection(ui.AMMO_SETTINGS, {ui.AMMO_WEAPON_HINT, ui.AMMO_THRESHOLD_HINT})
+    section:EditBox(ui.AMMO_THRESHOLD, PSA.GetAmmoThreshold, PSA.SetAmmoThreshold, nil, 84, {numeric = true})
+    page:AddSection(section)
 end
 
 function PSA.GetSettingsDefinition(context)
@@ -334,21 +235,14 @@ function PSA.GetSettingsDefinition(context)
     if definitionKey ~= key then definition, definitionKey = nil, key end
     if not definition then
         local forever = PSA.IsForeverClient()
-        local masters = {key="masters", title=PSA.UI.MASTER_SWITCHES, build=function(page)
-            local s=page:NewSection(PSA.UI.MASTER_MODULES,PSA.UI.MASTER_SWITCHES_HINT)
-            s:Check(PSA.UI.MASTER_PET_ENABLED,PSA.GetPetAlertsEnabled,PSA.SetPetAlertsEnabled,PSA.UI.MASTER_PET_HINT)
-            s:Check(PSA.UI.MASTER_BUFF_ENABLED,PSA.GetBuffAlertsEnabled,PSA.SetBuffAlertsEnabled,PSA.UI.MASTER_BUFF_HINT)
-            page:AddSection(s)
-        end}
-        local tabs = { masters }
-        for _, tab in ipairs(ClassTabs(forever)) do tabs[#tabs + 1] = tab end
+        local tabs = ClassTabs(forever)
         definition = {external=true, tabs=tabs,
             OnSettingsHide=function() rebuild=nil; PSA.StopSettingsPreview() end, OnTabShow=PSA.StopSettingsPreview}
         local shared = {
             {key="display", title=Text("Display", "显示样式", "顯示樣式"), build=function(page)
                 local s=page:NewSection(Text("Position & preview", "位置与预览", "位置與預覽"))
                 s:Check(PSA.UI.LOCKED_STATUS, function() return PetStatusAlertDB.alertLocked end,
-                    PSA.SetAlertPositionLocked, (forever or PSA.RETAIL_BUFFS) and PSA.UI.SUPPLY_MOVE_HINT or PSA.UI.MOVE_HINT)
+                    PSA.SetAlertPositionLocked, forever and PSA.UI.SUPPLY_MOVE_HINT or PSA.UI.MOVE_HINT)
                 s:ButtonRow({{text=PSA.UI.PREVIEW, onClick=PSA.PreviewDisplay}, {text=PSA.UI.STOP_PREVIEW, onClick=PSA.StopSettingsPreview},
                     {text=Text("Reset position", "重置位置", "重設位置"), onClick=PSA.ResetAlertPositions}})
                 page:AddSection(s)
@@ -395,10 +289,18 @@ function PSA.GetSettingsDefinition(context)
                 page:AddSection(s)
             end},
         }
-        for _, tab in ipairs(shared) do definition.tabs[#definition.tabs + 1] = tab end
-        -- Same order as the standalone panel: modules, classes, buffs, display,
-        -- voice, general.
-        table.insert(definition.tabs, #definition.tabs - #shared + 1, BuildAuraTabs(forever))
+        for _, tab in ipairs(shared) do tabs[#tabs + 1] = tab end
+        if forever then
+            local subtabs = {}
+            local builders = {feeding = BuildFeeding, aspect = BuildCombatAspect}
+            for _, subtab in ipairs(PSA.HUNTER_SETTINGS_TABS) do
+                subtabs[#subtabs + 1] = {
+                    key = subtab.key, title = PSA.UI[subtab.titleKey], build = builders[subtab.key],
+                }
+            end
+            table.insert(tabs, #tabs, {key = "hunterTools", title = PSA.UI.HUNTER_TOOLS, subtabs = subtabs})
+            table.insert(tabs, #tabs, {key = "ammo", title = PSA.UI.AMMO_TAB, build = BuildAmmo})
+        end
     end
     -- 外部插件设置页由 UI.RefreshToolboxSettings 提供 Rebuild；管理器内部页面
     -- 只有 Refresh（W:Refresh）。两者都保留，按钮/语言切换后控件不会停在旧值。

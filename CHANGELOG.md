@@ -1,5 +1,12 @@
 # PetStatusAlert
 
+## Unreleased
+
+- Remove general class and group buffs, player food reminders, and temporary weapon enhancement alerts. Pet and Warrior stance alerts, pet feeding, and low ammo remain available.
+- On Forever, show the Hunter aspect reminder only in combat with the Hunter's own Cheetah or Pack active. Suggest Falcon or the highest known Hawk rank.
+- Move Retail and Forever selection above the navigation. Group class, display, and voice settings under Pet Alerts. Forever has separate Hunter Tools and Ammo pages.
+- Remove master switches. Each reminder uses its own saved setting or threshold.
+
 ## 1.7.0
 
 - Configure reminders, text, and colors for any supported class from the expandable **Class Settings** menu. Each class has Retail and Forever tabs. The other client shows its defaults in read-only mode.

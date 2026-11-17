@@ -102,7 +102,7 @@ local function RefreshStatusOrderForPlayer()
     local watch = supports or not specID or specID == 0
     if watch ~= stanceAuraWanted then
         stanceAuraWanted = watch
-        if PSA.RefreshRetailSupplyAuraWatch then PSA.RefreshRetailSupplyAuraWatch() end
+        if PSA.RefreshWarriorAuraWatch then PSA.RefreshWarriorAuraWatch() end
     end
     if supports then
         ReplaceStatusOrder({ STATUS_KEY })
@@ -264,10 +264,6 @@ local function IsDefensiveStanceActive()
 end
 
 local function RefreshWarriorStatusText()
-    if type(PSA.GetPetAlertsEnabled) == "function" and not PSA.GetPetAlertsEnabled() then
-        if type(PSA.HideStatus) == "function" then PSA.HideStatus(true) end
-        return
-    end
     if type(PSA.InitDB) == "function" then
         PSA.InitDB()
     end
@@ -318,9 +314,6 @@ local OriginalQueueRefresh = PSA.QueueRefresh
 local warriorQueuedRefreshTimers = {}
 
 PSA.QueueRefresh = function(delaySeconds)
-    if type(PSA.GetPetAlertsEnabled) == "function" and not PSA.GetPetAlertsEnabled() then
-        return
-    end
     if not IsWarrior() then
         if type(OriginalQueueRefresh) == "function" then
             return OriginalQueueRefresh(delaySeconds)
@@ -364,7 +357,6 @@ end
 
 if IsWarrior() then
     local warriorEventFrame = CreateFrame("Frame")
-    local warriorEventsActive = false
 
     local function AuraUpdateAffectsStance(update)
         if not stanceAuraKnown or not IsReadableTable(update) then return true end
@@ -398,47 +390,21 @@ if IsWarrior() then
     end
 
     function PSA.HandleWarriorAuraChanged(update)
-        if not warriorEventsActive or not stanceAuraWanted or warriorQueuedRefreshTimers["0.02"]
+        if not stanceAuraWanted or warriorQueuedRefreshTimers["0.02"]
             or not AuraUpdateAffectsStance(update) then return end
         -- Cast events maintain stance while Blizzard restricts aura reads.
         if CanReadDefensiveStanceAura() then PSA.QueueRefresh(0.02) end
     end
 
-    local hasUnitEvent = warriorEventFrame.RegisterUnitEvent ~= nil
-    local hasFilteredSpellcast = hasUnitEvent
-        and pcall(warriorEventFrame.RegisterUnitEvent, warriorEventFrame, "UNIT_SPELLCAST_SUCCEEDED", "player")
-
-    local function SetWarriorEvents(active)
-        active = active and true or false
-        if active == warriorEventsActive then return end
-        warriorEventsActive = active
-        if active then
-            if hasFilteredSpellcast then
-                pcall(warriorEventFrame.RegisterUnitEvent, warriorEventFrame, "UNIT_SPELLCAST_SUCCEEDED", "player")
-            else
-                pcall(warriorEventFrame.RegisterEvent, warriorEventFrame, "UNIT_SPELLCAST_SUCCEEDED")
-            end
-            pcall(warriorEventFrame.RegisterEvent, warriorEventFrame, "PLAYER_SPECIALIZATION_CHANGED")
-            pcall(warriorEventFrame.RegisterEvent, warriorEventFrame, "PLAYER_ENTERING_WORLD")
-            pcall(warriorEventFrame.RegisterEvent, warriorEventFrame, "ADDON_RESTRICTION_STATE_CHANGED")
-        else
-            for _, event in ipairs({
-                "UNIT_SPELLCAST_SUCCEEDED", "PLAYER_SPECIALIZATION_CHANGED",
-                "PLAYER_ENTERING_WORLD", "ADDON_RESTRICTION_STATE_CHANGED",
-            }) do
-                pcall(warriorEventFrame.UnregisterEvent, warriorEventFrame, event)
-            end
-        end
+    local ok, registered = pcall(warriorEventFrame.RegisterUnitEvent, warriorEventFrame, "UNIT_SPELLCAST_SUCCEEDED", "player")
+    if not ok or registered == false then
+        pcall(warriorEventFrame.RegisterEvent, warriorEventFrame, "UNIT_SPELLCAST_SUCCEEDED")
     end
-
-    function PSA.SetWarriorAlertActivity(active)
-        SetWarriorEvents(active)
+    for _, event in ipairs({"PLAYER_SPECIALIZATION_CHANGED", "PLAYER_ENTERING_WORLD", "ADDON_RESTRICTION_STATE_CHANGED"}) do
+        pcall(warriorEventFrame.RegisterEvent, warriorEventFrame, event)
     end
-
-    SetWarriorEvents(true)
 
     warriorEventFrame:SetScript("OnEvent", function(_, event, unit, _, spellID)
-        if not warriorEventsActive or not PSA.GetPetAlertsEnabled() then return end
         if event == "UNIT_SPELLCAST_SUCCEEDED" then
             if unit and unit ~= "player" then
                 return

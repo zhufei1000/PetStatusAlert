@@ -16,120 +16,6 @@ function PSA.IsAccessibleValue(value)
     return type(issecretvalue) ~= "function" or not issecretvalue(value)
 end
 
-if isForever and C_UnitAuras and C_UnitAuras.GetAuraDataBySpellName
-    and C_UnitAuras.GetPlayerAuraBySpellID and C_Spell and C_Spell.GetSpellName then
-    local WELL_FED = 19705
-    -- Some foods also have older effects with a separate aura ID.
-    local foodAuraByItem = {
-        [13810] = 18125, -- Blessed Sunfruit
-        [13813] = 18141, -- Blessed Sunfruit Juice
-        [13928] = 18192, -- Grilled Squid
-        [13931] = 18194, -- Nightfin Soup
-        [18254] = 22730, -- Runn Tum Tuber Surprise
-        [21023] = 25661, -- Dirge's Kickin' Chimaerok Chops
-    }
-    local namedFoodAuras = {}
-    for _, auraID in pairs(foodAuraByItem) do namedFoodAuras[auraID] = true end
-    local wellFedName
-    local accessible = PSA.IsAccessibleValue
-
-    local function ReadableTable(value)
-        return accessible(value) and (type(value) ~= "table" or not canaccesstable or canaccesstable(value))
-    end
-
-    function PSA.HasKnownFoodAura(itemID)
-        return foodAuraByItem[itemID] ~= nil
-    end
-
-    function PSA.CanReadFoodAuras()
-        return not (C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret())
-    end
-
-    local function SpellAuraReadable(id)
-        return not (C_Secrets and C_Secrets.ShouldSpellAuraBeSecret and C_Secrets.ShouldSpellAuraBeSecret(id))
-    end
-
-    local function InstanceID(aura)
-        local id = aura.auraInstanceID
-        if accessible(id) and type(id) == "number" then return id end
-    end
-
-    -- true = present, false = confirmed missing, nil = unreadable.
-    function PSA.ReadFoodBuff()
-        if not PSA.CanReadFoodAuras() then return end
-        if not wellFedName then
-            local name = C_Spell.GetSpellName(WELL_FED)
-            if accessible(name) and type(name) == "string" and name ~= "" then wellFedName = name end
-        end
-        local unknown = not wellFedName or not SpellAuraReadable(WELL_FED)
-        if not unknown then
-            local ok, aura = pcall(C_UnitAuras.GetAuraDataBySpellName, "player", wellFedName, "HELPFUL")
-            if not ok or not ReadableTable(aura) then
-                unknown = true
-            elseif aura then
-                return true, InstanceID(aura)
-            end
-        end
-
-        local present
-        for id in pairs(namedFoodAuras) do
-            if SpellAuraReadable(id) then
-                local ok, aura = pcall(C_UnitAuras.GetPlayerAuraBySpellID, id)
-                if not ok or not ReadableTable(aura) then
-                    unknown = true
-                elseif aura then
-                    present = true
-                    local instanceID = InstanceID(aura)
-                    if instanceID then return true, instanceID end
-                end
-            else
-                unknown = true
-            end
-        end
-        if present then return true end
-        if not unknown then return false end
-    end
-
-    function PSA.FoodAuraMayHaveChanged(update, present, instanceID)
-        if not ReadableTable(update) then return false end
-        if not update then return true end
-        local full = update.isFullUpdate
-        if accessible(full) and full then return true end
-
-        if present then
-            local removed = update.removedAuraInstanceIDs
-            if ReadableTable(removed) and removed then
-                for _, id in ipairs(removed) do
-                    if accessible(id) and (not instanceID or id == instanceID) then return true end
-                end
-            end
-            -- A duration update leaves the tracked instance in place.
-            return false
-        end
-
-        local added = update.addedAuras
-        if not ReadableTable(added) or not added then return false end
-        for _, aura in ipairs(added) do
-            if ReadableTable(aura) then
-                local id, name, helpful = aura.spellId, aura.name, aura.isHelpful
-                if accessible(helpful) and helpful
-                    and ((accessible(id) and (id == WELL_FED or namedFoodAuras[id]))
-                        or (wellFedName and accessible(name) and name == wellFedName)) then
-                    return true
-                end
-            end
-        end
-        return false
-    end
-end
-
-function PSA.IsBelowForeverLevelCap(level)
-    if level == nil and UnitLevel then level = UnitLevel("player") end
-    local cap = GetMaxLevelForPlayerExpansion and GetMaxLevelForPlayerExpansion()
-    if not PSA.IsAccessibleValue(cap) or type(cap) ~= "number" or cap <= 0 then cap = 60 end
-    return PSA.IsAccessibleValue(level) and type(level) == "number" and level > 0 and level < cap
-end
-
 function PSA.GetPlayerClassFile()
     if type(UnitClass) == "function" then
         local _, classFile = UnitClass("player")
@@ -269,22 +155,10 @@ PSA.PET_STATUS_ORDER = isForever and foreverPetStatuses or retailPetStatuses
 
 local retailClasses = { "HUNTER", "WARLOCK", "MAGE", "DEATHKNIGHT", "WARRIOR" }
 local foreverClasses = { "HUNTER", "WARLOCK", "MAGE", "WARRIOR" }
-local settingsClasses = { "HUNTER", "WARLOCK", "MAGE", "DEATHKNIGHT", "WARRIOR" }
 PSA.WARRIOR_STATUS_KEY = "WARRIOR_DEFENSIVE_STANCE"
 PSA.WRONG_PET_STATUS_KEY = "WARLOCK_WRONG_PET"
 PSA.WARLOCK_SPECS = { 265, 266, 267 }
 local warriorStatuses = { PSA.WARRIOR_STATUS_KEY }
--- Paladin wrong-aura alerts are intentionally disabled for now. Keep the aura
--- rank table because the Class Buffs tab still uses it for the missing-aura
--- reminder, and ForeverBuffs reads the active aura through the form API.
-local paladinAuraEntries = {
-    { "FOREVER_PALADIN_DEVOTION", {465, 10290, 643, 10291, 1032, 10292, 10293} },
-    { "FOREVER_PALADIN_RETRIBUTION", {7294, 10298, 10299, 10300, 10301} },
-    { "FOREVER_PALADIN_CONCENTRATION", {19746} },
-    { "FOREVER_PALADIN_SHADOW_RESISTANCE", {19876, 19895, 19896} },
-    { "FOREVER_PALADIN_FROST_RESISTANCE", {19888, 19897, 19898} },
-    { "FOREVER_PALADIN_FIRE_RESISTANCE", {19891, 19899, 19900} },
-}
 local foreverFormAlerts = {
     WARRIOR = {
         { "FOREVER_WARRIOR_BATTLE", {2457} },
@@ -314,20 +188,6 @@ function PSA.GetForeverFormAlertBySpell(classFile, spellID)
     if spellKeys then return spellKeys[spellID] end
 end
 
--- The missing-aura reminder prefers the highest known rank of Devotion Aura.
--- Keep the Paladin spell mapping even though the wrong-aura status page is off.
-local paladinAuraSpells = {}
-local paladinSpellKeys = formKeysBySpell.PALADIN or {}
-for index = #paladinAuraEntries, 1, -1 do
-    local key, ranks = paladinAuraEntries[index][1], paladinAuraEntries[index][2]
-    for _, id in ipairs(ranks) do
-        paladinSpellKeys[id] = key
-        paladinAuraSpells[#paladinAuraSpells + 1] = id
-    end
-end
-formKeysBySpell.PALADIN = paladinSpellKeys
-PSA.FOREVER_PALADIN_AURA_SPELLS = paladinAuraSpells
-
 -- Modern clients return icon, active, castable, spellID. Some Classic-era
 -- interfaces still return icon, name, active, castable, spellID. Normalize both
 -- so Forever/Wrath-era API differences cannot silently disable stance alerts.
@@ -353,24 +213,6 @@ if isForever and type(GetNumShapeshiftForms) == "function" and type(GetShapeshif
         end
     end
 
-    -- Any active aura on the Paladin bar satisfies the generic "Paladin auras"
-    -- reminder, including a rank this build does not know about. Do not require
-    -- the form spell ID to be in our rank table here: a missing rank would
-    -- otherwise trigger a false "no aura" warning while an aura is active.
-    function PSA.HasActiveForeverForm(classFile)
-        local spellKeys = formKeysBySpell[classFile]
-        if not spellKeys then return end
-        local count = GetNumShapeshiftForms()
-        if not PSA.IsAccessibleValue(count) or type(count) ~= "number" then return end
-        for index = 1, count do
-            local active, spellID = ReadShapeshiftForm(index)
-            if PSA.IsAccessibleValue(active) and active then
-                if classFile == "PALADIN" then return true end
-                if PSA.IsAccessibleValue(spellID) and spellKeys[spellID] then return true end
-            end
-        end
-        return false
-    end
 end
 
 local function WarlockStatuses(petStatuses)
@@ -425,14 +267,6 @@ end
 
 function PSA.GetAlertClasses(forever)
     return forever and foreverClasses or retailClasses
-end
-
-function PSA.GetAlertSettingsClasses()
-    -- Paladin is a Forever-only class; do not add a dead Paladin page to the
-    -- Retail settings. Forever keeps all classes so the read-only Retail pages
-    -- remain available there.
-    if isForever then return settingsClasses end
-    return retailClasses
 end
 
 function PSA.GetClassAlertStatuses(classFile, forever)

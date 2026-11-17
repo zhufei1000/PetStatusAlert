@@ -267,11 +267,6 @@ Test("Forever Warriors can opt into any combination of active stance alerts", fu
     session.Event("PLAYER_MOUNT_DISPLAY_CHANGED")
     assert(session.currentStatusKey == defensive)
 
-    session.SetPetAlertsEnabled(false)
-    assert(session.currentStatusKey == nil and not events.UPDATE_SHAPESHIFT_FORM and not events.UNIT_SPELLCAST_SUCCEEDED)
-    session.SetPetAlertsEnabled(true)
-    session.FlushEvents()
-    assert(session.currentStatusKey == defensive and events.UPDATE_SHAPESHIFT_FORM)
     session.SetStatusEnabled(session.WARRIOR_STATUS_KEY, false, "WARRIOR")
     assert(session.ResetClassSettings("WARRIOR"))
     assert(not events.UPDATE_SHAPESHIFT_FORM and session.currentStatusKey == nil)
@@ -301,17 +296,6 @@ Test("Forever Paladin has no wrong-aura class alerts", function()
     assert(session.HasEnabledForeverFormAlerts == nil)
     assert(not session.addonFrame.events.UPDATE_SHAPESHIFT_FORM)
 end)
-Test("Forever Paladin aura presence accepts both form signatures and unknown ranks", function()
-    local config = {forever = true, class = "PALADIN", formSpells = {10293, 10301}, activeFormSpell = 10293}
-    local session = Session(config)
-    assert(session.HasActiveForeverForm("PALADIN") == true)
-    config.activeFormSpell = nil
-    assert(session.HasActiveForeverForm("PALADIN") == false)
-    -- A rank this build does not know is still an active aura, not a missing one.
-    config.formSpells = {999999}
-    config.activeFormSpell, config.classicFormSignature = 999999, true
-    assert(session.HasActiveForeverForm("PALADIN") == true)
-end)
 Test("Forever Warrior combat alerts remember a stance and update on readable successful casts", function()
     local config = {forever = true, class = "WARRIOR", formSpells = {2457, 71, 2458}, activeFormSpell = 2457}
     local session = Session(config)
@@ -338,9 +322,9 @@ Test("Forever Warrior combat alerts remember a stance and update on readable suc
 
     session.Event("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-Battle", 2457)
     assert(session.currentStatusKey == battle)
-    session.SetPetAlertsEnabled(false)
-    session.SetPetAlertsEnabled(true)
-    session.FlushEvents()
+    session.SetStatusEnabled(battle, false, "WARRIOR")
+    session.SetStatusEnabled(berserker, false, "WARRIOR")
+    session.SetStatusEnabled(berserker, true, "WARRIOR")
     assert(not session.currentStatusKey, "a disabled watcher must discard state before reusing it")
     config.combat, config.formsRestricted, config.activeFormSpell = false, false, 2458
     session.Event("PLAYER_REGEN_ENABLED")
@@ -509,19 +493,6 @@ Test("Retail supports namespaced specialization APIs when globals are absent", f
     local session = Session({spec = 252, class = "DEATHKNIGHT"})
     session.env.GetSpecialization, session.env.GetSpecializationInfo = false, false
     assert(session.Refresh() == "NO_PET")
-end)
-
-Test("re-enabling pet alerts picks up a summon learned while disabled", function()
-    local known = {}
-    local session = Session({forever = true, known = known})
-    assert(session.Refresh() == nil)
-    session.SetPetAlertsEnabled(false)
-    assert(not session.addonFrame.events.LEARNED_SPELL_IN_SKILL_LINE)
-    known[883] = true
-    session.SetPetAlertsEnabled(true)
-    assert(session.addonFrame.events.LEARNED_SPELL_IN_SKILL_LINE)
-    session.Event("PET_BAR_UPDATE")
-    assert(session.currentStatusKey == "NO_PET", "re-enable must recheck learned summons without another spell event")
 end)
 
 Test("routine pet events coalesce but a newly summoned pet can settle after the first check", function()
