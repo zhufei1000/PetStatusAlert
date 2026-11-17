@@ -9,7 +9,7 @@ On both clients, the missing-pet alert waits two seconds after you dismount to g
 
 Open `/psa` or the settings button in QFXAddonManager. Choose **Retail** or **Forever** above the navigation. **Pet Alerts** groups the supported classes with display and voice settings. The other client tab shows read-only defaults for its classes and features.
 
-Open **Animation** for the global pixel glow and vertical motion controls. Use **Preview** to see changes on screen. The glow refresh slider ranges from 10 to 30 updates per second for the main icon (20 by default); accessory icons use about 75% of the selected rate.
+Open **Animation** for the global pixel glow and vertical motion controls. The glow refresh slider ranges from 10 to 30 updates per second for the main icon (20 by default); accessory icons use about 75% of the selected rate.
 
 Each reminder uses its own switch or threshold. Per-alert choices, custom text, colors, and the ammo threshold are preserved; former master switch values are ignored.
 
@@ -17,7 +17,7 @@ Install both `PetStatusAlert` and `PetStatusAlert_Config` from the package. The 
 
 The **Warlock** page groups the wrong-summon switch and demon choices together. Sayaad covers both Succubus and Incubus. Retail saves a list for each specialization and suppresses the warning by default when the configured Grimoire of Sacrifice talent is active. Its talent ID is under **Advanced**. Forever uses one list. The **Mage** page lets you change or disable the Water Elemental requirement. Its default ID is 31687. The bottom of each editable class page has a class-only reset for alert switches, text, colors, and rules.
 
-**Display** has a preview you can start or stop while adjusting the settings, on any class. **Voice** lets you listen outside combat and choose between a single announcement and repeating every 2–15 seconds. The default remains every 3 seconds. Alerts without visible text are silent.
+Under **General → Position and preview**, you can preview or move the on-screen alerts and reset their position. The preview works on any class and stays visible while you adjust **Display** or **Animation**. **Voice** lets you listen outside combat and choose between a single announcement and repeating every 2–15 seconds. The default remains every 3 seconds. Alerts without visible text are silent.
 
 Open **Forever → Ammo** to turn the low ammo alert on or off and set its threshold (100 by default). The alert is on by default. Turning it off keeps your threshold. Bows, crossbows, and guns that require ammo are checked after combat; the icon shows the remaining count when it falls below the threshold.
 

@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- Move pixel glow and vertical motion to a separate Animation page with a live preview. Add a shared glow refresh slider (10–30 updates per second, default 20).
+- Move pixel glow and vertical motion to a separate Animation page. Add a shared glow refresh slider (10–30 updates per second, default 20).
+- Put screen preview, position lock, and position reset at the top of General. Keep the preview visible while adjusting Display or Animation.
 
 - Add a separate Forever low ammo alert switch, on by default. Turning it off keeps the threshold, and a previously saved threshold of zero is carried over as an opt-out.
 

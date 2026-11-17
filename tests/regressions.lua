@@ -642,7 +642,7 @@ Test("Forever Warrior previews show their own localized stance text and icon", f
     GetBuildInfo, UnitClass, C_Spell.GetSpellTexture = nil, originalClass, originalTexture
 end)
 
-Test("display sample works on Forever Warrior and stops when leaving the page", function()
+Test("General controls the preview and position while visual pages keep the sample", function()
     local originalClass = UnitClass
     GetBuildInfo = function() return "1.60.1", "70862", "", 16001 end
     UnitClass = function() return "Warrior", "WARRIOR" end
@@ -650,13 +650,23 @@ Test("display sample works on Forever Warrior and stops when leaving the page", 
     session.OpenOptionsFrame()
     local frame = Upvalue(session.RefreshOptionsFrameLocale, "optionsFrame")
     frame.navButtons.display.scripts.OnClick()
+    assert(not FindButton(frame.currentPage, session.UI.PREVIEW))
+    frame.navButtons.general.scripts.OnClick()
     local preview = assert(FindButton(frame.currentPage, session.UI.PREVIEW))
     assert(preview.parent == frame.currentPage, "preview should sit outside the scroll frame")
+    local lock = assert(FindButton(frame.currentPage, "Unlock move"))
+    lock.scripts.OnClick()
+    assert(not PetStatusAlertDB.alertLocked and lock:GetText() == "Lock position")
+    lock.scripts.OnClick()
+    assert(PetStatusAlertDB.alertLocked)
     preview.scripts.OnClick()
     assert(session.addonFrame:IsShown() and session.alertText:GetText() == session.UI.PREVIEW_SAMPLE)
     assert(preview:GetText() == session.UI.STOP_PREVIEW)
+    frame.navButtons.display.scripts.OnClick()
+    assert(session.IsDisplayPreviewActive(), "changing to Display should keep the General preview")
     session.ApplyManagerLanguage("zhCN")
     assert(session.IsDisplayPreviewActive() and session.alertText:GetText() == "提醒预览")
+    frame.navButtons.general.scripts.OnClick()
     preview = assert(FindButton(frame.currentPage, session.UI.STOP_PREVIEW))
     session.RefreshPetStatusText()
     assert(session.IsDisplayPreviewActive(), "ordinary runtime refresh must not replace the sample")
@@ -664,7 +674,12 @@ Test("display sample works on Forever Warrior and stops when leaving the page", 
     assert(session.alertText.parent.icon:IsShown() and not session.alertText:IsShown())
     preview.scripts.OnClick()
     assert(not session.IsDisplayPreviewActive() and not session.addonFrame:IsShown())
-    preview.scripts.OnClick()
+    PetStatusAlertDB.alertPosition.x = 123
+    local reset = assert(FindButton(frame.currentPage, session.UI.RESET_ALERT_POSITION))
+    reset.scripts.OnClick()
+    assert(PetStatusAlertDB.alertPosition.x == 0 and session.IsDisplayPreviewActive())
+    frame.navButtons.display.scripts.OnClick()
+    assert(session.IsDisplayPreviewActive())
     frame.currentPage.psaScroll:SetVerticalScroll(38)
     local displayPage = frame.currentPage
     local iconSlider = assert(FindNode(displayPage, function(node)
@@ -884,7 +899,7 @@ Test("stance glow defaults on and an updated opt-out survives reload", function(
     assert(not reloaded.GetAlertGlowEnabled() and not next(activeGlows))
 end)
 
-Test("global animation page previews and changes both active glow rates without restarting them", function()
+Test("global animation page keeps the General preview and updates both active glow rates", function()
     local oldBuild, oldLib, oldTexture = GetBuildInfo, LibStub, C_Spell.GetSpellTexture
     GetBuildInfo = function() return "1.60.1", "70938", "", 16001 end
     C_Spell.GetSpellTexture = function() return 123 end
@@ -911,14 +926,16 @@ Test("global animation page previews and changes both active glow rates without 
         assert(not FindText(frame.currentPage, session.UI.ANIMATION_AMPLITUDE))
         frame.navButtons.classes.scripts.OnClick()
         assert(frame.navButtons.animation:IsVisible() and not frame.navButtons.display:IsShown())
+        frame.navButtons.general.scripts.OnClick()
+        local preview = assert(FindButton(frame.currentPage, session.UI.PREVIEW))
+        preview.scripts.OnClick()
         frame.navButtons.animation.scripts.OnClick()
         local page = frame.currentPage
         assert(FindText(page, session.UI.ANIMATION_FLOAT) and FindText(page, session.UI.ANIMATION_GLOW_FPS))
         local slider = assert(FindNode(page, function(node)
             return node.template == "OptionsSliderTemplate" and node:GetValue() == 20
         end))
-        local preview = assert(FindButton(page, session.UI.PREVIEW))
-        preview.scripts.OnClick()
+        assert(not FindButton(page, session.UI.PREVIEW) and session.IsDisplayPreviewActive())
         session.SetAmmoAlert("LOW_BULLETS", 9, 123)
         local anchor = session.addonFrame
         assert(session.IsDisplayPreviewActive() and #ticks == 2)
@@ -934,9 +951,27 @@ Test("global animation page previews and changes both active glow rates without 
         assert(#ticks == 2 and ticks[1] == 2 and ticks[2] == 2, "the live glows should update sooner without restarting")
         session.SetAmmoAlert()
         frame.navButtons.general.scripts.OnClick()
+        assert(session.IsDisplayPreviewActive())
+        local stop = assert(FindButton(frame.currentPage, session.UI.STOP_PREVIEW))
+        stop.scripts.OnClick()
         assert(not session.IsDisplayPreviewActive() and not anchor.scripts.OnUpdate)
 
         local manager = session.GetSettingsDefinition({})
+        local general = manager.tabs[#manager.tabs]
+        assert(general.key == "general")
+        local headings, buttons = {}, {}
+        general.build({NewSection = function(_, title)
+            headings[#headings + 1] = title
+            return {Check = noop, Dropdown = noop, ButtonRow = function(_, items)
+                for _, item in ipairs(items) do buttons[item.text] = item.onClick end
+            end}
+        end, AddSection = noop})
+        assert(headings[1] == session.UI.POSITION_AND_PREVIEW and buttons[session.UI.RESET_ALERT_POSITION])
+        buttons[session.UI.PREVIEW]()
+        manager.OnTabShow("animation")
+        assert(session.IsDisplayPreviewActive())
+        manager.OnTabShow("voice")
+        assert(not session.IsDisplayPreviewActive())
         for _, tab in ipairs(manager.tabs) do
             if tab.key == "animation" then
                 local foundSlider = false

@@ -495,6 +495,8 @@ local UI_LOCALE = {
 }
 
 local SETTINGS_STRINGS = {
+    POSITION_AND_PREVIEW = { "Position and preview", "位置与预览", "位置與預覽", "Положение и предпросмотр" },
+    RESET_ALERT_POSITION = { "Reset position", "恢复默认位置", "恢復預設位置", "Сбросить позицию" },
     ANIMATION_TAB = { "Animation", "动画效果", "動畫效果", "Анимация" },
     ANIMATION_FLOAT = { "Vertical motion", "上下浮动", "上下浮動", "Движение вверх и вниз" },
     ANIMATION_GLOW_FPS = { "Glow refresh rate", "流光刷新频率", "流光更新頻率", "Частота обновления свечения" },

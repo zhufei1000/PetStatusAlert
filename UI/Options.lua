@@ -170,18 +170,10 @@ local function RefreshStaticText()
     TEXT.ICON_GAP_VALUE = LocaleText("Spacing: %s", "间距：%s", "間距：%s", "Расстояние: %s")
     TEXT.UNLOCK = LocaleText("Unlock move", "解锁移动", "解鎖移動", "Разблокировать")
     TEXT.LOCK = LocaleText("Lock position", "锁定位置", "鎖定位置", "Закрепить")
-    TEXT.RESET_POSITION = LocaleText("Reset position", "恢复默认位置", "恢復預設位置", "Сбросить позицию")
     TEXT.POSITION_RESET_DONE = LocaleText("Alert position reset", "提示位置已恢复默认", "提示位置已恢復預設", "Позиция предупреждения сброшена")
 
     TEXT.VOICE_TITLE = LocaleText("Combat voice reminder", "战斗语音提醒", "戰鬥語音提醒", "Голосовое напоминание в бою")
 
-    TEXT.GENERAL_TITLE = LocaleText("General settings", "通用设置", "一般設定", "Общие настройки")
-    TEXT.GENERAL_DESC = LocaleText(
-        "Language and addon information.",
-        "语言与插件信息。",
-        "語言與插件資訊。",
-        "Язык и информация об аддоне."
-    )
     TEXT.SECTION_LANGUAGE = LocaleText("Language", "界面语言", "介面語言", "Язык")
     TEXT.SECTION_ABOUT = LocaleText("About PetStatusAlert", "关于 PetStatusAlert", "關於 PetStatusAlert", "О PetStatusAlert")
     TEXT.OPEN_LARGE_PANEL = LocaleText("Open large panel", "打开独立大面板", "開啟獨立大面板", "Открыть настройки")
@@ -537,6 +529,13 @@ local function StopSettingsPreview()
     if PSA.currentStatusForce then
         PSA.HideStatus(true)
         RefreshPetStatusText()
+    end
+end
+
+local function OnSettingsPageChange(key)
+    -- Keep the screen sample visible while adjusting its appearance or animation.
+    if not PSA.IsDisplayPreviewActive() or (key ~= "general" and key ~= "display" and key ~= "animation") then
+        StopSettingsPreview()
     end
 end
 
@@ -1151,8 +1150,8 @@ local function SetIconModeButtonState(button, active)
     end
 end
 
-local function CreateDisplayPreviewButton(parent, titleText)
-    local title = CreateText(parent, "GameFontNormal", titleText, 18, STYLE.white)
+local function CreatePositionControls(parent)
+    local title = CreateText(parent, "GameFontNormal", UI.POSITION_AND_PREVIEW, 18, STYLE.white)
     title:SetPoint("TOPLEFT")
 
     local previewButton = CreateButton(parent, UI.STOP_PREVIEW, 96, 26)
@@ -1168,7 +1167,40 @@ local function CreateDisplayPreviewButton(parent, titleText)
             statusLine:SetText(PSA.IsDisplayPreviewActive() and UI.PREVIEW_SAMPLE or UI.FOOTER)
         end
     end)
-    return previewButton, RefreshPreviewButton
+    local positionButton = CreateButton(parent, GetMoveButtonText(), 112, 26)
+    positionButton:SetPoint("LEFT", previewButton, "RIGHT", 10, 0)
+    AddTooltip(positionButton, isForever and UI.SUPPLY_MOVE_HINT or UI.MOVE_HINT)
+    positionButton:SetScript("OnClick", function()
+        InitDB()
+        local locked = not PetStatusAlertDB.alertLocked
+        SetAlertPositionLocked(locked)
+        positionButton:SetText(GetMoveButtonText())
+        AutoFitButton(positionButton, 112)
+        if not locked and not isForever then
+            PSA.PreviewDisplay()
+            RefreshPreviewButton()
+        end
+        if statusLine then
+            statusLine:SetText(locked and (UI.LOCKED_STATUS or TEXT.LOCK) or (UI.UNLOCKED_STATUS or TEXT.UNLOCK))
+        end
+    end)
+
+    local resetButton = CreateButton(parent, UI.RESET_ALERT_POSITION, 130, 26)
+    resetButton:SetPoint("LEFT", positionButton, "RIGHT", 10, 0)
+    resetButton:SetScript("OnClick", function()
+        PSA.ResetAlertPositions()
+        PSA.PreviewDisplay()
+        RefreshPreviewButton()
+        if statusLine then
+            statusLine:SetText(TEXT.POSITION_RESET_DONE)
+        end
+    end)
+
+    return function()
+        RefreshPreviewButton()
+        positionButton:SetText(GetMoveButtonText())
+        AutoFitButton(positionButton, 112)
+    end
 end
 
 local function CreatePageSliders()
@@ -1188,38 +1220,8 @@ local function CreatePageSliders()
 end
 
 local function DrawDisplayPage(parent)
-    local page, finish = CreateScrollablePage(parent, 63)
-    local previewButton, RefreshPreviewButton = CreateDisplayPreviewButton(parent, TEXT.DISPLAY_TITLE)
-
-    local positionButton = CreateButton(parent, GetMoveButtonText(), 112, 26)
-    positionButton:SetPoint("LEFT", previewButton, "RIGHT", 10, 0)
-    AddTooltip(positionButton, isForever and UI.SUPPLY_MOVE_HINT or UI.MOVE_HINT)
-    positionButton:SetScript("OnClick", function()
-        InitDB()
-        local locked = not PetStatusAlertDB.alertLocked
-        SetAlertPositionLocked(locked)
-        positionButton:SetText(GetMoveButtonText())
-        AutoFitButton(positionButton, 112)
-        if not locked and not isForever then
-            PSA.PreviewDisplay()
-            RefreshPreviewButton()
-        end
-        if statusLine then
-            statusLine:SetText(locked and (UI.LOCKED_STATUS or TEXT.LOCK) or (UI.UNLOCKED_STATUS or TEXT.UNLOCK))
-        end
-    end)
-
-    local resetButton = CreateButton(parent, TEXT.RESET_POSITION, 130, 26)
-    resetButton:SetPoint("LEFT", positionButton, "RIGHT", 10, 0)
-    resetButton:SetScript("OnClick", function()
-        PSA.ResetAlertPositions()
-        PSA.PreviewDisplay()
-        RefreshPreviewButton()
-        if statusLine then
-            statusLine:SetText(TEXT.POSITION_RESET_DONE)
-        end
-    end)
-
+    local page, finish = CreateScrollablePage(parent, 32)
+    CreateText(parent, "GameFontNormal", TEXT.DISPLAY_TITLE, 18, STYLE.white):SetPoint("TOPLEFT")
     local AddSlider, RefreshSliders = CreatePageSliders()
     local presentationBox = CreateSection(page, TEXT.SECTION_PRESENTATION, nil, 0, 229)
 
@@ -1258,9 +1260,6 @@ local function DrawDisplayPage(parent)
 
     finish(presentationBox:GetHeight() + 12)
     return function()
-        RefreshPreviewButton()
-        positionButton:SetText(GetMoveButtonText())
-        AutoFitButton(positionButton, 112)
         local mode = GetAlertIconMode()
         for key, button in pairs(modeButtons) do SetIconModeButtonState(button, key == mode) end
         RefreshSliders()
@@ -1268,8 +1267,8 @@ local function DrawDisplayPage(parent)
 end
 
 local function DrawAnimationPage(parent)
-    local page, finish = CreateScrollablePage(parent, 63)
-    local _, RefreshPreviewButton = CreateDisplayPreviewButton(parent, UI.ANIMATION_TAB)
+    local page, finish = CreateScrollablePage(parent, 32)
+    CreateText(parent, "GameFontNormal", UI.ANIMATION_TAB, 18, STYLE.white):SetPoint("TOPLEFT")
     local AddSlider, RefreshSliders = CreatePageSliders()
 
     local effectsBox = CreateSection(page, UI.ANIMATION_GLOW_ENABLE, nil, 0, 175)
@@ -1290,7 +1289,6 @@ local function DrawAnimationPage(parent)
 
     finish(-motionY + motionBox:GetHeight() + 12)
     return function()
-        RefreshPreviewButton()
         glowCheck:SetChecked(GetAlertGlowEnabled())
         RefreshSliders()
     end
@@ -1412,10 +1410,10 @@ local function GetCurrentLanguageModeText()
 end
 
 local function DrawGeneralPage(parent)
-    local page, finish = CreateScrollablePage(parent)
-    CreatePageHeader(page, TEXT.GENERAL_TITLE, TEXT.GENERAL_DESC)
+    local page, finish = CreateScrollablePage(parent, 63)
+    local RefreshPositionControls = CreatePositionControls(parent)
 
-    local languageY = -72
+    local languageY = 0
     local languageBox = CreateSection(page, TEXT.SECTION_LANGUAGE, UI.LANGUAGE_DESC or "", languageY, 188)
 
     local current = CreateText(languageBox, "GameFontNormal", GetCurrentLanguageModeText(), 13, STYLE.text)
@@ -1477,6 +1475,7 @@ local function DrawGeneralPage(parent)
 
     finish(-aboutY + 240 + supportExtra)
     return function()
+        RefreshPositionControls()
         current:SetText(GetCurrentLanguageModeText())
     end
 end
@@ -1853,10 +1852,10 @@ local function CreateOptionsFrame()
         navLabels[button.text] = getLabel
         button:SetScript("OnClick", function()
             if button:IsShown() and frame.activePage ~= key then
-                StopSettingsPreview()
+                OnSettingsPageChange(key)
                 frame.activePage = key
                 pageByClient[frame.viewForever] = key
-                statusLine:SetText(UI.FOOTER or "/psa")
+                statusLine:SetText(PSA.IsDisplayPreviewActive() and UI.PREVIEW_SAMPLE or UI.FOOTER or "/psa")
                 DrawPage()
             end
         end)
@@ -2071,6 +2070,7 @@ end
 PSA.OpenOptionsFrame = OpenOptionsFrame
 PSA.RefreshConfiguredAlert = RefreshConfiguredAlert
 PSA.StopSettingsPreview = StopSettingsPreview
+PSA.OnSettingsPageChange = OnSettingsPageChange
 PSA.RefreshLocaleState = RefreshAllLocaleState
 PSA.RefreshOptionsFrameLocale = RefreshOptionsFrameLocale
 PSA.RegisterNativeOptionsCategory = RegisterNativeOptionsCategory

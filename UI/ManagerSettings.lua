@@ -243,10 +243,7 @@ end
 
 local function BuildAnimation(page)
     local ui = PSA.UI
-    local section = page:NewSection(ui.ANIMATION_TAB)
-    section:ButtonRow({{text = ui.PREVIEW, onClick = PSA.PreviewDisplay}, {text = ui.STOP_PREVIEW, onClick = PSA.StopSettingsPreview}})
-    page:AddSection(section)
-    section = page:NewSection(ui.ANIMATION_GLOW_ENABLE)
+    local section = page:NewSection(ui.ANIMATION_GLOW_ENABLE)
     section:Check(ui.ENABLE_ALERT, PSA.GetAlertGlowEnabled, PSA.SetAlertGlowEnabled, ui.ANIMATION_GLOW_ENABLE_HINT)
     AddSlider(section, "ANIMATION_GLOW_SPEED", 0.2, 3, 0.1, PSA.GetAlertGlowSpeed, PSA.SetAlertGlowSpeed)
     AddSlider(section, "ANIMATION_GLOW_FPS", PSA.MIN_ALERT_GLOW_FPS, PSA.MAX_ALERT_GLOW_FPS, 1,
@@ -267,16 +264,10 @@ function PSA.GetSettingsDefinition(context)
         local forever = PSA.IsForeverClient()
         local tabs = ClassTabs(forever)
         definition = {external=true, tabs=tabs,
-            OnSettingsHide=function() rebuild=nil; PSA.StopSettingsPreview() end, OnTabShow=PSA.StopSettingsPreview}
+            OnSettingsHide=function() rebuild=nil; PSA.StopSettingsPreview() end, OnTabShow=PSA.OnSettingsPageChange}
         local shared = {
             {key="display", title=Text("Display", "显示样式", "顯示樣式"), build=function(page)
-                local s=page:NewSection(Text("Position & preview", "位置与预览", "位置與預覽"))
-                s:Check(PSA.UI.LOCKED_STATUS, function() return PetStatusAlertDB.alertLocked end,
-                    PSA.SetAlertPositionLocked, forever and PSA.UI.SUPPLY_MOVE_HINT or PSA.UI.MOVE_HINT)
-                s:ButtonRow({{text=PSA.UI.PREVIEW, onClick=PSA.PreviewDisplay}, {text=PSA.UI.STOP_PREVIEW, onClick=PSA.StopSettingsPreview},
-                    {text=Text("Reset position", "重置位置", "重設位置"), onClick=PSA.ResetAlertPositions}})
-                page:AddSection(s)
-                s=page:NewSection(PSA.UI.ANIMATION_ICON_MODE)
+                local s=page:NewSection(PSA.UI.ANIMATION_ICON_MODE)
                 s:Dropdown(PSA.UI.ANIMATION_ICON_MODE, PSA.GetAlertIconMode, PSA.SetAlertIconMode,
                     {{value="text",text=Text("Text", "文字", "文字")},{value="icon",text=Text("Icon", "图标", "圖示")},{value="both",text=Text("Icon + Text", "图标+文字", "圖示+文字")}},nil,180)
                 AddSlider(s,"ANIMATION_ICON_SIZE",24,96,1,PSA.GetAlertIconSize,PSA.SetAlertIconSize)
@@ -300,8 +291,15 @@ function PSA.GetSettingsDefinition(context)
                 page:AddSection(s)
             end},
             {key="general", title=Text("General", "通用", "一般"), build=function(page)
+                local ui = PSA.UI
+                local s=page:NewSection(ui.POSITION_AND_PREVIEW)
+                s:Check(ui.LOCKED_STATUS, function() return PetStatusAlertDB.alertLocked end,
+                    PSA.SetAlertPositionLocked, forever and ui.SUPPLY_MOVE_HINT or ui.MOVE_HINT)
+                s:ButtonRow({{text=ui.PREVIEW, onClick=PSA.PreviewDisplay}, {text=ui.STOP_PREVIEW, onClick=PSA.StopSettingsPreview},
+                    {text=ui.RESET_ALERT_POSITION, onClick=PSA.ResetAlertPositions}})
+                page:AddSection(s)
                 local title=Text("Language", "语言", "語言")
-                local s=page:NewSection(title,PSA.UI.LANGUAGE_DESC)
+                s=page:NewSection(title,PSA.UI.LANGUAGE_DESC)
                 s:Dropdown(title,PSA.GetSavedLanguageMode,function(v)
                     PSA.ApplyManagerLanguage(v)
                     -- 语言切换会替换所有静态文案，需要重建当前页面。
