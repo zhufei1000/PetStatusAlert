@@ -160,8 +160,6 @@ local function RefreshStaticText()
 
     TEXT.DISPLAY_TITLE = LocaleText("On-screen alert appearance", "屏幕提醒外观", "螢幕提醒外觀", "Внешний вид предупреждения")
     TEXT.SECTION_PRESENTATION = LocaleText("Icon & text", "图标与文字", "圖示與文字", "Значок и текст")
-    TEXT.SECTION_MOTION = LocaleText("Text & movement", "文字与动画", "文字與動畫", "Текст и движение")
-    TEXT.SECTION_EFFECTS = LocaleText("Effects", "特效", "特效", "Эффекты")
     TEXT.ICON_GAP = LocaleText("Icon / text spacing", "图标与文字间距", "圖示與文字間距", "Расстояние между значком и текстом")
     TEXT.ICON_GAP_HINT = LocaleText(
         "Only affects Icon + Text mode. Default: 10.",
@@ -1072,6 +1070,14 @@ local function DrawAlertsPage(parent, classFile, forever)
         rulesBox, refreshRules = DrawWarlockRules(page, -height, forever, readOnly)
     elseif classFile == "MAGE" then
         rulesHeight, refreshRules = DrawMageRules(page, -height, readOnly)
+    elseif forever and classFile == "HUNTER" then
+        local box = CreateSection(page, UI.PET_AUTOCAST_SETTINGS, UI.PET_AUTOCAST_HINT, -height, 96)
+        local checkY = -math.max(72, 48 + math.ceil(box.sectionDesc:GetStringHeight()))
+        rulesHeight = 22 - checkY
+        box:SetHeight(rulesHeight)
+        local check = CreateRuleCheck(box, UI.ENABLE_ALERT, 16, checkY, LAYOUT.contentWidth - 56,
+            not readOnly and function(on) PSA.SetClassOption("petAutocastAlertEnabled", on) end)
+        refreshRules = function() check:SetChecked(PSA.GetClassOption("petAutocastAlertEnabled", readOnly)) end
     end
     local function Refresh()
         for _, refresh in ipairs(refreshes) do
@@ -1145,9 +1151,8 @@ local function SetIconModeButtonState(button, active)
     end
 end
 
-local function DrawDisplayPage(parent)
-    local page, finish = CreateScrollablePage(parent, 63)
-    local title = CreateText(parent, "GameFontNormal", TEXT.DISPLAY_TITLE, 18, STYLE.white)
+local function CreateDisplayPreviewButton(parent, titleText)
+    local title = CreateText(parent, "GameFontNormal", titleText, 18, STYLE.white)
     title:SetPoint("TOPLEFT")
 
     local previewButton = CreateButton(parent, UI.STOP_PREVIEW, 96, 26)
@@ -1163,6 +1168,28 @@ local function DrawDisplayPage(parent)
             statusLine:SetText(PSA.IsDisplayPreviewActive() and UI.PREVIEW_SAMPLE or UI.FOOTER)
         end
     end)
+    return previewButton, RefreshPreviewButton
+end
+
+local function CreatePageSliders()
+    local sliderRefreshes = {}
+    local function AddSlider(box, label, hint, y, minimum, maximum, step, getValue, setValue, format)
+        local value = getValue()
+        local _, _, refresh = CreateSliderRow(box, label, hint, y, minimum, maximum, step,
+            value, format(value), function(nextValue) return format(setValue(nextValue)) end)
+        sliderRefreshes[#sliderRefreshes + 1] = function()
+            local current = getValue()
+            refresh(current, format(current))
+        end
+    end
+    return AddSlider, function()
+        for _, refresh in ipairs(sliderRefreshes) do refresh() end
+    end
+end
+
+local function DrawDisplayPage(parent)
+    local page, finish = CreateScrollablePage(parent, 63)
+    local previewButton, RefreshPreviewButton = CreateDisplayPreviewButton(parent, TEXT.DISPLAY_TITLE)
 
     local positionButton = CreateButton(parent, GetMoveButtonText(), 112, 26)
     positionButton:SetPoint("LEFT", previewButton, "RIGHT", 10, 0)
@@ -1193,23 +1220,8 @@ local function DrawDisplayPage(parent)
         end
     end)
 
-    local sliderRefreshes = {}
-    local function AddSlider(box, label, hint, y, minimum, maximum, step, getValue, setValue, format)
-        local value = getValue()
-        local _, _, refresh = CreateSliderRow(box, label, hint, y, minimum, maximum, step,
-            value, format(value), function(nextValue) return format(setValue(nextValue)) end)
-        sliderRefreshes[#sliderRefreshes + 1] = function()
-            local current = getValue()
-            refresh(current, format(current))
-        end
-    end
-
-    local y = 0
-
-    -------------------------------------------------
-    -- Icon + text presentation
-    -------------------------------------------------
-    local presentationBox = CreateSection(page, TEXT.SECTION_PRESENTATION, nil, y, 183)
+    local AddSlider, RefreshSliders = CreatePageSliders()
+    local presentationBox = CreateSection(page, TEXT.SECTION_PRESENTATION, nil, 0, 229)
 
     local modeLabel = CreateText(presentationBox, "GameFontNormal", UI.ANIMATION_ICON_MODE or "Icon mode", 14, STYLE.gold)
     modeLabel:SetPoint("TOPLEFT", presentationBox, "TOPLEFT", 18, -47)
@@ -1241,55 +1253,46 @@ local function DrawDisplayPage(parent)
         GetAlertIconSize, SetAlertIconSize, function(value) return UI.ANIMATION_ICON_SIZE_VALUE:format(value) end)
     AddSlider(presentationBox, TEXT.ICON_GAP, TEXT.ICON_GAP_HINT, -134, 0, 40, 1,
         GetAlertIconGap, SetAlertIconGap, function(value) return TEXT.ICON_GAP_VALUE:format(value) end)
-
-    y = y - 193
-
-    -------------------------------------------------
-    -- Text and movement
-    -------------------------------------------------
-    local motionBox = CreateSection(page, TEXT.SECTION_MOTION, nil, y, 190)
-
-    AddSlider(motionBox, UI.ANIMATION_FONT_SIZE, UI.ANIMATION_FONT_SIZE_HINT, -45, 12, 72, 1,
+    AddSlider(presentationBox, UI.ANIMATION_FONT_SIZE, UI.ANIMATION_FONT_SIZE_HINT, -180, 12, 72, 1,
         GetAlertFontSize, SetAlertFontSize, function(value) return UI.ANIMATION_FONT_SIZE_VALUE:format(value) end)
-    AddSlider(motionBox, UI.ANIMATION_AMPLITUDE, UI.ANIMATION_AMPLITUDE_HINT, -91, 0, 24, 1,
-        GetAlertFloatAmplitude, SetAlertFloatAmplitude, function(value) return UI.ANIMATION_AMPLITUDE_VALUE:format(value) end)
-    AddSlider(motionBox, UI.ANIMATION_SPEED, UI.ANIMATION_SPEED_HINT, -137, 0.1, 3, 0.1,
-        GetAlertFloatSpeed, SetAlertFloatSpeed, function(value) return UI.ANIMATION_SPEED_VALUE:format(FormatOneDecimal(value)) end)
 
-    y = y - 200
-
-    -------------------------------------------------
-    -- Effects
-    -------------------------------------------------
-    local effectsBox = CreateSection(page, TEXT.SECTION_EFFECTS, nil, y, 134)
-
-    local glowCheck = CreateOptionCheck(effectsBox)
-    glowCheck:SetSize(22, 22)
-    glowCheck:SetPoint("TOPLEFT", effectsBox, "TOPLEFT", 14, -41)
-    AddTooltip(glowCheck, UI.ANIMATION_GLOW_ENABLE_HINT)
-    local glowLabel = CreateText(effectsBox, "GameFontNormal", UI.ANIMATION_GLOW_ENABLE or "Pixel glow", 14, STYLE.gold)
-    glowLabel:SetPoint("LEFT", glowCheck, "RIGHT", 3, 0)
-
-    glowCheck:SetScript("OnClick", function(self)
-        local enabled = SetAlertGlowEnabled(self:GetChecked() and true or false)
-        self:SetChecked(enabled)
-        if statusLine then
-            statusLine:SetText(enabled and (UI.ANIMATION_GLOW_ON or "Pixel glow enabled") or (UI.ANIMATION_GLOW_OFF or "Pixel glow disabled"))
-        end
-    end)
-
-    AddSlider(effectsBox, UI.ANIMATION_GLOW_SPEED, UI.ANIMATION_GLOW_SPEED_HINT, -81, 0.2, 3, 0.1,
-        GetAlertGlowSpeed, SetAlertGlowSpeed, function(value) return UI.ANIMATION_GLOW_SPEED_VALUE:format(FormatOneDecimal(value)) end)
-
-    finish(math.abs(y) + 146)
+    finish(presentationBox:GetHeight() + 12)
     return function()
         RefreshPreviewButton()
         positionButton:SetText(GetMoveButtonText())
         AutoFitButton(positionButton, 112)
         local mode = GetAlertIconMode()
         for key, button in pairs(modeButtons) do SetIconModeButtonState(button, key == mode) end
+        RefreshSliders()
+    end
+end
+
+local function DrawAnimationPage(parent)
+    local page, finish = CreateScrollablePage(parent, 63)
+    local _, RefreshPreviewButton = CreateDisplayPreviewButton(parent, UI.ANIMATION_TAB)
+    local AddSlider, RefreshSliders = CreatePageSliders()
+
+    local effectsBox = CreateSection(page, UI.ANIMATION_GLOW_ENABLE, nil, 0, 175)
+    local glowCheck = CreateRuleCheck(effectsBox, UI.ENABLE_ALERT, 18, -49, LAYOUT.contentWidth - 76, SetAlertGlowEnabled)
+    AddTooltip(glowCheck, UI.ANIMATION_GLOW_ENABLE_HINT)
+    AddSlider(effectsBox, UI.ANIMATION_GLOW_SPEED, UI.ANIMATION_GLOW_SPEED_HINT, -80, 0.2, 3, 0.1,
+        GetAlertGlowSpeed, SetAlertGlowSpeed, function(value) return UI.ANIMATION_GLOW_SPEED_VALUE:format(FormatOneDecimal(value)) end)
+    AddSlider(effectsBox, UI.ANIMATION_GLOW_FPS, UI.ANIMATION_GLOW_FPS_HINT, -126,
+        PSA.MIN_ALERT_GLOW_FPS, PSA.MAX_ALERT_GLOW_FPS, 1, PSA.GetAlertGlowFPS, PSA.SetAlertGlowFPS,
+        function(value) return UI.ANIMATION_GLOW_FPS_VALUE:format(value) end)
+
+    local motionY = -effectsBox:GetHeight() - 10
+    local motionBox = CreateSection(page, UI.ANIMATION_FLOAT, nil, motionY, 144)
+    AddSlider(motionBox, UI.ANIMATION_AMPLITUDE, UI.ANIMATION_AMPLITUDE_HINT, -45, 0, 24, 1,
+        GetAlertFloatAmplitude, SetAlertFloatAmplitude, function(value) return UI.ANIMATION_AMPLITUDE_VALUE:format(value) end)
+    AddSlider(motionBox, UI.ANIMATION_SPEED, UI.ANIMATION_SPEED_HINT, -91, 0.1, 3, 0.1,
+        GetAlertFloatSpeed, SetAlertFloatSpeed, function(value) return UI.ANIMATION_SPEED_VALUE:format(FormatOneDecimal(value)) end)
+
+    finish(-motionY + motionBox:GetHeight() + 12)
+    return function()
+        RefreshPreviewButton()
         glowCheck:SetChecked(GetAlertGlowEnabled())
-        for _, refresh in ipairs(sliderRefreshes) do refresh() end
+        RefreshSliders()
     end
 end
 
@@ -1481,8 +1484,11 @@ end
 local function DrawAmmoPage(parent, readOnly)
     local page, finish = CreateScrollablePage(parent)
     local hint = UI.AMMO_WEAPON_HINT .. "\n" .. UI.AMMO_THRESHOLD_HINT
-    local section = CreateSection(page, UI.AMMO_SETTINGS, hint, 0, 124)
-    section:SetHeight(math.max(124, 90 + section.sectionDesc:GetStringHeight()))
+    local section = CreateSection(page, UI.AMMO_SETTINGS, hint, 0, 132)
+    local enableY = -math.max(72, 48 + math.ceil(section.sectionDesc:GetStringHeight()))
+    section:SetHeight(60 - enableY)
+    local check = CreateRuleCheck(section, UI.AMMO_ENABLE, 18, enableY, LAYOUT.contentWidth - 76,
+        not readOnly and PSA.SetAmmoAlertEnabled)
 
     local label = CreateText(section, "GameFontNormal", UI.AMMO_THRESHOLD, 14, STYLE.gold)
     label:SetPoint("BOTTOMLEFT", section, "BOTTOMLEFT", 18, 24)
@@ -1495,6 +1501,7 @@ local function DrawAmmoPage(parent, readOnly)
     input:SetNumeric(true)
     input:SetJustifyH("RIGHT")
     local function Refresh()
+        check:SetChecked(readOnly or PSA.GetAmmoAlertEnabled())
         input:SetText(tostring(readOnly and PSA.DEFAULT_AMMO_THRESHOLD or PSA.GetAmmoThreshold()))
     end
     if readOnly then
@@ -1780,6 +1787,8 @@ local function CreateOptionsFrame()
             pageHolder:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT")
             if key == "display" then
                 pageHolder.refreshSettings = DrawDisplayPage(pageHolder)
+            elseif key == "animation" then
+                pageHolder.refreshSettings = DrawAnimationPage(pageHolder)
             elseif key == "voice" then
                 pageHolder.refreshSettings = DrawVoicePage(pageHolder)
             elseif key == "general" then
@@ -1870,6 +1879,7 @@ local function CreateOptionsFrame()
     AddNav("voice", function() return TEXT.NAV_VOICE end)
     AddNav("hunterTools", function() return UI.HUNTER_TOOLS end)
     AddNav("ammo", function() return UI.AMMO_TAB end)
+    AddNav("animation", function() return UI.ANIMATION_TAB end)
     AddNav("general", function() return TEXT.NAV_GENERAL end)
 
     frame.RefreshNavLabels = function()

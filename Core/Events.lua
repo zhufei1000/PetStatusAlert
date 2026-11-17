@@ -19,6 +19,7 @@ local ClearPetStatusCaches = PSA.ClearPetStatusCaches
 local HandleForeverFormAlertCast = PSA.HandleForeverFormAlertCast
 local ResetForeverFormAlertState = PSA.ResetForeverFormAlertState
 local isForever = PSA.IsForeverClient()
+local canWatchPetFeedingAura = isForever and C_UnitAuras and C_UnitAuras.GetUnitAuraBySpellID
 
 local function RegisterEventSafe(event)
     if addonFrame and event then
@@ -86,7 +87,47 @@ PSA.RefreshWarriorAuraWatch()
 
 local trackAmmo = isForever and PSA.GetForeverAmmo and PSA.SetAmmoAlert
 local ammoThreshold = 0
+local function GetActiveAmmoThreshold()
+    return PSA.GetAmmoAlertEnabled() and PSA.GetAmmoThreshold() or 0
+end
+
 local petCareWatch, feedingWatch = false, false
+local petAutocastWatch, petAutocastRefreshPending = false, false
+
+local function RunPetAutocastRefresh()
+    petAutocastRefreshPending = false
+    if petAutocastWatch then PSA.RefreshPetAutocast() end
+end
+
+local function QueuePetAutocastRefresh()
+    if not petAutocastWatch or petAutocastRefreshPending then return end
+    petAutocastRefreshPending = true
+    -- Zone, roster and pet bar events can arrive together on world entry.
+    C_Timer.After(0.15, RunPetAutocastRefresh)
+end
+
+if PSA.RefreshPetAutocast then
+    function PSA.ApplyPetAutocastSettings()
+        local watch = playerClass == "HUNTER" and PSA.GetClassOption("petAutocastAlertEnabled")
+        petAutocastWatch = watch
+        SetEventRegistered("GROUP_ROSTER_UPDATE", watch)
+        SetEventRegistered("ZONE_CHANGED_NEW_AREA", watch)
+        if watch then QueuePetAutocastRefresh() else PSA.SetPetAutocastAlert() end
+    end
+end
+
+local PET_AUTOCAST_STATE_EVENTS = {
+    PLAYER_ENTERING_WORLD = true,
+    GROUP_ROSTER_UPDATE = true,
+    ZONE_CHANGED_NEW_AREA = true,
+    UNIT_PET = true,
+    UNIT_FLAGS = true,
+    PET_BAR_UPDATE = true,
+    PET_UI_UPDATE = true,
+    SPELLS_CHANGED = true,
+    LEARNED_SPELL_IN_SKILL_LINE = true,
+    PLAYER_REGEN_ENABLED = true,
+}
 
 local centralPetEvents = {
     "SPELLS_CHANGED",
@@ -119,6 +160,7 @@ local function UpdateCentralEvents()
     SetEventRegistered("PLAYER_EQUIPMENT_CHANGED", ammo)
     SetUnitEventRegistered("UNIT_INVENTORY_CHANGED", "player", ammo)
     SetUnitEventRegistered("UNIT_HAPPINESS", "pet", petCareWatch)
+    if canWatchPetFeedingAura then SetUnitEventRegistered("UNIT_AURA", "pet", feedingWatch) end
     SetUnitEventRegistered("UNIT_ENTERED_VEHICLE", "player", pet)
     SetUnitEventRegistered("UNIT_EXITED_VEHICLE", "player", pet)
     SetUnitEventRegistered("UNIT_FLAGS", "pet", hasPet)
@@ -171,7 +213,7 @@ end
 if isForever and trackAmmo then
     function PSA.ApplyAmmoAlertSettings()
         local wasWatching = ammoThreshold > 0
-        ammoThreshold = PSA.GetAmmoThreshold()
+        ammoThreshold = GetActiveAmmoThreshold()
         if wasWatching ~= (ammoThreshold > 0) then UpdateCentralEvents() end
         if ammoThreshold > 0 then QueueAmmoRefresh() else PSA.SetAmmoAlert() end
     end
@@ -307,8 +349,9 @@ addonFrame:SetScript("OnEvent", function(_, event, unit, slot, spellID)
                 PSA.RefreshAlertVisuals()
             end
             UpdatePetCareWatch()
+            if PSA.ApplyPetAutocastSettings then PSA.ApplyPetAutocastSettings() end
             if trackAmmo then
-                ammoThreshold = PSA.GetAmmoThreshold()
+                ammoThreshold = GetActiveAmmoThreshold()
                 QueueAmmoRefresh()
             end
             UpdateCentralEvents()
@@ -330,13 +373,17 @@ addonFrame:SetScript("OnEvent", function(_, event, unit, slot, spellID)
         UpdatePlayerClass()
         if playerClass then
             UpdatePetCareWatch()
+            if PSA.ApplyPetAutocastSettings then PSA.ApplyPetAutocastSettings() end
             UpdateCentralEvents()
             if PSA.RefreshCombatAspectAlert then PSA.RefreshCombatAspectAlert() end
         end
     end
 
     if event == "UNIT_AURA" then
-        if PSA.HandleWarriorAuraChanged and PSA.IsAccessibleValue(unit) and unit == "player" then
+        if not PSA.IsAccessibleValue(unit) then return end
+        if unit == "pet" and canWatchPetFeedingAura and feedingWatch and not InCombatLockdown() then
+            QueuePetCareRefresh(false)
+        elseif unit == "player" and PSA.HandleWarriorAuraChanged then
             PSA.HandleWarriorAuraChanged(slot)
         end
         return
@@ -350,6 +397,9 @@ addonFrame:SetScript("OnEvent", function(_, event, unit, slot, spellID)
         return
     end
     if event == "PLAYER_SPECIALIZATION_CHANGED" and unit and unit ~= "player" then return end
+
+    if petAutocastWatch and PET_AUTOCAST_STATE_EVENTS[event] then QueuePetAutocastRefresh() end
+    if event == "GROUP_ROSTER_UPDATE" or event == "ZONE_CHANGED_NEW_AREA" then return end
 
     if ammoThreshold > 0 then
         if event == "PLAYER_REGEN_DISABLED" then
@@ -411,6 +461,10 @@ addonFrame:SetScript("OnEvent", function(_, event, unit, slot, spellID)
         return
     end
     if not hasClassAlerts then return end
+
+    if playerClass ~= "WARRIOR" and (event == "PLAYER_MOUNT_DISPLAY_CHANGED" or event == "PLAYER_ENTERING_WORLD") then
+        PSA.UpdatePetDismountGrace(event == "PLAYER_ENTERING_WORLD")
+    end
 
     if CACHE_INVALIDATE_EVENTS[event] and ClearPetStatusCaches then
         ClearPetStatusCaches()

@@ -217,6 +217,51 @@ end)
 Test("mounted players suppress pet alerts", function()
     assert(Session({forever = true, mounted = true, known = {[883] = true}}).Refresh() == nil)
 end)
+
+for _, forever in ipairs({false, true}) do
+    Test((forever and "Forever" or "Retail") .. " dismount grace delays only missing pets and ends on combat or timeout", function()
+        local config = {forever = forever, known = {[883] = true}, mode = "PET_MODE_PASSIVE"}
+        local session = Session(config)
+        local after, grace = session.env.C_Timer.After, {}
+        session.env.C_Timer.After = function(delay, callback)
+            if delay == 2 then grace[#grace + 1] = callback else after(delay, callback) end
+        end
+        local function Mount(mounted)
+            config.mounted = mounted
+            session.Event("PLAYER_MOUNT_DISPLAY_CHANGED")
+        end
+
+        session.Event("PLAYER_ENTERING_WORLD")
+        assert(session.currentStatusKey == "NO_PET", "world entry while on foot does not start dismount grace")
+        Mount(true)
+        Mount(false)
+        Mount(false)
+        assert(#grace == 1 and not session.currentStatusKey, "duplicate mount events must not extend the grace")
+        config.pet, config.dead = true, true
+        session.Event("UNIT_PET", "player")
+        assert(session.currentStatusKey == "PET_DEAD", "a present dead pet must warn during grace")
+        config.dead = false
+        session.Event("UNIT_FLAGS", "pet")
+        assert(session.currentStatusKey == "PASSIVE", "stance warnings must also remain immediate")
+
+        config.pet = false
+        Mount(true)
+        Mount(false)
+        grace[1]()
+        assert(not session.currentStatusKey, "an old timer must not end a new dismount grace")
+        grace[2]()
+        assert(session.currentStatusKey == "NO_PET", "the timer must notify without another game event")
+
+        Mount(true)
+        Mount(false)
+        config.combat = true
+        session.Dispatch("PLAYER_REGEN_DISABLED")
+        assert(session.currentStatusKey == "NO_PET", "combat start checks before queued refreshes")
+        config.combat = false
+        session.Event("PLAYER_REGEN_ENABLED")
+        assert(session.currentStatusKey == "NO_PET", "leaving combat must not restore a canceled grace")
+    end)
+end
 for _, event in ipairs({"SPELLS_CHANGED", "LEARNED_SPELL_IN_SKILL_LINE"}) do
     Test(event .. " refreshes learned-summon eligibility", function()
         local config = {forever = true, known = {}}

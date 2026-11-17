@@ -2,9 +2,17 @@
 
 ## Unreleased
 
+- Move pixel glow and vertical motion to a separate Animation page with a live preview. Add a shared glow refresh slider (10–30 updates per second, default 20).
+
+- Add a separate Forever low ammo alert switch, on by default. Turning it off keeps the threshold, and a previously saved threshold of zero is carried over as an opt-out.
+
+- On Forever, warn when Hunter pet Growl should be enabled outdoors or disabled in a dungeon or raid. Remind players to set a learned Cower opposite to Growl's actual autocast setting after fixing any Growl mismatch.
+
+- Give pets two seconds to return after dismounting on both clients. Only the missing-pet alert waits, and entering combat checks immediately.
+- On Forever, show a separate zero-food indicator when a pet needs feeding and there is no suitable food in the player's bags. Hide the feed reminder while the pet is eating.
 - Reduce idle and combat CPU: cache mount/vehicle and pet stance state between the events that can change them, cache learned spell lookups, remove protected-call wrappers from the pet refresh hot path, and reuse timer callbacks instead of allocating closures and formatted strings for every pet event.
 - Reduce bag-event CPU: cache pet-food edibility per item, reuse per-slot food entries instead of rebuilding them on every pickup, and cache the preferred-food count between bag changes.
-- Lower animation cost: pixel glow now runs at 15 FPS for the main alert and 10 FPS for accessory icons with six pixels, and floating text updates at 15 FPS.
+- By default, update pixel glow up to 20 times per second for the main alert and 15 for accessory icons, with six pixels per glow. Floating text still updates at 15 FPS.
 - Skip redundant alert work: unchanged statuses no longer rewrite the text color, rebuild the layout, or recalculate default message strings.
 - Fix pet stance detection to read the real `isActive` pet action flag instead of the `isToken` flag on clients that return the full action tuple.
 - Remove general class and group buffs, player food reminders, and temporary weapon enhancement alerts. Pet and Warrior stance alerts, pet feeding, and low ammo remain available.

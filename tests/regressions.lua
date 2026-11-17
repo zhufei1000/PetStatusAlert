@@ -285,7 +285,7 @@ local function LoadLanguageSession(saved)
     PetStatusAlertDB = nil
     local session = {}
     for _, path in ipairs({"Core/Database.lua", "Core/Compat.lua", "Core/Localization.lua", "Core/AlertFrame.lua",
-        "Core/TTS.lua", "Core/PetLogic.lua", "Core/PetFeed.lua", "Core/WarriorLogic.lua",
+        "Core/TTS.lua", "Core/PetLogic.lua", "Core/PetAutocast.lua", "Core/PetFeed.lua", "Core/WarriorLogic.lua",
         "Core/ForeverFormAlerts.lua", "Core/ForeverAspect.lua", "UI/Options.lua",
         "UI/ManagerSettings.lua", "Core/Events.lua"}) do
         assert(loadfile(path))("PetStatusAlert", session)
@@ -884,6 +884,83 @@ Test("stance glow defaults on and an updated opt-out survives reload", function(
     assert(not reloaded.GetAlertGlowEnabled() and not next(activeGlows))
 end)
 
+Test("global animation page previews and changes both active glow rates without restarting them", function()
+    local oldBuild, oldLib, oldTexture = GetBuildInfo, LibStub, C_Spell.GetSpellTexture
+    GetBuildInfo = function() return "1.60.1", "70938", "", 16001 end
+    C_Spell.GetSpellTexture = function() return 123 end
+    local ticks = {}
+    LibStub = function()
+        return {
+            PixelGlow_Start = function(frame, _, _, _, _, _, _, _, _, key)
+                local glow = Object()
+                function glow:GetScript(script) return self.scripts[script] end
+                local index = #ticks + 1
+                ticks[index] = 0
+                glow:SetScript("OnUpdate", function() ticks[index] = ticks[index] + 1 end)
+                frame["_PixelGlow" .. key] = glow
+            end,
+            PixelGlow_Stop = function(frame, key) frame["_PixelGlow" .. key] = nil end,
+        }
+    end
+    local ok, err = pcall(function()
+        local session = LoadLanguageSession({language = "zhCN"})
+        session.OpenOptionsFrame()
+        local frame = Upvalue(session.RefreshOptionsFrameLocale, "optionsFrame")
+        frame.navButtons.display.scripts.OnClick()
+        assert(not FindText(frame.currentPage, session.UI.ANIMATION_GLOW_FPS))
+        assert(not FindText(frame.currentPage, session.UI.ANIMATION_AMPLITUDE))
+        frame.navButtons.classes.scripts.OnClick()
+        assert(frame.navButtons.animation:IsVisible() and not frame.navButtons.display:IsShown())
+        frame.navButtons.animation.scripts.OnClick()
+        local page = frame.currentPage
+        assert(FindText(page, session.UI.ANIMATION_FLOAT) and FindText(page, session.UI.ANIMATION_GLOW_FPS))
+        local slider = assert(FindNode(page, function(node)
+            return node.template == "OptionsSliderTemplate" and node:GetValue() == 20
+        end))
+        local preview = assert(FindButton(page, session.UI.PREVIEW))
+        preview.scripts.OnClick()
+        session.SetAmmoAlert("LOW_BULLETS", 9, 123)
+        local anchor = session.addonFrame
+        assert(session.IsDisplayPreviewActive() and #ticks == 2)
+        anchor.scripts.OnUpdate(anchor, 0.06)
+        assert(ticks[1] == 1 and ticks[2] == 0, "the main glow should refresh before the ammo glow at the default rate")
+        anchor.scripts.OnUpdate(anchor, 0.01)
+        assert(ticks[2] == 1)
+
+        slider:SetValue(30)
+        slider.scripts.OnMouseUp(slider)
+        assert(session.GetAlertGlowFPS() == 30 and FindText(page, "30 次/秒"))
+        anchor.scripts.OnUpdate(anchor, 0.045)
+        assert(#ticks == 2 and ticks[1] == 2 and ticks[2] == 2, "the live glows should update sooner without restarting")
+        session.SetAmmoAlert()
+        frame.navButtons.general.scripts.OnClick()
+        assert(not session.IsDisplayPreviewActive() and not anchor.scripts.OnUpdate)
+
+        local manager = session.GetSettingsDefinition({})
+        for _, tab in ipairs(manager.tabs) do
+            if tab.key == "animation" then
+                local foundSlider = false
+                tab.build({NewSection = function() return {
+                    ButtonRow = noop, Check = noop,
+                    ValueSlider = function(_, label, low, high, _, get)
+                        if label == session.UI.ANIMATION_GLOW_FPS then
+                            assert(low == 10 and high == 30 and get() == 30)
+                            foundSlider = true
+                        end
+                    end,
+                } end, AddSection = noop})
+                assert(foundSlider)
+                local reloaded = LoadLanguageSession(PetStatusAlertDB)
+                assert(reloaded.GetAlertGlowFPS() == 30)
+                return
+            end
+        end
+        error("QFXAddonManager is missing the Animation tab")
+    end)
+    GetBuildInfo, LibStub, C_Spell.GetSpellTexture = oldBuild, oldLib, oldTexture
+    assert(ok, err)
+end)
+
 Test("server navigation keeps Forever Hunter tabs and ammo separate", function()
     local oldBuild = GetBuildInfo
     local ok, err = pcall(function()
@@ -900,10 +977,18 @@ Test("server navigation keeps Forever Hunter tabs and ammo separate", function()
         assert(hunter and not hunter.subtabs)
         assert(hunterTools and hunterTools.title == "猎人专用" and #hunterTools.subtabs == 2
             and hunterTools.subtabs[1].key == "feeding" and hunterTools.subtabs[2].key == "aspect")
-        local section = {EditBox = function(_, _, get, set, _, _, opts)
-            assert(opts.numeric and get() == 100)
-            assert(set("160") == 160 and get() == 160)
-        end}
+        local section = {
+            Check = function(_, label, get, set)
+                assert(label == session.UI.AMMO_ENABLE and get())
+                set(false)
+                assert(not get())
+                set(true)
+            end,
+            EditBox = function(_, _, get, set, _, _, opts)
+                assert(opts.numeric and get() == 100)
+                assert(set("160") == 160 and get() == 160)
+            end,
+        }
         tab.build({NewSection = function() return section end, AddSection = noop})
 
         session.OpenOptionsFrame()
@@ -945,7 +1030,8 @@ Test("server navigation keeps Forever Hunter tabs and ammo separate", function()
         frame.navButtons.ammo.scripts.OnClick()
         assert(not frame.navButtons.masters and not frame.hunterButtons.aspect:IsVisible())
         local input = assert(FindNode(frame.currentPage, function(node) return node.template == "InputBoxTemplate" end))
-        assert(input:GetText() == "160")
+        local ammoCheck = assert(FindNode(frame.currentPage, function(node) return node.template == "UICheckButtonTemplate" end))
+        assert(ammoCheck:GetChecked() and input:GetText() == "160")
         function input:ClearFocus() self.scripts.OnEditFocusLost(self) end
         input:SetText("250")
         input.scripts.OnEnterPressed(input)
@@ -955,9 +1041,16 @@ Test("server navigation keeps Forever Hunter tabs and ammo separate", function()
         assert(session.GetAmmoThreshold() == 250 and input:GetText() == "250")
         assert(session.SetAmmoThreshold("bad") == 250 and session.SetAmmoThreshold(10000) == 9999)
         session.SetAmmoThreshold(250)
+        ammoCheck:SetChecked(false)
+        ammoCheck.scripts.OnClick(ammoCheck)
+        assert(not session.GetAmmoAlertEnabled() and session.GetAmmoThreshold() == 250)
         local saved = PetStatusAlertDB
         local reloaded = LoadLanguageSession(saved)
-        assert(reloaded.GetAmmoThreshold() == 250 and reloaded.GetCombatAspectAlertEnabled())
+        assert(not reloaded.GetAmmoAlertEnabled() and reloaded.GetAmmoThreshold() == 250 and reloaded.GetCombatAspectAlertEnabled())
+        local migrated = LoadLanguageSession({language = "enUS", ammoThreshold = 0})
+        assert(not migrated.GetAmmoAlertEnabled() and migrated.GetAmmoThreshold() == 100)
+        migrated.SetAmmoAlertEnabled(true)
+        assert(migrated.GetAmmoAlertEnabled() and migrated.GetAmmoThreshold() == 100)
 
         GetBuildInfo = nil
         local retail = LoadLanguageSession({language = "enUS", ammoThreshold = 250,
@@ -976,6 +1069,8 @@ Test("server navigation keeps Forever Hunter tabs and ammo separate", function()
         assert(previewCheck.disabled and previewCheck:GetChecked() and not previewCheck.scripts.OnClick)
         options.navButtons.ammo.scripts.OnClick()
         local previewInput = assert(FindNode(options.currentPage, function(node) return node.template == "InputBoxTemplate" end))
+        local previewAmmoCheck = assert(FindNode(options.currentPage, function(node) return node.template == "UICheckButtonTemplate" end))
+        assert(previewAmmoCheck.disabled and previewAmmoCheck:GetChecked() and not previewAmmoCheck.scripts.OnClick)
         assert(previewInput.disabled and previewInput:GetText() == "100" and retail.GetAmmoThreshold() == 250)
     end)
     GetBuildInfo = oldBuild
@@ -1169,15 +1264,16 @@ Test("Forever ammo warns below 100 after every combat and only updates outside c
     FlushEvents()
     assert(alert:IsShown(), "a custom threshold must apply without another inventory event")
     local readsBeforeDisable = reads
-    session.SetAmmoThreshold(0)
+    session.SetAmmoAlertEnabled(false)
     assert(not events.UNIT_INVENTORY_CHANGED and not events.PLAYER_EQUIPMENT_CHANGED,
         "turning ammo off must remove ammo-only subscriptions")
     Event("BAG_UPDATE_DELAYED")
     FlushEvents()
-    assert(not alert:IsShown() and reads == readsBeforeDisable, "zero must disable ammo checks")
-    session.SetAmmoThreshold(100)
+    assert(not alert:IsShown() and reads == readsBeforeDisable and session.GetAmmoThreshold() == 21,
+        "the switch must disable ammo checks and keep the threshold")
+    session.SetAmmoAlertEnabled(true)
     FlushEvents()
-    assert(events.UNIT_INVENTORY_CHANGED == "player" and alert:IsShown())
+    assert(events.UNIT_INVENTORY_CHANGED == "player" and alert:IsShown() and session.GetAmmoThreshold() == 21)
     alert.scripts.OnEnter(alert)
     weapon = 103
     Event("PLAYER_EQUIPMENT_CHANGED", 18)
@@ -1199,9 +1295,15 @@ Test("Forever ammo warns below 100 after every combat and only updates outside c
 end)
 
 Test("Forever feeding tracks happiness, food, combat, and the stance layout", function()
-    local oldBuild = GetBuildInfo
+    local oldBuild, oldAuras, oldSecrets = GetBuildInfo, C_UnitAuras, C_Secrets
     GetBuildInfo = function() return "1.60.1", "70862", "", 16001 end
     local happiness, pet, stance = 2, true, "PET_MODE_PASSIVE"
+    local eating, restricted = false, false
+    C_Secrets = {ShouldAurasBeSecret = function() return restricted end}
+    C_UnitAuras = {GetUnitAuraBySpellID = function(unit, spell)
+        assert(unit == "pet" and spell == 1539 and not inCombat and not restricted)
+        return eating and {} or nil
+    end}
     local food = {itemID = 42, stackCount = 1, iconFileID = 123, itemName = "Meat"}
     local fish = {itemID = 43, stackCount = 4, iconFileID = 456, itemName = "Fish"}
     local bags = {[0] = {food}, [1] = {}}
@@ -1290,6 +1392,17 @@ Test("Forever feeding tracks happiness, food, combat, and the stance layout", fu
     assert(button.clicks[1] == "LeftButtonUp" and button.clicks[2] == "RightButtonUp")
     assert(button:IsVisible() and care.icon.texture == 123 and activeGlows[care])
     assert(button.count:GetText() == "1")
+    assert(session.addonFrame.events.UNIT_AURA == "pet")
+    eating = true
+    button.scripts.PreClick(button, "LeftButton")
+    assert(not button.attributes.type1, "the live click guard must block feeding again before the aura refresh runs")
+    Event("UNIT_AURA", "pet")
+    assert(not button:IsVisible() and not care:IsShown(), "feeding in progress must hide the reminder")
+    restricted = true
+    Event("UNIT_AURA", "pet")
+    assert(button:IsVisible(), "an unavailable aura must not be read or treated as active")
+    eating, restricted = false, false
+    Event("UNIT_AURA", "pet")
     session.SetClassOption("petFeedEnabled", false)
     session.SetClassOption("petUnhappyAlertEnabled", false)
     assert(not care:IsVisible() and not session.addonFrame.events.BAG_UPDATE)
@@ -1332,13 +1445,20 @@ Test("Forever feeding tracks happiness, food, combat, and the stance layout", fu
     bags[1] = {}
     button.scripts.PreClick(button, "LeftButton")
     assert(not button.attributes.type1, "click must not use a stale slot")
+    eating = true
     Event("BAG_UPDATE_DELAYED")
     assert(not care:IsShown() and not activeGlows[care])
     assert(anchor:GetWidth() / 2 - anchor.clampInsets[1] == session.alertText.parent.icon:GetWidth() / 2 + 3,
         "hidden care icon must release its reserved space")
+    eating = false
+    Event("UNIT_AURA", "pet")
+    local emptyCount = assert(FindText(care, "0"))
+    assert(care:IsShown() and not button:IsVisible() and care.icon.desaturated and emptyCount:IsVisible(),
+        "running out during feeding only shows the empty-food indicator once the effect ends")
 
     bags[0] = {food}
     Event("BAG_UPDATE_DELAYED")
+    assert(button:IsVisible() and not emptyCount:IsShown(), "picking up suitable food restores the feed button")
     bags[0] = {food, fish}
     bags[1] = {{itemID = 43, stackCount = 2}, {itemID = 44, stackCount = 7}}
     Event("BAG_UPDATE_DELAYED")
@@ -1362,7 +1482,7 @@ Test("Forever feeding tracks happiness, food, combat, and the stance layout", fu
     feedCheck.scripts.OnClick(feedCheck)
     assert(not session.GetClassOption("petFeedEnabled") and not button:IsVisible())
     local events = session.addonFrame.events
-    assert(events.UNIT_HAPPINESS == "pet" and not events.BAG_UPDATE and not events.BAG_UPDATE_DELAYED
+    assert(events.UNIT_HAPPINESS == "pet" and not events.UNIT_AURA and not events.BAG_UPDATE and not events.BAG_UPDATE_DELAYED
         and not events.ITEM_LOCK_CHANGED)
     happiness = 1
     local beforeUnhappy = foodCountReads
@@ -1457,7 +1577,7 @@ Test("Forever feeding tracks happiness, food, combat, and the stance layout", fu
     button.foodMenu.rows[42].selectFood(42)
     bags[0] = {}
     Event("BAG_UPDATE_DELAYED")
-    assert(not care:IsShown() and not PetStatusAlertDB.petFeedFoodByCharacter["Player-1"])
+    assert(care:IsShown() and emptyCount:IsVisible() and not PetStatusAlertDB.petFeedFoodByCharacter["Player-1"])
     bags[0] = {food}
     Event("BAG_UPDATE_DELAYED")
 
@@ -1500,7 +1620,7 @@ Test("Forever feeding tracks happiness, food, combat, and the stance layout", fu
     pet, happiness = true, 2
     assert(session.ResetClassSettings("HUNTER") and events.BAG_UPDATE and events.UNIT_HAPPINESS == "pet")
     assert(button:IsVisible(), "resetting Hunter settings must restore the watchers and refresh the current bags")
-    GetBuildInfo = oldBuild
+    GetBuildInfo, C_UnitAuras, C_Secrets = oldBuild, oldAuras, oldSecrets
 end)
 
 Test("old master switches do not gate individual pet alerts", function()
@@ -1626,6 +1746,137 @@ Test("Forever Hunter warns in combat for personal Cheetah or Pack and clears on 
     inCombat = false
     GetBuildInfo, UnitClass, C_SpellBook, C_UnitAuras = oldBuild, oldClass, oldBook, oldAuras
     C_Timer.After, C_Spell, issecretvalue, C_Secrets = oldAfter, oldSpell, oldSecret, oldSecrets
+    assert(ok, err)
+end)
+
+Test("Forever Hunter checks Growl by location and Cower against the real Growl state", function()
+    local previous = {}
+    local function Mock(key, value)
+        previous[#previous + 1] = {key, _G[key]}
+        _G[key] = value
+    end
+    local pending, oldAfter = {}, C_Timer.After
+    local raid, instanceType, pet, dead = false, "none", true, false
+    local growl, cower, petSpellCount, reads = false, true, 3, 0
+    local secret = {}
+    Mock("GetBuildInfo", function() return "1.60.1", "70938", "", 16001 end)
+    Mock("UnitClass", function() return "Hunter", "HUNTER" end)
+    Mock("IsInRaid", function() return raid end)
+    Mock("IsInInstance", function() return instanceType ~= "none", instanceType end)
+    Mock("UnitExists", function(unit) return unit == "pet" and pet end)
+    Mock("UnitIsDeadOrGhost", function(unit) return unit == "pet" and dead end)
+    Mock("issecretvalue", function(value) return value == secret end)
+    local names = {[2649] = "低吼", [1742] = "畏缩"}
+    Mock("C_Spell", {
+        GetSpellName = function(id) return names[id] end,
+        GetSpellTexture = function(id) return 100000 + id end,
+    })
+    Mock("Enum", {SpellBookSpellBank = {Pet = 1}})
+    Mock("C_SpellBook", {
+        HasPetSpells = function() reads = reads + 1; return petSpellCount end,
+        GetSpellBookItemName = function(slot, bank)
+            assert(bank == 1)
+            return ({"撕咬", "低吼", "畏缩"})[slot], "Rank 3"
+        end,
+        GetSpellBookItemAutoCast = function(slot, bank)
+            assert(bank == 1 and slot ~= 1)
+            if slot == 2 then return true, growl end
+            return true, cower
+        end,
+    })
+    C_Timer.After = function(_, fn) pending[#pending + 1] = fn end
+    local ok, err = pcall(function()
+        local session = LoadLanguageSession({language = "zhCN", petFeedEnabled = false, petUnhappyAlertEnabled = false})
+        local function Flush()
+            local callbacks = pending
+            pending = {}
+            for _, fn in ipairs(callbacks) do fn() end
+        end
+        local function Event(event, ...)
+            local frame = session.addonFrame
+            if frame.events[event] then frame.scripts.OnEvent(frame, event, ...) end
+        end
+        local function Expect(spell, mark)
+            local icon = Upvalue(session.SetPetAutocastAlert, "autocastFrame")
+            assert(spell and icon and icon:IsVisible() and icon.icon.texture == 100000 + spell
+                and Upvalue(session.SetPetAutocastAlert, "autocastBadge"):GetText() == mark
+                or not spell and (not icon or not icon:IsVisible()), "unexpected autocast reminder for " .. tostring(spell))
+        end
+
+        -- Solo outdoors; a normal party uses the same rule. Event bursts only read once.
+        Event("PLAYER_ENTERING_WORLD")
+        Event("GROUP_ROSTER_UPDATE")
+        Flush()
+        Expect(2649, "+")
+        assert(reads == 1)
+        growl = true
+        Event("PET_BAR_UPDATE")
+        Flush()
+        Expect(1742, "−")
+        cower = false
+        Event("PET_BAR_UPDATE")
+        Flush()
+        Expect()
+
+        -- A five-player instance disables Growl even while solo.
+        instanceType = "party"
+        Event("ZONE_CHANGED_NEW_AREA")
+        Flush()
+        Expect(2649, "−")
+        growl = false
+        Event("PET_BAR_UPDATE")
+        Flush()
+        Expect(1742, "+")
+        cower = true
+        Event("PET_BAR_UPDATE")
+        Flush()
+        Expect()
+        instanceType = "raid"
+        Event("PLAYER_ENTERING_WORLD")
+        Flush()
+        Expect()
+        instanceType, raid, growl = "none", true, true
+        Event("ZONE_CHANGED_NEW_AREA")
+        Flush()
+        Expect(2649, "−")
+        raid, cower = false, false -- Convert back to a regular party without moving.
+        Event("GROUP_ROSTER_UPDATE")
+        Flush()
+        Expect()
+
+        petSpellCount, cower = 2, true
+        Event("UNIT_PET", "player")
+        Flush()
+        Expect() -- A pet without Cower can't trigger its warning.
+        petSpellCount, growl = 3, secret
+        Event("PET_BAR_UPDATE")
+        Flush()
+        Expect() -- Unknown Growl never implies a Cower target.
+        growl, dead = false, true
+        Event("UNIT_FLAGS", "pet")
+        Flush()
+        Expect()
+        dead = false
+        Event("UNIT_FLAGS", "pet")
+        Flush()
+        Expect(2649, "+")
+        session.SetClassOption("petAutocastAlertEnabled", false)
+        Expect()
+        assert(not session.addonFrame.events.GROUP_ROSTER_UPDATE and not session.addonFrame.events.ZONE_CHANGED_NEW_AREA)
+        session.ResetClassSettings("HUNTER")
+        Flush()
+        Expect(2649, "+")
+        pet = false
+        Event("UNIT_PET", "player")
+        Flush()
+        Expect()
+
+        Mock("GetBuildInfo", function() return "12.1.5", "70783", "", 120105 end)
+        local retail = LoadLanguageSession({language = "zhCN"})
+        assert(not retail.RefreshPetAutocast and not retail.addonFrame.events.GROUP_ROSTER_UPDATE)
+    end)
+    C_Timer.After = oldAfter
+    for index = #previous, 1, -1 do _G[previous[index][1]] = previous[index][2] end
     assert(ok, err)
 end)
 

@@ -16,6 +16,8 @@ local DEFAULT_ALERT_FLOAT_SPEED = 1
 local DEFAULT_ALERT_FONT_SIZE = 28
 local DEFAULT_ALERT_GLOW_ENABLED = true
 local DEFAULT_ALERT_GLOW_SPEED = 1
+local DEFAULT_ALERT_GLOW_FPS = 20
+local MIN_ALERT_GLOW_FPS, MAX_ALERT_GLOW_FPS = 10, 30
 -- 1.4.0：图标提醒模式。both=图标+文字（默认）；text=纯文字；icon=纯图标。
 local DEFAULT_ALERT_ICON_MODE = "both"
 -- 图标边长（像素），默认 48，与默认字号 28 协调。
@@ -31,6 +33,7 @@ local classOptionDefaults = {
     mageSummonID = 31687,
     petFeedEnabled = true,
     petUnhappyAlertEnabled = true,
+    petAutocastAlertEnabled = true,
 }
 local defaultSacrificeIDs = { [265] = 124691, [267] = 125618 }
 
@@ -43,6 +46,12 @@ local function Trim(value)
     value = value:gsub("^%s+", "")
     value = value:gsub("%s+$", "")
     return value
+end
+
+local function NormalizeAlertGlowFPS(value)
+    value = tonumber(value)
+    if not value or value ~= value then return nil end
+    return math.floor(math.max(MIN_ALERT_GLOW_FPS, math.min(value, MAX_ALERT_GLOW_FPS)) + 0.5)
 end
 
 local function InitDB(force)
@@ -127,6 +136,7 @@ local function InitDB(force)
     elseif PetStatusAlertDB.alertGlowSpeed > 3 then
         PetStatusAlertDB.alertGlowSpeed = 3
     end
+    PetStatusAlertDB.alertGlowFPS = NormalizeAlertGlowFPS(PetStatusAlertDB.alertGlowFPS) or DEFAULT_ALERT_GLOW_FPS
 
     -- 1.4.0：图标提醒模式。默认图文模式。
     if type(PetStatusAlertDB.alertIconMode) ~= "string" or not VALID_ALERT_ICON_MODES[PetStatusAlertDB.alertIconMode] then
@@ -234,7 +244,8 @@ function PSA.ResetClassSettings(classFile)
     elseif classFile == "MAGE" then
         db.mageRequireSummon, db.mageSummonID = nil, nil
     elseif forever and classFile == "HUNTER" then
-        db.petFeedEnabled, db.petUnhappyAlertEnabled = nil, nil
+        db.petAutocastAlertEnabled, db.petFeedEnabled, db.petUnhappyAlertEnabled = nil, nil, nil
+        if PSA.ApplyPetAutocastSettings then PSA.ApplyPetAutocastSettings() end
         if PSA.ApplyPetCareSettings then PSA.ApplyPetCareSettings() end
         if PSA.SetCombatAspectAlertEnabled then PSA.SetCombatAspectAlertEnabled(true) end
     elseif forever and PSA.ApplyForeverFormAlertSettings and classFile == PSA.GetPlayerClassFile() then
@@ -276,6 +287,8 @@ function PSA.SetClassOption(key, value)
         db[key] = value
         if (key == "petFeedEnabled" or key == "petUnhappyAlertEnabled") and PSA.ApplyPetCareSettings then
             PSA.ApplyPetCareSettings()
+        elseif key == "petAutocastAlertEnabled" and PSA.ApplyPetAutocastSettings then
+            PSA.ApplyPetAutocastSettings()
         end
     end
 end
@@ -325,16 +338,38 @@ end
 local function NormalizeAmmoThreshold(value)
     value = tonumber(value)
     if value and value == value then
-        return math.floor(math.max(0, math.min(value, MAX_AMMO_THRESHOLD)))
+        return math.floor(math.max(1, math.min(value, MAX_AMMO_THRESHOLD)))
     end
 end
 
+local function GetAmmoSettings()
+    local db = InitDB()
+    -- A saved zero used to be the off switch. Keep that choice on upgrade.
+    if tonumber(db.ammoThreshold) == 0 then
+        if db.ammoAlertEnabled == nil then db.ammoAlertEnabled = false end
+        db.ammoThreshold = DEFAULT_AMMO_THRESHOLD
+    end
+    return db
+end
+
+function PSA.GetAmmoAlertEnabled()
+    return GetAmmoSettings().ammoAlertEnabled ~= false
+end
+
+function PSA.SetAmmoAlertEnabled(enabled)
+    local db = GetAmmoSettings()
+    enabled = not not enabled
+    if db.ammoAlertEnabled == enabled then return end
+    db.ammoAlertEnabled = enabled
+    if PSA.ApplyAmmoAlertSettings then PSA.ApplyAmmoAlertSettings() end
+end
+
 function PSA.GetAmmoThreshold()
-    return NormalizeAmmoThreshold(InitDB().ammoThreshold) or DEFAULT_AMMO_THRESHOLD
+    return NormalizeAmmoThreshold(GetAmmoSettings().ammoThreshold) or DEFAULT_AMMO_THRESHOLD
 end
 
 function PSA.SetAmmoThreshold(value)
-    local db = InitDB()
+    local db = GetAmmoSettings()
     local current = PSA.GetAmmoThreshold()
     local threshold = NormalizeAmmoThreshold(value) or current
     if threshold ~= current then
@@ -346,6 +381,19 @@ function PSA.SetAmmoThreshold(value)
     return threshold
 end
 
+function PSA.GetAlertGlowFPS()
+    return InitDB().alertGlowFPS
+end
+
+function PSA.SetAlertGlowFPS(value)
+    local db = InitDB()
+    local fps = NormalizeAlertGlowFPS(value) or db.alertGlowFPS
+    if fps ~= db.alertGlowFPS then
+        db.alertGlowFPS = fps
+        if PSA.ApplyAlertGlowFPS then PSA.ApplyAlertGlowFPS(fps) end
+    end
+    return fps
+end
 
 -------------------------------------------------
 -- Public database API
@@ -357,6 +405,8 @@ PSA.DEFAULT_ALERT_FLOAT_SPEED = DEFAULT_ALERT_FLOAT_SPEED
 PSA.DEFAULT_ALERT_FONT_SIZE = DEFAULT_ALERT_FONT_SIZE
 PSA.DEFAULT_ALERT_GLOW_ENABLED = DEFAULT_ALERT_GLOW_ENABLED
 PSA.DEFAULT_ALERT_GLOW_SPEED = DEFAULT_ALERT_GLOW_SPEED
+PSA.MIN_ALERT_GLOW_FPS = MIN_ALERT_GLOW_FPS
+PSA.MAX_ALERT_GLOW_FPS = MAX_ALERT_GLOW_FPS
 PSA.DEFAULT_ALERT_ICON_MODE = DEFAULT_ALERT_ICON_MODE
 PSA.DEFAULT_ALERT_ICON_SIZE = DEFAULT_ALERT_ICON_SIZE
 PSA.DEFAULT_ALERT_ICON_GAP = DEFAULT_ALERT_ICON_GAP

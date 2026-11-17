@@ -421,6 +421,29 @@ function PSA.InvalidatePlayerMountState()
     mountStateValid = false
 end
 
+local DISMOUNT_GRACE_SECONDS = 2
+local wasMounted, dismountRecheck
+
+function PSA.UpdatePetDismountGrace(reset)
+    if reset then wasMounted, dismountRecheck = nil, nil end
+    if type(IsMounted) ~= "function" then return end
+    local mounted = IsMounted()
+    if not PSA.IsAccessibleValue(mounted) then return end
+    local justDismounted = wasMounted and not mounted
+    wasMounted = mounted
+    if mounted then
+        dismountRecheck = nil
+    elseif justDismounted and not InCombatLockdown() then
+        local function Recheck()
+            if dismountRecheck ~= Recheck then return end
+            dismountRecheck = nil
+            PSA.RefreshPetStatusText()
+        end
+        dismountRecheck = Recheck
+        C_Timer.After(DISMOUNT_GRACE_SECONDS, Recheck)
+    end
+end
+
 -- Pet action names are fixed for the session. Build the token/localized-name to
 -- mode lookup once instead of walking five token entries for every active slot.
 local petModeByActionName
@@ -511,6 +534,7 @@ local function RefreshPetStatusText()
     InitDB()
     if PSA.RefreshForeverFormAlert then return PSA.RefreshForeverFormAlert() end
 
+    if dismountRecheck and InCombatLockdown() then dismountRecheck = nil end
     if not SupportsPetStatusPrompt() or IsPlayerMountedOrInVehicle() then
         HideStatus()
         return
@@ -528,7 +552,7 @@ local function RefreshPetStatusText()
 
     if not petExists then
         -- Sacrifice can explain the missing pet. It leaves stance and death checks active.
-        if IsWarlockGrimoireOfSacrificeActive() then
+        if dismountRecheck or IsWarlockGrimoireOfSacrificeActive() then
             HideStatus()
             return
         end

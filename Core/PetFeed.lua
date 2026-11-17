@@ -14,6 +14,7 @@ if not IsAccessible(class) or class ~= "HUNTER" then
 end
 
 local FEED_PET = 6991
+local FEED_PET_EFFECT = 1539
 local UNHAPPY, CONTENT = 1, 2
 local LAST_BAG = NUM_TOTAL_EQUIPPED_BAG_SLOTS or 4
 local feedButton
@@ -136,6 +137,18 @@ local function GetHappiness()
     end
 end
 
+-- The feeding effect is only used out of combat and when its aura is public.
+local function IsPetEating()
+    local auras, secrets = C_UnitAuras, C_Secrets
+    if not auras or not auras.GetUnitAuraBySpellID
+        or (secrets and ((secrets.ShouldAurasBeSecret and secrets.ShouldAurasBeSecret())
+            or (secrets.ShouldSpellAuraBeSecret and secrets.ShouldSpellAuraBeSecret(FEED_PET_EFFECT)))) then
+        return false
+    end
+    local aura = auras.GetUnitAuraBySpellID("pet", FEED_PET_EFFECT)
+    return IsAccessible(aura) and aura ~= nil
+end
+
 local function FillFoodEntry(entry, item, slot)
     entry.itemID = item.itemID
     entry.stackCount = item.stackCount
@@ -256,7 +269,8 @@ local function PrepareClick(button, mouseButton)
     end
     ClearAction(button)
     if mouseButton ~= "LeftButton" or not PSA.InitDB().alertLocked or not button:IsVisible() or SpellIsTargeting() or GetCursorInfo()
-        or not PSA.GetClassOption("petFeedEnabled") or not GetHappiness() or not PSA.IsKnownPlayerSpell(FEED_PET) then
+        or not PSA.GetClassOption("petFeedEnabled") or not GetHappiness() or not PSA.IsKnownPlayerSpell(FEED_PET)
+        or IsPetEating() then
         return
     end
 
@@ -447,18 +461,24 @@ function PSA.RefreshPetCare(refreshFoodMenu)
         return
     end
     local happiness = GetHappiness()
-    local inCombat = feedingEnabled and InCombatLockdown()
-    local preferredID, preferredCount
-    if feedingEnabled then preferredID, preferredCount = ResolvePreferredFood(true) end
+    local inCombat = InCombatLockdown()
+    local warnUnhappy = happiness == UNHAPPY and unhappyEnabled
+    local canFeed = feedingEnabled and happiness and PSA.IsKnownPlayerSpell(FEED_PET)
     local kind, texture, unavailable
 
-    if happiness == UNHAPPY and unhappyEnabled and not feedingEnabled then
-        kind = "unhappy"
-    elseif happiness and ((happiness == UNHAPPY and unhappyEnabled) or (feedingEnabled and not inCombat)) then
+    if not canFeed then
+        if warnUnhappy then kind = "unhappy" end
+    elseif (inCombat and warnUnhappy) or (not inCombat and not IsPetEating()) then
+        local preferredID, preferredCount = ResolvePreferredFood(true)
         local food, _, _, hasFood = FindFood(preferredID, nil, true)
-        if happiness == UNHAPPY and unhappyEnabled and not hasFood then
-            kind = "unhappy"
-        elseif feedingEnabled and not inCombat and (food or (preferredID and hasFood)) and PSA.IsKnownPlayerSpell(FEED_PET) then
+        if not hasFood then
+            -- A zero-size backpack on login does not mean the player ran out.
+            if not inCombat and C_Container.GetContainerNumSlots(0) > 0 then
+                kind = "no_food"
+            elseif warnUnhappy then
+                kind = "unhappy"
+            end
+        elseif not inCombat and (food or preferredID) then
             kind = "feed"
             local itemID = food and food.itemID or preferredID
             texture = (food and food.iconFileID) or C_Item.GetItemIconByID(itemID) or "Interface\\Icons\\INV_Misc_QuestionMark"

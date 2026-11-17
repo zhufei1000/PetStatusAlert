@@ -94,6 +94,14 @@ local function BuildClassRules(page, classFile, forever, readOnly, availability)
             PSA.RefreshClassPetSettings("MAGE")
         end, nil, 100, { numeric = true, enabled = availability.enabled, disabledTooltip = availability.disabledTooltip })
         page:AddSection(section)
+    elseif forever and classFile == "HUNTER" then
+        local section = page:NewSection(ui.PET_AUTOCAST_SETTINGS, ui.PET_AUTOCAST_HINT)
+        section:Check(ui.ENABLE_ALERT, function()
+            return PSA.GetClassOption("petAutocastAlertEnabled", readOnly)
+        end, not readOnly and function(on)
+            PSA.SetClassOption("petAutocastAlertEnabled", on)
+        end, nil, availability)
+        page:AddSection(section)
     end
 end
 
@@ -224,7 +232,29 @@ end
 local function BuildAmmo(page)
     local ui = PSA.UI
     local section = page:NewSection(ui.AMMO_SETTINGS, {ui.AMMO_WEAPON_HINT, ui.AMMO_THRESHOLD_HINT})
+    section:Check(ui.AMMO_ENABLE, PSA.GetAmmoAlertEnabled, PSA.SetAmmoAlertEnabled)
     section:EditBox(ui.AMMO_THRESHOLD, PSA.GetAmmoThreshold, PSA.SetAmmoThreshold, nil, 84, {numeric = true})
+    page:AddSection(section)
+end
+
+local function AddSlider(section, key, low, high, step, get, set)
+    section:ValueSlider(PSA.UI[key], low, high, step, get, set, {note = PSA.UI[key .. "_HINT"]})
+end
+
+local function BuildAnimation(page)
+    local ui = PSA.UI
+    local section = page:NewSection(ui.ANIMATION_TAB)
+    section:ButtonRow({{text = ui.PREVIEW, onClick = PSA.PreviewDisplay}, {text = ui.STOP_PREVIEW, onClick = PSA.StopSettingsPreview}})
+    page:AddSection(section)
+    section = page:NewSection(ui.ANIMATION_GLOW_ENABLE)
+    section:Check(ui.ENABLE_ALERT, PSA.GetAlertGlowEnabled, PSA.SetAlertGlowEnabled, ui.ANIMATION_GLOW_ENABLE_HINT)
+    AddSlider(section, "ANIMATION_GLOW_SPEED", 0.2, 3, 0.1, PSA.GetAlertGlowSpeed, PSA.SetAlertGlowSpeed)
+    AddSlider(section, "ANIMATION_GLOW_FPS", PSA.MIN_ALERT_GLOW_FPS, PSA.MAX_ALERT_GLOW_FPS, 1,
+        PSA.GetAlertGlowFPS, PSA.SetAlertGlowFPS)
+    page:AddSection(section)
+    section = page:NewSection(ui.ANIMATION_FLOAT)
+    AddSlider(section, "ANIMATION_AMPLITUDE", 0, 24, 1, PSA.GetAlertFloatAmplitude, PSA.SetAlertFloatAmplitude)
+    AddSlider(section, "ANIMATION_SPEED", 0.1, 3, 0.1, PSA.GetAlertFloatSpeed, PSA.SetAlertFloatSpeed)
     page:AddSection(section)
 end
 
@@ -249,18 +279,9 @@ function PSA.GetSettingsDefinition(context)
                 s=page:NewSection(PSA.UI.ANIMATION_ICON_MODE)
                 s:Dropdown(PSA.UI.ANIMATION_ICON_MODE, PSA.GetAlertIconMode, PSA.SetAlertIconMode,
                     {{value="text",text=Text("Text", "文字", "文字")},{value="icon",text=Text("Icon", "图标", "圖示")},{value="both",text=Text("Icon + Text", "图标+文字", "圖示+文字")}},nil,180)
-                local function Slider(section, key, low, high, step, get, set)
-                    section:ValueSlider(PSA.UI[key],low,high,step,get,set,{note=PSA.UI[key.."_HINT"]})
-                end
-                Slider(s,"ANIMATION_ICON_SIZE",24,96,1,PSA.GetAlertIconSize,PSA.SetAlertIconSize)
+                AddSlider(s,"ANIMATION_ICON_SIZE",24,96,1,PSA.GetAlertIconSize,PSA.SetAlertIconSize)
                 s:ValueSlider(Text("Icon / text spacing", "图标与文字间距", "圖示與文字間距"),0,40,1,PSA.GetAlertIconGap,PSA.SetAlertIconGap)
-                page:AddSection(s)
-                s=page:NewSection(Text("Text & movement", "文字与动画", "文字與動畫"))
-                Slider(s,"ANIMATION_FONT_SIZE",12,72,1,PSA.GetAlertFontSize,PSA.SetAlertFontSize)
-                Slider(s,"ANIMATION_AMPLITUDE",0,24,1,PSA.GetAlertFloatAmplitude,PSA.SetAlertFloatAmplitude)
-                Slider(s,"ANIMATION_SPEED",0.1,3,0.1,PSA.GetAlertFloatSpeed,PSA.SetAlertFloatSpeed)
-                s:Check(PSA.UI.ANIMATION_GLOW_ENABLE,PSA.GetAlertGlowEnabled,PSA.SetAlertGlowEnabled,PSA.UI.ANIMATION_GLOW_ENABLE_HINT)
-                Slider(s,"ANIMATION_GLOW_SPEED",0.2,3,0.1,PSA.GetAlertGlowSpeed,PSA.SetAlertGlowSpeed)
+                AddSlider(s,"ANIMATION_FONT_SIZE",12,72,1,PSA.GetAlertFontSize,PSA.SetAlertFontSize)
                 page:AddSection(s)
             end},
             {key="voice", title=Text("Voice", "语音提醒", "語音提醒"), build=function(page)
@@ -301,6 +322,7 @@ function PSA.GetSettingsDefinition(context)
             table.insert(tabs, #tabs, {key = "hunterTools", title = PSA.UI.HUNTER_TOOLS, subtabs = subtabs})
             table.insert(tabs, #tabs, {key = "ammo", title = PSA.UI.AMMO_TAB, build = BuildAmmo})
         end
+        table.insert(tabs, #tabs, {key = "animation", title = PSA.UI.ANIMATION_TAB, build = BuildAnimation})
     end
     -- 外部插件设置页由 UI.RefreshToolboxSettings 提供 Rebuild；管理器内部页面
     -- 只有 Refresh（W:Refresh）。两者都保留，按钮/语言切换后控件不会停在旧值。

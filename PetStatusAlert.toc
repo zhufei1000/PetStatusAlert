@@ -1,6 +1,6 @@
 ## Interface: 120105, 120100, 16001
 ## Title: PetStatusAlert - Pet & Warrior Stance Alerts | 宠物与战士姿态提醒
-## Notes: Pet status, Warrior stances, and combat voice alerts for Retail and Forever. Forever also supports Hunter pet feeding, low ammo, and combat aspect alerts.
+## Notes: Pet status, Warrior stances, and combat voice alerts for Retail and Forever. Forever also supports Hunter pet feeding, pet autocast, low ammo, and combat aspect alerts.
 ## Author: zhufei1000
 ## Version: 1.7.0
 ## X-Curse-Project-ID: 1500392
@@ -15,6 +15,7 @@ Core/Localization.lua
 Core/AlertFrame.lua
 Core/TTS.lua
 Core/PetLogic.lua
+Core/PetAutocast.lua
 Core/PetFeed.lua
 Core/WarriorLogic.lua
 Core/ForeverFormAlerts.lua

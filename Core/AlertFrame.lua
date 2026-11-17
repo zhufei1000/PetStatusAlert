@@ -361,13 +361,9 @@ end
 
 local FLOAT_PERIOD = 1.5
 local FLOAT_UPDATE_INTERVAL = 1 / 15
--- 所有像素流光共用同一个调度器。LibCustomGlow 默认会给每个图标挂一个每帧
--- OnUpdate；提醒图标一多（补给、职业增益、宠物护理）时，每帧的 SetPoint
--- 调用会成倍增长。主状态流光 15 FPS，常驻配件流光 10 FPS，SetPoint 总量
--- 比默认按帧更新低一个数量级，而观感几乎没有差别。
+-- 所有像素流光共用同一个调度器，限制多个提醒同时显示时的 SetPoint 调用。
+-- 主状态和附加图标分别限速，隐藏后不再更新。
 local GLOW_PIXEL_COUNT = 6
-local MAIN_GLOW_FPS = 15
-local ACCESSORY_GLOW_FPS = 10
 local PIXEL_GLOW_FRAME_KEY = "_PixelGlow" .. ALERT_GLOW_KEY
 local classGlowUpdates = {}
 local animationActive = false
@@ -390,6 +386,7 @@ local lastMessage = ""
 local lastStatusKey = nil
 local RefreshAlertVisuals, UpdateFloatingScript, UpdateAlertAnimation
 local petCareFrame, petCareIcon, petCareKind, petCareTexture
+local petCareEmptyCount
 local petCareDesaturated = false
 local supplyFrame, positionLabel
 local supplyWidth, supplyIconSize, supplyBadgeHeight = 0, 0, 0
@@ -397,6 +394,8 @@ local supplyFirstIconOffset = 0
 local ammoFrame, ammoIcon, ammoText
 local ammoKind, ammoCount, ammoTexture
 local aspectFrame, aspectIcon, aspectSpell
+local autocastFrame, autocastIcon, autocastBadge
+local autocastSpell, autocastWanted, autocastName
 
 if isForever then
     supplyFrame = CreateFrame("Frame", "PetStatusAlertSupplyFrame", textFrame)
@@ -623,15 +622,26 @@ local function ForgetGlowUpdate(frame)
     end
 end
 
+local function GetGlowInterval(fps, accessory)
+    return 1 / (accessory and math.floor(fps * 0.75 + 0.5) or fps)
+end
+
+function PSA.ApplyAlertGlowFPS(fps)
+    for _, state in pairs(classGlowUpdates) do
+        state.interval = GetGlowInterval(fps, state.accessory)
+    end
+end
+
 -- 把库自带的每帧 OnUpdate 摘下来，交给统一的限速循环。
-local function ShareGlowUpdate(frame, fps)
+local function ShareGlowUpdate(frame, accessory)
     local glow = frame and frame[PIXEL_GLOW_FRAME_KEY]
     local update = glow and glow.GetScript and glow:GetScript("OnUpdate")
     if not update then return end
     glow:SetScript("OnUpdate", nil)
     classGlowUpdates[glow] = {
         update = update,
-        interval = 1 / (fps or MAIN_GLOW_FPS),
+        interval = GetGlowInterval(PSA.GetAlertGlowFPS(), accessory),
+        accessory = accessory,
         elapsed = 0,
     }
 end
@@ -834,7 +844,7 @@ local function RefreshAccessoryGlow(frame, active)
         -- The bundled glow library attaches its frame under this key. If a
         -- different installed version doesn't expose it, the library keeps its
         -- own OnUpdate and the glow still animates.
-        ShareGlowUpdate(frame, ACCESSORY_GLOW_FPS)
+        ShareGlowUpdate(frame, true)
     end
     UpdateAlertAnimation()
 end
@@ -858,6 +868,7 @@ local function LayoutSupplyRow(updateBoxes)
     local items = {}
     if ammoKind then items[#items + 1] = ammoFrame end
     if aspectSpell then items[#items + 1] = aspectFrame end
+    if autocastSpell then items[#items + 1] = autocastFrame end
     local count = #items
     local previousWidth = supplyWidth
     supplyWidth, supplyIconSize, supplyBadgeHeight = 0, 0, 0
@@ -915,6 +926,53 @@ local function RefreshAspectTooltip()
     if aspectSpell and GameTooltip and not GameTooltip:IsForbidden() and GameTooltip:IsOwned(aspectFrame) then
         GameTooltip:SetText(PSA.UI.COMBAT_ASPECT_ALERT)
         GameTooltip:Show()
+    end
+end
+
+local function RefreshAutocastTooltip()
+    if autocastSpell and GameTooltip and not GameTooltip:IsForbidden() and GameTooltip:IsOwned(autocastFrame) then
+        local key = autocastWanted and "PET_AUTOCAST_ON_HINT" or "PET_AUTOCAST_OFF_HINT"
+        GameTooltip:SetText(PSA.UI[key]:format(autocastName), 1, 1, 1, 1, true)
+        GameTooltip:Show()
+    end
+end
+
+function PSA.SetPetAutocastAlert(spell, wanted, name)
+    if not supplyFrame or (autocastSpell == spell and autocastWanted == wanted and autocastName == name) then return end
+    local wasShown = autocastSpell ~= nil
+    autocastSpell, autocastWanted, autocastName = spell, wanted, name
+    if spell then
+        if not autocastFrame then
+            autocastFrame = CreateFrame("Frame", nil, supplyFrame)
+            autocastFrame:Hide()
+            autocastFrame:SetMouseMotionEnabled(PetStatusAlertDB.alertLocked)
+            autocastIcon = autocastFrame:CreateTexture(nil, "ARTWORK")
+            autocastIcon:SetAllPoints(autocastFrame)
+            autocastBadge = autocastFrame:CreateFontString(nil, "OVERLAY")
+            autocastBadge:SetFont(STANDARD_TEXT_FONT, 16, "OUTLINE")
+            autocastBadge:SetPoint("BOTTOMRIGHT", autocastFrame, "BOTTOMRIGHT", -2, 2)
+            autocastFrame:SetScript("OnEnter", function(self)
+                if GameTooltip and not GameTooltip:IsForbidden() then
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    RefreshAutocastTooltip()
+                end
+            end)
+            autocastFrame:SetScript("OnLeave", HideSupplyTooltip)
+            autocastFrame:SetScript("OnHide", HideSupplyTooltip)
+        end
+        autocastIcon:SetTexture(GetSpellTextureByID(spell) or 134400)
+        autocastBadge:SetText(wanted and "+" or "−")
+        if wanted then
+            autocastBadge:SetTextColor(0.35, 1, 0.35)
+        else
+            autocastBadge:SetTextColor(1, 0.35, 0.35)
+        end
+        RefreshAutocastTooltip()
+    end
+    if wasShown ~= (spell ~= nil) then
+        autocastFrame:SetShown(spell ~= nil)
+        LayoutSupplyRow()
+        RefreshAccessoryGlow(autocastFrame, spell)
     end
 end
 
@@ -993,10 +1051,20 @@ function PSA.SetAmmoAlert(kind, count, texture)
     end
 end
 
+local function RefreshPetCareTooltip(frame)
+    local tooltip = GameTooltip
+    if petCareKind == "no_food" and tooltip and not tooltip:IsForbidden() and tooltip:IsOwned(frame) then
+        tooltip:SetText(PSA.UI.PET_FEED_NO_FOOD)
+        tooltip:Show()
+    end
+end
+
 function PSA.RefreshSupplyAlertLabels()
     positionLabel:SetText(PSA.UI.PET_ALERTS_POSITION)
     if ammoKind then UpdateAmmoText() end
     RefreshAspectTooltip()
+    RefreshAutocastTooltip()
+    if petCareFrame then RefreshPetCareTooltip(petCareFrame) end
     LayoutSupplyRow()
 end
 
@@ -1007,6 +1075,14 @@ function PSA.GetPetCareFrame()
         petCareFrame:Hide()
         petCareIcon = petCareFrame:CreateTexture(nil, "ARTWORK")
         petCareIcon:SetAllPoints(petCareFrame)
+        petCareFrame:SetScript("OnEnter", function(self)
+            if petCareKind == "no_food" and GameTooltip and not GameTooltip:IsForbidden() then
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                RefreshPetCareTooltip(self)
+            end
+        end)
+        petCareFrame:SetScript("OnLeave", HideSupplyTooltip)
+        petCareFrame:SetScript("OnHide", HideSupplyTooltip)
     end
     return petCareFrame
 end
@@ -1020,20 +1096,34 @@ function PSA.SetPetCareAlert(kind, texture, desaturated)
     end
     local kindChanged = kind ~= petCareKind
     local visibilityChanged = (kind == nil) ~= (petCareKind == nil)
+    local noFood = kind == "no_food"
+    local noFoodChanged = noFood ~= (petCareKind == "no_food")
     petCareKind, petCareTexture, petCareDesaturated = kind, texture, desaturated
     if kind == "unhappy" then
         PSA.GetPetCareFrame()
         petCareIcon:SetAtlas("UI-PetMad")
         petCareIcon:SetDesaturated(false)
         petCareFrame:Show()
-    elseif kind == "feed" then
+    elseif kind == "feed" or noFood then
         PSA.GetPetCareFrame()
-        petCareIcon:SetTexture(texture)
+        petCareIcon:SetTexture(noFood and (GetSpellTextureByID(6991) or 134400) or texture)
         petCareIcon:SetTexCoord(0, 1, 0, 1)
-        petCareIcon:SetDesaturated(desaturated)
+        petCareIcon:SetDesaturated(noFood or desaturated)
+        if noFood and not petCareEmptyCount then
+            petCareEmptyCount = petCareFrame:CreateFontString(nil, "OVERLAY")
+            petCareEmptyCount:SetPoint("BOTTOMRIGHT", petCareFrame, "BOTTOMRIGHT", -2, 2)
+            petCareEmptyCount:SetFont(STANDARD_TEXT_FONT, 12, "OUTLINE")
+            petCareEmptyCount:SetTextColor(1, 0.38, 0.3)
+            petCareEmptyCount:SetText("0")
+        end
         petCareFrame:Show()
     else
         petCareFrame:Hide()
+    end
+    if noFoodChanged then
+        petCareEmptyCount:SetShown(noFood)
+        petCareFrame:SetMouseMotionEnabled(noFood and InitDB().alertLocked)
+        if not noFood then HideSupplyTooltip(petCareFrame) end
     end
     if kindChanged then
         if visibilityChanged then
@@ -1059,6 +1149,7 @@ RefreshAlertVisuals = function()
     RefreshAccessoryGlow(petCareFrame, petCareKind)
     RefreshAccessoryGlow(ammoFrame, ammoKind)
     RefreshAccessoryGlow(aspectFrame, aspectSpell)
+    RefreshAccessoryGlow(autocastFrame, autocastSpell)
     if PSA.RefreshCombatTTSReminder then
         PSA.RefreshCombatTTSReminder(true)
     end
@@ -1171,6 +1262,14 @@ local function SetAlertPositionLocked(locked)
     addonFrame:EnableMouse(not db.alertLocked)
     if ammoFrame then ammoFrame:SetMouseMotionEnabled(db.alertLocked) end
     if aspectFrame then aspectFrame:SetMouseMotionEnabled(db.alertLocked) end
+    if autocastFrame then
+        autocastFrame:SetMouseMotionEnabled(db.alertLocked)
+        if not db.alertLocked then HideSupplyTooltip(autocastFrame) end
+    end
+    if petCareFrame and petCareKind == "no_food" then
+        petCareFrame:SetMouseMotionEnabled(db.alertLocked)
+        if not db.alertLocked then HideSupplyTooltip(petCareFrame) end
+    end
     if PSA.SetPetFeedMouseEnabled then PSA.SetPetFeedMouseEnabled(db.alertLocked) end
     SetAlertStrata(PSA.currentStatusForce and ALERT_STRATA_PREVIEW or ALERT_STRATA_DEFAULT)
     PSA.RefreshSupplyAlertLabels()
