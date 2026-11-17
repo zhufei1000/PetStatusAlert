@@ -11,7 +11,7 @@ local function Session(config)
     local session, pending, frames = {}, {}, {}
     local env = setmetatable({}, { __index = _G })
     env._G = env
-    local counters = {spec = 0, traits = 0, aura = 0}
+    local counters = {spec = 0, traits = 0, aura = 0, forms = 0}
     local function SpecQuery()
         counters.spec = counters.spec + 1
         assert(not config.forever, "Forever must not query specializations")
@@ -30,7 +30,16 @@ local function Session(config)
     env.UnitCreatureFamily = function() return config.familyName, config.familyID end
     env.UnitIsDeadOrGhost = function() return config.dead == true end
     env.IsMounted = function() return config.mounted == true end
-    env.InCombatLockdown = function() return false end
+    env.InCombatLockdown = function() return config.combat == true end
+    env.GetNumShapeshiftForms = function()
+        assert(not config.formsRestricted, "restricted forms must not be queried")
+        counters.forms = counters.forms + 1
+        return #(config.formSpells or {})
+    end
+    env.GetShapeshiftFormInfo = function(index)
+        local spellID = config.formSpells[index]
+        return nil, spellID == config.activeFormSpell, true, spellID
+    end
     env.C_SpellBook = {IsSpellKnown = function(id) return config.known and config.known[id] or false end}
     env.GetPetActionInfo = function(slot)
         if slot ~= 1 then return end
@@ -82,7 +91,7 @@ local function Session(config)
     session.RegisterNativeOptionsCategory = function() end
     session.StopCombatTTSReminder = function() end
     session.RefreshCombatTTSReminder = function() end
-    for _, path in ipairs({"Core/PetLogic.lua", "Core/WarriorLogic.lua", "Core/Events.lua"}) do Load(path) end
+    for _, path in ipairs({"Core/PetLogic.lua", "Core/WarriorLogic.lua", "Core/ForeverFormAlerts.lua", "Core/Events.lua"}) do Load(path) end
     function session.FlushEvents()
         local callbacks = pending
         pending = {}
@@ -224,15 +233,146 @@ Test("pet UI events refresh mode changes", function()
     session.Event("PET_UI_UPDATE")
     assert(session.currentStatusKey == "PASSIVE")
 end)
-Test("Forever warriors have no stance alerts, previews, settings, or stance events", function()
-    local session = Session({forever = true, class = "WARRIOR", stance = true})
-    assert(session.Refresh() == nil and #session.STATUS_ORDER == 0)
-    session.PreviewStatus("WARRIOR_DEFENSIVE_STANCE")
-    assert(session.currentStatusKey == nil and session.GetDisplayMessage("WARRIOR_DEFENSIVE_STANCE") == "")
+Test("Forever Warriors can opt into any combination of active stance alerts", function()
+    local config = {forever = true, class = "WARRIOR", formSpells = {2457, 2458}, activeFormSpell = 2457}
+    local session = Session(config)
+    local battle, defensive, berserker = table.unpack(session.GetClassAlertStatuses("WARRIOR", true))
+    local events = session.addonFrame.events
+    session.Event("ADDON_LOADED", "PetStatusAlert")
+    assert(#session.STATUS_ORDER == 3 and session.Refresh() == nil)
+    assert(not events.UPDATE_SHAPESHIFT_FORM and session.counters.forms == 0)
+    assert(not session.IsStatusEnabled(battle) and not session.IsStatusEnabled(defensive)
+        and not session.IsStatusEnabled(berserker))
+
+    session.SetStatusEnabled(battle, true, "WARRIOR")
+    session.SetStatusEnabled(berserker, true, "WARRIOR")
+    assert(session.currentStatusKey == battle and events.UPDATE_SHAPESHIFT_FORM and events.UPDATE_SHAPESHIFT_FORMS)
+    assert(not events.UNIT_AURA and events.UNIT_SPELLCAST_SUCCEEDED == "player" and not events.PET_BAR_UPDATE)
+    config.activeFormSpell = 2458
+    session.Event("UPDATE_SHAPESHIFT_FORM")
+    assert(session.currentStatusKey == berserker, "the learned form slot is independent of stance identity")
+
+    config.formSpells, config.activeFormSpell = {2457, 71, 2458}, 71
+    session.Event("UPDATE_SHAPESHIFT_FORMS")
+    assert(session.currentStatusKey == nil)
+    session.SetStatusEnabled(defensive, true, "WARRIOR")
+    assert(session.currentStatusKey == defensive)
+    config.mounted = true
+    session.Event("PLAYER_MOUNT_DISPLAY_CHANGED")
+    assert(session.currentStatusKey == nil)
+    config.mounted = false
+    session.Event("PLAYER_MOUNT_DISPLAY_CHANGED")
+    assert(session.currentStatusKey == defensive)
+
+    session.SetPetAlertsEnabled(false)
+    assert(session.currentStatusKey == nil and not events.UPDATE_SHAPESHIFT_FORM and not events.UNIT_SPELLCAST_SUCCEEDED)
+    session.SetPetAlertsEnabled(true)
+    session.FlushEvents()
+    assert(session.currentStatusKey == defensive and events.UPDATE_SHAPESHIFT_FORM)
+    session.SetStatusEnabled(session.WARRIOR_STATUS_KEY, false, "WARRIOR")
+    assert(session.ResetClassSettings("WARRIOR"))
+    assert(not events.UPDATE_SHAPESHIFT_FORM and session.currentStatusKey == nil)
+    assert(not session.IsStatusEnabled(session.WARRIOR_STATUS_KEY, "WARRIOR"))
     assert(#session.frames == 1 and session.counters.aura == 0 and session.counters.spec == 0)
 end)
 Test("Forever does not enable absent pet classes", function()
     assert(Session({forever = true, class = "DEATHKNIGHT", known = {[46584] = true}}).Refresh() == nil)
+end)
+Test("Forever Paladins match learned aura ranks and ignore unselected or inactive auras", function()
+    local config = {forever = true, class = "PALADIN", formSpells = {10293, 10301}, activeFormSpell = 10293}
+    local session = Session(config)
+    session.Event("ADDON_LOADED", "PetStatusAlert")
+    local devotion, retribution, concentration, shadow, frost, fire = table.unpack(session.STATUS_ORDER)
+    assert(fire and #session.STATUS_ORDER == 6 and not session.GetClassAlertStatuses("PALADIN", false))
+    assert(not session.addonFrame.events.UPDATE_SHAPESHIFT_FORM and session.counters.forms == 0)
+    for _, key in ipairs(session.STATUS_ORDER) do assert(not session.IsStatusEnabled(key)) end
+
+    session.SetStatusEnabled(retribution, true, "PALADIN")
+    session.SetStatusEnabled(fire, true, "PALADIN")
+    assert(session.currentStatusKey == nil and session.addonFrame.events.UPDATE_SHAPESHIFT_FORM)
+    assert(not session.addonFrame.events.UNIT_AURA and not session.addonFrame.events.PET_BAR_UPDATE)
+    config.activeFormSpell = 10301
+    session.Event("UPDATE_SHAPESHIFT_FORM")
+    assert(session.currentStatusKey == retribution)
+
+    config.activeFormSpell = 19900
+    session.Event("UPDATE_SHAPESHIFT_FORM")
+    assert(session.currentStatusKey == nil, "a form missing from the learned slots cannot trigger an alert")
+    config.formSpells = {10293, 10301, 19746, 19896, 19898, 19900}
+    session.Event("UPDATE_SHAPESHIFT_FORMS")
+    assert(session.currentStatusKey == fire)
+
+    for _, sample in ipairs({{10293, devotion}, {19746, concentration}, {19896, shadow}, {19898, frost}}) do
+        session.SetStatusEnabled(sample[2], true, "PALADIN")
+        config.activeFormSpell = sample[1]
+        session.Event("UPDATE_SHAPESHIFT_FORM")
+        assert(session.currentStatusKey == sample[2])
+    end
+    config.activeFormSpell = nil
+    session.Event("UPDATE_SHAPESHIFT_FORM")
+    assert(not session.currentStatusKey and session.counters.spec == 0 and session.counters.aura == 0)
+    assert(session.ResetClassSettings("PALADIN") and not session.addonFrame.events.UPDATE_SHAPESHIFT_FORM)
+end)
+Test("Forever Warrior combat alerts remember a stance and update on readable successful casts", function()
+    local config = {forever = true, class = "WARRIOR", formSpells = {2457, 71, 2458}, activeFormSpell = 2457}
+    local session = Session(config)
+    session.Event("ADDON_LOADED", "PetStatusAlert")
+    local battle, _, berserker = table.unpack(session.STATUS_ORDER)
+    session.SetStatusEnabled(battle, true, "WARRIOR")
+    session.SetStatusEnabled(berserker, true, "WARRIOR")
+    assert(session.currentStatusKey == battle)
+    local reads = session.counters.forms
+    config.combat, config.formsRestricted = true, true
+    session.Event("PLAYER_REGEN_DISABLED")
+    session.Event("UPDATE_SHAPESHIFT_FORM")
+    assert(session.currentStatusKey == battle)
+
+    config.secret = 71
+    session.Event("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-Secret", 71)
+    session.Event("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-Unrelated", 100)
+    assert(session.currentStatusKey == battle)
+    config.secret = nil
+    session.Event("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-Berserker", 2458)
+    assert(session.currentStatusKey == berserker)
+    session.Event("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-Defensive", 71)
+    assert(not session.currentStatusKey and session.counters.forms == reads)
+
+    session.Event("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-Battle", 2457)
+    assert(session.currentStatusKey == battle)
+    session.SetPetAlertsEnabled(false)
+    session.SetPetAlertsEnabled(true)
+    session.FlushEvents()
+    assert(not session.currentStatusKey, "a disabled watcher must discard state before reusing it")
+    config.combat, config.formsRestricted, config.activeFormSpell = false, false, 2458
+    session.Event("PLAYER_REGEN_ENABLED")
+    assert(session.currentStatusKey == berserker and session.counters.forms > reads)
+end)
+
+Test("Forever Paladin combat alerts update aura ranks, toggles, death, and resync", function()
+    local config = {forever = true, class = "PALADIN", formSpells = {10293, 10301}, activeFormSpell = 10293,
+        rejectUnitEvent = "UNIT_SPELLCAST_SUCCEEDED"}
+    local session = Session(config)
+    session.Event("ADDON_LOADED", "PetStatusAlert")
+    local devotion, retribution = table.unpack(session.STATUS_ORDER)
+    session.SetStatusEnabled(devotion, true, "PALADIN")
+    session.SetStatusEnabled(retribution, true, "PALADIN")
+    config.combat, config.formsRestricted = true, true
+    session.Event("PLAYER_REGEN_DISABLED")
+    assert(session.currentStatusKey == devotion and session.addonFrame.events.UNIT_SPELLCAST_SUCCEEDED == true)
+    session.Event("UNIT_SPELLCAST_SUCCEEDED", "party1", "Cast-Party", 10301)
+    assert(session.currentStatusKey == devotion)
+    session.Event("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-Retribution", 10301)
+    assert(session.currentStatusKey == retribution)
+    session.Event("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-Retribution-Off", 10301)
+    assert(not session.currentStatusKey)
+    session.Event("UNIT_SPELLCAST_SUCCEEDED", "player", "Cast-Devotion", 10293)
+    assert(session.currentStatusKey == devotion)
+    config.dead = true
+    session.Event("PLAYER_DEAD")
+    assert(not session.currentStatusKey)
+    config.dead, config.combat, config.formsRestricted, config.activeFormSpell = false, false, false, 10301
+    session.Event("PLAYER_UNGHOST")
+    assert(session.currentStatusKey == retribution)
 end)
 Test("Forever exposes both Defensive and Aggressive settings", function()
     local session = Session({forever = true})

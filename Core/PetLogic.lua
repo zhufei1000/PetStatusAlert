@@ -431,6 +431,7 @@ local function RefreshPetStatusText()
         HideStatus(true)
         return
     end
+    if PSA.RefreshForeverFormAlert then return PSA.RefreshForeverFormAlert() end
 
     local okSupports, supports = pcall(SupportsPetStatusPrompt)
     if not okSupports or not supports then

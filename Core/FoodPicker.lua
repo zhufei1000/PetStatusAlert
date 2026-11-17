@@ -12,6 +12,8 @@ local button, owner, menu
 local characterGUID, sessionItem
 local requestedItems, waitingItems = {}, {}
 local requestedSpell, waitingSpell, menuRefreshQueued
+local foodUseFrame, pendingFoodUse
+local itemTransferFrames = { "MerchantFrame", "BankFrame", "GuildBankFrame", "MailFrame", "TradeFrame" }
 
 local function CharacterGUID()
     if not characterGUID then
@@ -40,9 +42,13 @@ local function RememberItem(id)
     sessionItem = nil
 end
 
-local function BagCount(id)
+local function ReadBagCount(id)
     local count = C_Item.GetItemCount(id)
-    return PSA.IsAccessibleValue(count) and type(count) == "number" and count or 0
+    if PSA.IsAccessibleValue(count) and type(count) == "number" then return count end
+end
+
+local function BagCount(id)
+    return ReadBagCount(id) or 0
 end
 
 local function CanInteract()
@@ -84,7 +90,72 @@ end
 
 local function IsBuffFood(id, nutritiousName)
     if PSA.HasKnownFoodAura(id) then return true end
-    return nutritiousName and C_Item.GetItemSpell(id) == nutritiousName
+    local name, spellID = C_Item.GetItemSpell(id)
+    return (PSA.IsAccessibleValue(spellID) and spellID == NUTRITIOUS_FOOD)
+        or (PSA.IsAccessibleValue(nutritiousName) and nutritiousName
+            and PSA.IsAccessibleValue(name) and name == nutritiousName)
+end
+
+local function CanRememberBagFood()
+    return not InCombatLockdown() and PSA.GetBuffAlertsEnabled()
+        and PSA.GetFoodBuffAlertEnabled() and PSA.GetFoodPickerEnabled()
+end
+
+local function ClearPendingFoodUse()
+    pendingFoodUse = nil
+    if foodUseFrame then foodUseFrame:UnregisterEvent("BAG_UPDATE_DELAYED") end
+end
+
+local function ConfirmBagFood()
+    local attempt = pendingFoodUse
+    if not attempt then return end
+    if not CanRememberBagFood() then
+        ClearPendingFoodUse()
+        return
+    end
+    local count = ReadBagCount(attempt.id)
+    if count and count < attempt.count then
+        ClearPendingFoodUse()
+        RememberItem(attempt.id)
+        if CanInteract() then
+            UpdateIcon()
+            UpdateBagWatch()
+        end
+    end
+end
+
+local function ObserveBagFoodUse(bag, slot, target)
+    if not CanRememberBagFood() or not PSA.IsAccessibleValue(bag) or not PSA.IsAccessibleValue(slot)
+        or not PSA.IsAccessibleValue(target) or (target and target ~= "player")
+        or type(bag) ~= "number" or bag < 0 or bag > LAST_BAG or type(slot) ~= "number"
+        or SpellIsTargeting() or GetCursorInfo() then return end
+    for _, name in ipairs(itemTransferFrames) do
+        local frame = _G[name]
+        if frame and frame:IsShown() then return end
+    end
+    if C_Bank and C_Bank.AreAnyBankTypesViewable and C_Bank.AreAnyBankTypesViewable() then return end
+
+    local item = C_Container.GetContainerItemInfo(bag, slot)
+    if not PSA.IsAccessibleValue(item) or not item or (canaccesstable and not canaccesstable(item)) then return end
+    local id = item.itemID
+    if not PSA.IsAccessibleValue(id) or type(id) ~= "number"
+        or select(6, C_Item.GetItemInfoInstant(id)) ~= CONSUMABLE
+        or not IsBuffFood(id, C_Spell.GetSpellName(NUTRITIOUS_FOOD)) then return end
+    ConfirmBagFood()
+    local count = ReadBagCount(id)
+    if not count or count == 0 then return end
+
+    -- The food buff may hide the reminder before the bag update arrives.
+    if not foodUseFrame then
+        foodUseFrame = CreateFrame("Frame")
+        foodUseFrame:SetScript("OnEvent", ConfirmBagFood)
+    end
+    local attempt = { id = id, count = count }
+    pendingFoodUse = attempt
+    foodUseFrame:RegisterEvent("BAG_UPDATE_DELAYED")
+    C_Timer.After(2, function()
+        if pendingFoodUse == attempt then ClearPendingFoodUse() end
+    end)
 end
 
 local function RequestItem(id)
@@ -150,6 +221,7 @@ local function BuildMenu(_, root)
     local function IsSelected(id) return PreferredItem() == id end
     local function SelectItem(id)
         if not CanInteract() or BagCount(id) == 0 or not C_Item.IsUsableItem(id) then return end
+        ClearPendingFoodUse()
         RememberItem(id)
         UpdateIcon()
         UpdateBagWatch()
@@ -269,4 +341,8 @@ function PSA.SetFoodPickerOwner(parent)
     UpdateIcon()
     UpdateBagWatch()
     button:Show()
+end
+
+if hooksecurefunc and C_Container.UseContainerItem then
+    hooksecurefunc(C_Container, "UseContainerItem", ObserveBagFoodUse)
 end

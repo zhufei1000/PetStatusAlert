@@ -204,7 +204,7 @@ end
 
 local function ClassTabs(forever)
     local tabs = {}
-    for _, classFile in ipairs(PSA.GetAlertClasses(false)) do
+    for _, classFile in ipairs(PSA.GetAlertSettingsClasses()) do
         local versions = {}
         for _, version in ipairs({ forever, not forever }) do
             local title = PSA.GetAlertClientName(version)

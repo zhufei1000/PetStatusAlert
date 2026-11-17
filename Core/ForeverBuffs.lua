@@ -40,8 +40,7 @@ local families = {
     PALADIN = {
         { key = "BLESSING", spells = {19742, 19850, 19852, 19853, 19854, 25290, 20217, 19740, 19834,
             19835, 19836, 19837, 19838, 25291, 25894, 25918, 25898, 25782, 25916}, other = {1213408} },
-        { key = "PALADIN_AURA", spells = {19891, 19899, 19900, 19888, 19897, 19898, 19876, 19895, 19896,
-            19746, 7294, 10298, 10299, 10300, 10301, 465, 10290, 643, 10291, 1032, 10292, 10293}, own = true },
+        { key = "PALADIN_AURA", spells = PSA.FOREVER_PALADIN_AURA_SPELLS, own = true },
         { key = "RIGHTEOUS_FURY", spells = {25780}, optional = true },
     },
     PRIEST = {

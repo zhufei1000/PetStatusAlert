@@ -286,7 +286,7 @@ local function LoadLanguageSession(saved)
     local session = {}
     for _, path in ipairs({"Core/Database.lua", "Core/Compat.lua", "Core/Localization.lua", "Core/AlertFrame.lua",
         "Core/FoodBuff.lua", "Core/FoodPicker.lua", "Core/TTS.lua", "Core/PetLogic.lua", "Core/PetFeed.lua", "Core/WarriorLogic.lua",
-        "Core/RetailBuffs.lua", "Core/ForeverBuffs.lua", "UI/Options.lua",
+        "Core/ForeverFormAlerts.lua", "Core/RetailBuffs.lua", "Core/ForeverBuffs.lua", "UI/Options.lua",
         "UI/ManagerSettings.lua", "Core/Events.lua"}) do
         assert(loadfile(path))("PetStatusAlert", session)
     end
@@ -502,8 +502,11 @@ Test("standalone navigation edits another class from an unsupported character", 
     local stancePage = frame.currentPage.children[1].children[1]
     assert(#stancePage.children == 4, "warrior settings should have one stance card and a reset action")
     frame.clientButtons.forever.scripts.OnClick()
-    local unsupported = frame.currentPage.children[1].children[1]
-    assert(#unsupported.children == 2 and unsupported.children[2]:GetText() == session.UI.CLASS_UNSUPPORTED)
+    local foreverWarrior = frame.currentPage.children[1].children[1]
+    assert(#foreverWarrior.children == 5 and not FindButton(foreverWarrior, session.UI.CLASS_RESET))
+    for _, key in ipairs(session.GetClassAlertStatuses("WARRIOR", true)) do
+        assert(FindText(foreverWarrior, session.UI[key]) and not session.IsStatusEnabled(key, "WARRIOR"))
+    end
     frame.navButtons.WARLOCK.scripts.OnClick()
     assert(frame.currentPage == warlockPage and input:GetText() == "Warlock only")
     frame.navButtons.classes.scripts.OnClick()
@@ -551,7 +554,18 @@ Test("Forever opens its own class tab and shows Retail Warrior defaults", functi
     assert(frame.currentPage.children[1].children[1].children[1]:GetText() == "法师（召唤水元素）")
     assert(FindText(frame.currentPage, session.UI.AGGRESSIVE) and FindText(frame.currentPage, session.UI.MAGE_SUMMON_SETTINGS))
     frame.navButtons.WARRIOR.scripts.OnClick()
-    assert(#frame.currentPage.children[1].children[1].children == 2)
+    local forever = frame.currentPage.children[1].children[1]
+    local statuses = session.GetClassAlertStatuses("WARRIOR", true)
+    assert(#forever.children == 6 and forever.children[1]:GetText() == "战士")
+    for index, key in ipairs(statuses) do
+        local card = forever.children[index + 2]
+        local check = assert(FindNode(card, function(node) return node.template == "UICheckButtonTemplate" end))
+        assert(FindText(card, session.UI[key]) and not check:GetChecked())
+        if index ~= 2 then
+            check:SetChecked(true)
+            check.scripts.OnClick(check)
+        end
+    end
     frame.clientButtons.retail.scripts.OnClick()
     local retail = frame.currentPage.children[1].children[1]
     assert(retail.children[1]:GetText() == "武器 / 狂暴战士")
@@ -577,6 +591,20 @@ Test("Forever opens its own class tab and shows Retail Warrior defaults", functi
         assert(title == "武器 / 狂暴战士" and note[1] == session.UI.OTHER_CLIENT_SETTINGS)
         return {}
     end, AddSection = noop})
+    local toggles = {}
+    warriorTab.subtabs[1].build({ NewSection = function(_, title)
+        return setmetatable({ Check = function(_, _, get, set) toggles[title] = { get = get, set = set } end },
+            { __index = function() return noop end })
+    end, AddSection = noop })
+    for index, key in ipairs(statuses) do
+        local toggle = assert(toggles[session.UI[key]])
+        assert(toggle.set and toggle.get() == (index ~= 2))
+    end
+    local saved = PetStatusAlertDB
+    local reloaded = LoadLanguageSession(saved)
+    for index, key in ipairs(statuses) do
+        assert(reloaded.IsStatusEnabled(key, "WARRIOR") == (index ~= 2))
+    end
     GetBuildInfo = nil
 end)
 Test("Forever Aggressive uses its own icon, text, and settings entry", function()
@@ -595,19 +623,26 @@ Test("Forever Aggressive uses its own icon, text, and settings entry", function(
     session.HideStatus()
     GetBuildInfo = nil
 end)
-Test("Forever Warrior UI previews stay hidden after language refresh", function()
+Test("Forever Warrior previews show their own localized stance text and icon", function()
     GetBuildInfo = function() return "1.60.1", "70790", "Nov 5 2026", 16001 end
-    local originalClass = UnitClass
+    local originalClass, originalTexture = UnitClass, C_Spell.GetSpellTexture
     UnitClass = function() return "Warrior", "WARRIOR" end
+    C_Spell.GetSpellTexture = function(id) return id end
     local session = LoadLanguageSession({language = "enUS"})
+    session.SetAlertIconMode("both")
     for _, language in ipairs({"enUS", "zhCN", "zhTW", "ruRU"}) do
         session.ApplyManagerLanguage(language)
         session.PreviewStatus("PASSIVE")
-        assert(not session.addonFrame:IsShown() and #session.STATUS_ORDER == 0)
+        assert(not session.addonFrame:IsShown() and #session.STATUS_ORDER == 3)
         session.PreviewStatus("WARRIOR_DEFENSIVE_STANCE")
         assert(not session.addonFrame:IsShown())
+        for _, key in ipairs(session.STATUS_ORDER) do
+            session.PreviewStatus(key, "WARRIOR")
+            assert(session.addonFrame:IsShown() and session.alertText:GetText() == session.GetDefaultMessage(key))
+            assert(session.alertText.parent.icon.texture == session.FOREVER_FORM_ALERT_SPELLS[key])
+        end
     end
-    GetBuildInfo, UnitClass = nil, originalClass
+    GetBuildInfo, UnitClass, C_Spell.GetSpellTexture = nil, originalClass, originalTexture
 end)
 
 Test("display sample works on Forever Warrior and stops when leaving the page", function()
@@ -639,6 +674,128 @@ Test("display sample works on Forever Warrior and stops when leaving the page", 
     frame.navButtons.display.scripts.OnClick()
     assert(frame.currentPage.psaScroll:GetVerticalScroll() == 38)
     GetBuildInfo, UnitClass = nil, originalClass
+end)
+
+Test("Forever Warrior icon opens a multi-select menu that outlives the visible alert", function()
+    local oldBuild, oldClass, oldMenu = GetBuildInfo, UnitClass, MenuUtil
+    local oldCount, oldForm, oldTexture = GetNumShapeshiftForms, GetShapeshiftFormInfo, C_Spell.GetSpellTexture
+    GetBuildInfo = function() return "1.60.1", "70938", "", 16001 end
+    UnitClass = function() return "Warrior", "WARRIOR" end
+    local active = 2458
+    GetNumShapeshiftForms = function() return 3 end
+    GetShapeshiftFormInfo = function(index)
+        local spellID = ({2457, 71, 2458})[index]
+        return nil, active == spellID, true, spellID
+    end
+    C_Spell.GetSpellTexture = function(id) return id end
+    local entries
+    MenuUtil = { CreateContextMenu = function(owner, build)
+        assert(owner == nil, "the menu must use the default top-level owner")
+        entries = {}
+        build(UIParent, {
+            CreateTitle = noop,
+            CreateCheckbox = function(_, label, selected, toggle, key)
+                entries[key] = { label = label, selected = selected, toggle = toggle }
+            end,
+        })
+    end }
+
+    local session = LoadLanguageSession({language = "zhCN"})
+    local battle, defensive, berserker = table.unpack(session.GetClassAlertStatuses("WARRIOR", true))
+    session.SetStatusEnabled(berserker, true, "WARRIOR")
+    local button = assert(FindNode(session.alertText.parent, function(node)
+        return node.clicks and node.clicks[1] == "RightButtonUp"
+    end))
+    assert(button:IsVisible() and session.currentStatusKey == berserker)
+    button.scripts.OnClick(button, "LeftButton")
+    assert(not entries)
+
+    session.SetAlertIconMode("text")
+    assert(not button:IsVisible())
+    session.SetAlertIconMode("both")
+    session.SetAlertPositionLocked(false)
+    assert(not button:IsVisible())
+    session.SetAlertPositionLocked(true)
+    session.PreviewStatus(berserker, "WARRIOR")
+    assert(not button:IsVisible(), "previewing the same stance must disable the menu")
+    session.RefreshPetStatusText()
+    assert(button:IsVisible())
+
+    button.scripts.OnClick(button, "RightButton")
+    assert(entries[battle].label == "战斗姿态" and entries[defensive].label == "防御姿态"
+        and entries[berserker].label == "狂暴姿态")
+    assert(entries[berserker].selected(berserker) and not entries[battle].selected(battle))
+    entries[berserker].toggle(berserker)
+    assert(not button:IsVisible() and not entries[berserker].selected(berserker))
+    entries[battle].toggle(battle)
+    entries[defensive].toggle(defensive)
+    assert(entries[battle].selected(battle) and entries[defensive].selected(defensive))
+    assert(session.IsStatusEnabled(battle, "WARRIOR") and session.IsStatusEnabled(defensive, "WARRIOR"))
+    assert(not session.currentStatusKey)
+    active = 71
+    session.RefreshPetStatusText()
+    assert(button:IsVisible() and session.currentStatusKey == defensive)
+
+    GetBuildInfo, UnitClass, MenuUtil = oldBuild, oldClass, oldMenu
+    GetNumShapeshiftForms, GetShapeshiftFormInfo, C_Spell.GetSpellTexture = oldCount, oldForm, oldTexture
+end)
+
+Test("Forever Paladin settings and the alert menu share the same aura selections", function()
+    local oldBuild, oldClass, oldMenu = GetBuildInfo, UnitClass, MenuUtil
+    local oldCount, oldForm, oldTexture = GetNumShapeshiftForms, GetShapeshiftFormInfo, C_Spell.GetSpellTexture
+    GetBuildInfo = function() return "1.60.1", "70938", "", 16001 end
+    UnitClass = function() return "Paladin", "PALADIN" end
+    GetNumShapeshiftForms = function() return 1 end
+    GetShapeshiftFormInfo = function() return nil, true, true, 10293 end
+    C_Spell.GetSpellTexture = function(id) return id end
+    local entries = {}
+    MenuUtil = { CreateContextMenu = function(_, build)
+        build(UIParent, {
+            CreateTitle = function(_, title) assert(title == "光环提醒") end,
+            CreateCheckbox = function(_, _, selected, toggle, key)
+                entries[key] = { selected = selected, toggle = toggle }
+            end,
+        })
+    end }
+
+    local session = LoadLanguageSession({language = "zhCN"})
+    local keys = session.GetClassAlertStatuses("PALADIN", true)
+    session.OpenOptionsFrame()
+    local frame = Upvalue(session.RefreshOptionsFrameLocale, "optionsFrame")
+    frame.navButtons.classes.scripts.OnClick()
+    frame.navButtons.PALADIN.scripts.OnClick()
+    local page = frame.currentPage.children[1].children[1]
+    assert(#page.children == 9 and page.children[1]:GetText() == "圣骑士")
+    local check = assert(FindNode(page.children[3], function(node) return node.template == "UICheckButtonTemplate" end))
+    assert(not check:GetChecked())
+    check:SetChecked(true)
+    check.scripts.OnClick(check)
+    assert(session.currentStatusKey == keys[1] and session.alertText:GetText() == "已开启虔诚光环")
+    assert(session.alertText.parent.icon.texture == 465)
+    local button = assert(FindNode(session.alertText.parent, function(node)
+        return node.clicks and node.clicks[1] == "RightButtonUp"
+    end))
+    button.scripts.OnClick(button, "RightButton")
+    for index, key in ipairs(keys) do assert(entries[key].selected(key) == (index == 1)) end
+    entries[keys[2]].toggle(keys[2])
+    entries[keys[6]].toggle(keys[6])
+    entries[keys[1]].toggle(keys[1])
+    assert(not button:IsVisible() and not session.currentStatusKey)
+
+    local managerTab
+    for _, tab in ipairs(session.GetSettingsDefinition({}).tabs) do
+        if tab.key == "PALADIN" then managerTab = tab end
+    end
+    assert(managerTab and managerTab.subtabs[1].key == "forever")
+    local states = {}
+    managerTab.subtabs[1].build({ NewSection = function(_, title)
+        return setmetatable({ Check = function(_, _, get, set) assert(set); states[title] = get() end },
+            { __index = function() return noop end })
+    end, AddSection = noop })
+    for index, key in ipairs(keys) do assert(states[session.UI[key]] == (index == 2 or index == 6)) end
+
+    GetBuildInfo, UnitClass, MenuUtil = oldBuild, oldClass, oldMenu
+    GetNumShapeshiftForms, GetShapeshiftFormInfo, C_Spell.GetSpellTexture = oldCount, oldForm, oldTexture
 end)
 
 Test("Forever Mage page updates eligibility when the summon ability is learned", function()
@@ -1255,13 +1412,15 @@ Test("Forever food reminder handles gains and removals without polling", functio
     GetBuildInfo, C_Spell.GetSpellName = nil, priorSpellName
 end)
 
-Test("Forever player food picker saves a character's valid choice and only scans while its menu is open", function()
+Test("Forever food picker remembers menu selections and consumed bag food per character", function()
     local previous = {}
     local globals = { "GetBuildInfo", "C_Container", "C_Item", "C_UnitAuras", "C_Spell", "MenuUtil",
-        "Menu", "MenuVariants", "UnitGUID", "wipe", "SpellIsTargeting", "GetCursorInfo" }
+        "Menu", "MenuVariants", "UnitGUID", "wipe", "SpellIsTargeting", "GetCursorInfo",
+        "hooksecurefunc", "MerchantFrame" }
     for _, key in ipairs(globals) do previous[key] = _G[key] end
     local after = C_Timer.After
     local pending, scans = {}, 0
+    local bagUseHook
     local guid, nutritiousName = "Player-A", nil
     local coldItem = 102
     local counts = { [101] = 3, [102] = 1, [5525] = 4, [13810] = 1, [999] = 1 }
@@ -1271,7 +1430,13 @@ Test("Forever player food picker saves a character's valid choice and only scans
     UnitGUID = function() return guid end
     SpellIsTargeting, GetCursorInfo = noop, noop
     wipe = function(t) for k in pairs(t) do t[k] = nil end end
+    hooksecurefunc = function(object, key, callback)
+        assert(object == C_Container and key == "UseContainerItem")
+        bagUseHook = callback
+        object[key] = callback
+    end
     C_Container = {
+        UseContainerItem = noop,
         GetContainerNumSlots = function(bagID) return bagID == 0 and #bag or 0 end,
         GetContainerItemInfo = function(_, slot)
             scans = scans + 1
@@ -1404,6 +1569,39 @@ Test("Forever player food picker saves a character's valid choice and only scans
     local fresh = assert(FindPicker(alt))
     fresh.scripts.PreClick(fresh, "LeftButton")
     assert(not fresh.attributes.type1 and fresh.foodCount:GetText() == "")
+
+    MerchantFrame = Object()
+    C_Container.UseContainerItem(0, 5)
+    MerchantFrame:Hide()
+    C_Container.UseContainerItem(0, 3) -- ordinary food
+    assert(not Upvalue(bagUseHook, "foodUseFrame"), "selling and ordinary food must not start tracking")
+
+    C_Container.UseContainerItem(0, 5)
+    local observer = assert(Upvalue(bagUseHook, "foodUseFrame"))
+    assert(observer.events.BAG_UPDATE_DELAYED and #pending == 1)
+    observer.scripts.OnEvent(observer, "BAG_UPDATE_DELAYED")
+    assert(not saved.playerFoodByCharacter[guid], "a click without consumption must not be saved")
+    pending[1]()
+    pending = {}
+    assert(not next(observer.events), "unconfirmed uses must expire")
+
+    C_Container.UseContainerItem(0, 5)
+    alt.SetFoodBuffAlert(false, false)
+    bag[5], counts[102] = nil, 0
+    observer.scripts.OnEvent(observer, "BAG_UPDATE_DELAYED")
+    assert(not fresh:IsVisible() and not next(observer.events))
+    assert(saved.playerFoodByCharacter[guid] == 102 and saved.playerFoodByCharacter["Player-A"] == 101,
+        "consuming the last copy must save it even when the reminder hides first")
+
+    counts[102] = 2
+    alt.SetFoodBuffAlert(true, true)
+    fresh.scripts.PreClick(fresh, "LeftButton")
+    assert(fresh.attributes.item1 == "item:102" and fresh.foodCount:GetText() == "2")
+    fresh.scripts.PostClick(fresh, "LeftButton")
+
+    alt.SetFoodPickerEnabled(false)
+    C_Container.UseContainerItem(0, 4) -- known buff food
+    assert(not next(observer.events) and saved.playerFoodByCharacter[guid] == 102)
     C_Timer.After = after
     for _, key in ipairs(globals) do _G[key] = previous[key] end
 end)

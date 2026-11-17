@@ -1,7 +1,9 @@
 # PetStatusAlert 1.7.0
 Alerts for supported pet classes and Warrior stance mistakes. Pet alerts cover Hunter, Warlock, Unholy DK, and Frost Mage Water Elemental states (Passive, Defensive, Dead, or Missing) with optional combat TTS. Arms and Fury Warriors are warned while Defensive Stance is active. Supports EN/zhCN/zhTW/RU and Warlock Grimoire of Sacrifice.
 
-Forever (Interface 16001): pet alerts use learned summon abilities rather than specializations. Passive and Defensive trigger alerts by default. Aggressive is off by default and can be enabled in the class settings. Missing and dead pet alerts remain available. Mage alerts require the Water Elemental summon ability. Retail Grimoire of Sacrifice talent IDs and live Warrior stance alerts are disabled in Forever.
+Forever (Interface 16001): pet alerts use learned summon abilities rather than specializations. Passive and Defensive trigger alerts by default. Aggressive is off by default and can be enabled in the class settings. Missing and dead pet alerts remain available. Mage alerts require the Water Elemental summon ability.
+
+**Warrior → Forever** and **Paladin → Forever** let you select which of your active stances or auras should trigger an alert. Each starts off. Right-click a visible stance or aura alert icon to change the selection. For Paladins, all ranks of an aura share one switch.
 
 Open `/psa` or the settings button in QFXAddonManager. Expand **Pet Alerts**, select a class, then switch between **Retail** and **Forever**. The active client saves alert switches, custom messages, and colors per class and uses existing shared values until a class setting is edited. The other client tab shows its read-only defaults.
 

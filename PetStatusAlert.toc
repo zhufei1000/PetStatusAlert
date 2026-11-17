@@ -19,6 +19,7 @@ Core/TTS.lua
 Core/PetLogic.lua
 Core/PetFeed.lua
 Core/WarriorLogic.lua
+Core/ForeverFormAlerts.lua
 Core/RetailBuffs.lua
 Core/ForeverBuffs.lua
 UI/Options.lua

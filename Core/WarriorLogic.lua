@@ -6,26 +6,7 @@
 local _, PSA = ...
 PSA = PSA or _G.PetStatusAlert
 
--- Forever skips Retail stance detection and events. The settings UI can still
--- display Retail stance defaults without starting the runtime alert.
-if PSA.IsForeverClient() then
-    if PSA.GetPlayerClassFile() == "WARRIOR" then
-        for index = #PSA.STATUS_ORDER, 1, -1 do
-            PSA.STATUS_ORDER[index] = nil
-        end
-        local PreviewStatus, GetDisplayMessage = PSA.PreviewStatus, PSA.GetDisplayMessage
-        PSA.PreviewStatus = function(statusKey, classFile)
-            if classFile and PSA.GetClassAlertStatuses(classFile) then
-                return PreviewStatus(statusKey, classFile)
-            end
-            PSA.HideStatus()
-        end
-        PSA.GetDisplayMessage = function(statusKey, classFile)
-            return classFile and GetDisplayMessage(statusKey, classFile) or ""
-        end
-    end
-    return
-end
+if PSA.IsForeverClient() then return end
 
 local STATUS_KEY = PSA.WARRIOR_STATUS_KEY
 local SPEC_WARRIOR_ARMS = 71

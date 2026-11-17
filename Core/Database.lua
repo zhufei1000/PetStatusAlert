@@ -222,6 +222,9 @@ function PSA.ResetClassSettings(classFile)
     if not statuses then return false end
     local db = InitDB()
     local profile = {}
+    if classFile == "WARRIOR" and type(db.classAlerts.WARRIOR) == "table" then
+        profile = db.classAlerts.WARRIOR
+    end
     for _, key in ipairs(statuses) do
         -- Write explicit defaults so pre-profile shared values cannot reappear.
         profile[key] = { statusEnabled = PSA.GetDefaultStatusEnabled(key), customMessages = "", textColors = {} }
@@ -243,6 +246,8 @@ function PSA.ResetClassSettings(classFile)
     elseif forever and classFile == "HUNTER" then
         db.petFeedEnabled, db.petUnhappyAlertEnabled = nil, nil
         if PSA.ApplyPetCareSettings then PSA.ApplyPetCareSettings() end
+    elseif forever and PSA.ApplyForeverFormAlertSettings and classFile == PSA.GetPlayerClassFile() then
+        PSA.ApplyForeverFormAlertSettings()
     end
     return true
 end

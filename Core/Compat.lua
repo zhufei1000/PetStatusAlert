@@ -268,11 +268,71 @@ local foreverPetStatuses = { "NO_PET", "PET_DEAD", "PASSIVE", "DEFENSIVE", "AGGR
 PSA.PET_STATUS_ORDER = isForever and foreverPetStatuses or retailPetStatuses
 
 local retailClasses = { "HUNTER", "WARLOCK", "MAGE", "DEATHKNIGHT", "WARRIOR" }
-local foreverClasses = { "HUNTER", "WARLOCK", "MAGE" }
+local foreverClasses = { "HUNTER", "WARLOCK", "MAGE", "WARRIOR", "PALADIN" }
+local settingsClasses = { "HUNTER", "WARLOCK", "MAGE", "DEATHKNIGHT", "WARRIOR", "PALADIN" }
 PSA.WARRIOR_STATUS_KEY = "WARRIOR_DEFENSIVE_STANCE"
 PSA.WRONG_PET_STATUS_KEY = "WARLOCK_WRONG_PET"
 PSA.WARLOCK_SPECS = { 265, 266, 267 }
 local warriorStatuses = { PSA.WARRIOR_STATUS_KEY }
+local foreverFormAlerts = {
+    WARRIOR = {
+        { "FOREVER_WARRIOR_BATTLE", {2457} },
+        { "FOREVER_WARRIOR_DEFENSIVE", {71} },
+        { "FOREVER_WARRIOR_BERSERKER", {2458} },
+    },
+    PALADIN = {
+        { "FOREVER_PALADIN_DEVOTION", {465, 10290, 643, 10291, 1032, 10292, 10293} },
+        { "FOREVER_PALADIN_RETRIBUTION", {7294, 10298, 10299, 10300, 10301} },
+        { "FOREVER_PALADIN_CONCENTRATION", {19746} },
+        { "FOREVER_PALADIN_SHADOW_RESISTANCE", {19876, 19895, 19896} },
+        { "FOREVER_PALADIN_FROST_RESISTANCE", {19888, 19897, 19898} },
+        { "FOREVER_PALADIN_FIRE_RESISTANCE", {19891, 19899, 19900} },
+    },
+}
+local formStatuses, formKeysBySpell, formIconSpells = {}, {}, {}
+for classFile, entries in pairs(foreverFormAlerts) do
+    local statuses, spellKeys = {}, {}
+    for index, entry in ipairs(entries) do
+        local key, ranks = entry[1], entry[2]
+        statuses[index] = key
+        formIconSpells[key] = ranks[1]
+        for _, id in ipairs(ranks) do spellKeys[id] = key end
+    end
+    formStatuses[classFile], formKeysBySpell[classFile] = statuses, spellKeys
+end
+PSA.FOREVER_FORM_ALERT_SPELLS = formIconSpells
+
+function PSA.GetForeverFormAlertStatuses(classFile)
+    return formStatuses[classFile]
+end
+
+function PSA.GetForeverFormAlertBySpell(classFile, spellID)
+    local spellKeys = formKeysBySpell[classFile]
+    if spellKeys then return spellKeys[spellID] end
+end
+
+-- The missing-aura reminder prefers the highest known rank of Devotion Aura.
+local paladinAuraSpells = {}
+for index = #foreverFormAlerts.PALADIN, 1, -1 do
+    for _, id in ipairs(foreverFormAlerts.PALADIN[index][2]) do paladinAuraSpells[#paladinAuraSpells + 1] = id end
+end
+PSA.FOREVER_PALADIN_AURA_SPELLS = paladinAuraSpells
+
+if isForever and type(GetNumShapeshiftForms) == "function" and type(GetShapeshiftFormInfo) == "function" then
+    function PSA.ReadForeverFormAlert(classFile)
+        local spellKeys = formKeysBySpell[classFile]
+        if not spellKeys then return end
+        local count = GetNumShapeshiftForms()
+        if not PSA.IsAccessibleValue(count) or type(count) ~= "number" then return end
+        for index = 1, count do
+            local _, active, _, spellID = GetShapeshiftFormInfo(index)
+            if PSA.IsAccessibleValue(active) and active and PSA.IsAccessibleValue(spellID) then
+                return spellKeys[spellID]
+            end
+        end
+    end
+end
+
 local function WarlockStatuses(petStatuses)
     local statuses = {}
     for index, statusKey in ipairs(petStatuses) do
@@ -327,15 +387,18 @@ function PSA.GetAlertClasses(forever)
     return forever and foreverClasses or retailClasses
 end
 
+function PSA.GetAlertSettingsClasses()
+    return settingsClasses
+end
+
 function PSA.GetClassAlertStatuses(classFile, forever)
     if forever == nil then
         forever = isForever
     end
     for _, supported in ipairs(PSA.GetAlertClasses(forever)) do
         if supported == classFile then
-            if classFile == "WARRIOR" then
-                return warriorStatuses
-            end
+            if forever and formStatuses[classFile] then return formStatuses[classFile] end
+            if classFile == "WARRIOR" then return warriorStatuses end
             if classFile == "WARLOCK" then
                 return forever and foreverWarlockStatuses or retailWarlockStatuses
             end

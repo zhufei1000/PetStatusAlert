@@ -264,6 +264,42 @@ icon:SetSize(DEFAULT_ALERT_ICON_SIZE, DEFAULT_ALERT_ICON_SIZE)
 icon:SetPoint("CENTER", contentFrame, "CENTER", 0, 0)
 icon:Hide()
 
+local formMenuButton
+
+local function CanOpenFormAlertMenu()
+    return PSA.OpenForeverFormAlertMenu and MenuUtil and MenuUtil.CreateContextMenu
+        and PetStatusAlertDB.alertLocked and not PSA.currentStatusForce
+        and PSA.FOREVER_FORM_ALERT_SPELLS[PSA.currentStatusKey] and icon:IsShown()
+end
+
+local function HideFormAlertMenuTooltip(button)
+    if GameTooltip and not GameTooltip:IsForbidden() and GameTooltip:IsOwned(button) then GameTooltip:Hide() end
+end
+
+local function RefreshFormAlertMenuButton()
+    local active = CanOpenFormAlertMenu()
+    if active and not formMenuButton then
+        formMenuButton = CreateFrame("Button", nil, contentFrame)
+        formMenuButton:SetAllPoints(icon)
+        formMenuButton:EnableMouse(true)
+        formMenuButton:RegisterForClicks("RightButtonUp")
+        formMenuButton:SetScript("OnClick", function(self, mouseButton)
+            if mouseButton ~= "RightButton" or not self:IsVisible() or not CanOpenFormAlertMenu() then return end
+            HideFormAlertMenuTooltip(self)
+            PSA.OpenForeverFormAlertMenu()
+        end)
+        formMenuButton:SetScript("OnEnter", function(self)
+            if not GameTooltip or GameTooltip:IsForbidden() then return end
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(PSA.UI["FOREVER_" .. PSA.currentStatusClass .. "_FORM_MENU_HINT"])
+            GameTooltip:Show()
+        end)
+        formMenuButton:SetScript("OnLeave", HideFormAlertMenuTooltip)
+        formMenuButton:SetScript("OnHide", HideFormAlertMenuTooltip)
+    end
+    if formMenuButton then formMenuButton:SetShown(not not active) end
+end
+
 -- 提示文字。锚点由 ApplyContentLayout 按图标模式动态设置。
 local text = contentFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 text:SetFont(STANDARD_TEXT_FONT, DEFAULT_ALERT_FONT_SIZE, "OUTLINE")
@@ -680,6 +716,7 @@ local function RefreshAlertBoxSize()
 
     -- 用当前状态键重新计算 icon/text 锚点与内容尺寸。
     local contentWidth, contentHeight = ApplyContentLayout(lastStatusKey)
+    RefreshFormAlertMenuButton()
     contentWidth = tonumber(contentWidth) or 0
     contentHeight = tonumber(contentHeight) or currentAlertFontSize
 
@@ -1311,6 +1348,7 @@ local function SetAlertPositionLocked(locked)
     SetAlertStrata(PSA.currentStatusForce and ALERT_STRATA_PREVIEW or ALERT_STRATA_DEFAULT)
     PSA.RefreshSupplyAlertLabels()
     PSA.RefreshFoodPicker()
+    RefreshFormAlertMenuButton()
 end
 
 local function SetDragHandlers(frame, positionKey, defaultY)
@@ -1348,6 +1386,8 @@ local function SetMessage(message, statusKey, classFile)
         lastStatusKey = statusKey
         text:SetText(message)
         RefreshAlertBoxSize()
+    else
+        RefreshFormAlertMenuButton()
     end
     return changed or (retryIconTexture and not iconTexturePending)
 end

@@ -17,6 +17,8 @@ local InvalidatePetFood = PSA.InvalidatePetFood
 local RefreshCombatTTSReminder = PSA.RefreshCombatTTSReminder
 local ClearPetStatusCaches = PSA.ClearPetStatusCaches
 local HandleFoodBuffEvent = PSA.HandleFoodBuffEvent
+local HandleForeverFormAlertCast = PSA.HandleForeverFormAlertCast
+local ResetForeverFormAlertState = PSA.ResetForeverFormAlertState
 local isForever = PSA.IsForeverClient()
 
 local function RegisterEventSafe(event)
@@ -38,6 +40,9 @@ local playerClass, hasClassAlerts
 local function UpdatePlayerClass()
     playerClass = PSA.GetPlayerClassFile()
     hasClassAlerts = playerClass == nil or PSA.GetClassAlertStatuses(playerClass, isForever) ~= nil
+    if isForever and PSA.GetForeverFormAlertStatuses(playerClass) then
+        hasClassAlerts = PSA.HasEnabledForeverFormAlerts and PSA.HasEnabledForeverFormAlerts()
+    end
 end
 UpdatePlayerClass()
 
@@ -59,8 +64,7 @@ do
     local watchingPlayerAuras = false
     local supplyAuraWatch, foodAuraWatch = false, false
     local function UpdateAuraWatch()
-        -- Warrior stance tracking is Retail-only; Forever's WarriorLogic
-        -- returns before defining this callback.
+        -- Forever reads the form bar; only Retail Warrior stance tracking uses auras.
         local watch = supplyAuraWatch or foodAuraWatch
             or (not isForever and petActive and PSA.WantsWarriorAuraWatch ~= nil and PSA.WantsWarriorAuraWatch())
         if watch == watchingPlayerAuras then return end
@@ -114,11 +118,13 @@ local centralPetCareEvents = { "BAG_UPDATE", "ITEM_LOCK_CHANGED" }
 
 local function UpdateCentralEvents()
     local pet = petActive and hasClassAlerts
-    local hasPet = pet and playerClass ~= "WARRIOR"
+    local usesFormBar = isForever and PSA.GetForeverFormAlertStatuses(playerClass)
+    local watchForms = pet and usesFormBar
+    local hasPet = pet and playerClass ~= "WARRIOR" and not usesFormBar
     local buff = buffActive
     local ammo = ammoThreshold > 0
     local buffWorld = ammo or (buff and HandleFoodBuffEvent ~= nil)
-    local deathEvents = petCareWatch or (buff and HandleFoodBuffEvent ~= nil)
+    local deathEvents = petCareWatch or watchForms or (buff and HandleFoodBuffEvent ~= nil)
     for _, event in ipairs(centralPetEvents) do SetEventRegistered(event, pet) end
     for _, event in ipairs(centralWorldEvents) do SetEventRegistered(event, pet or buffWorld) end
     for _, event in ipairs(centralDeathEvents) do
@@ -135,6 +141,20 @@ local function UpdateCentralEvents()
     SetUnitEventRegistered("UNIT_PET", "player", hasPet)
     SetEventRegistered("PET_BAR_UPDATE", hasPet)
     SetEventRegistered("PET_UI_UPDATE", hasPet)
+    if usesFormBar then
+        SetEventRegistered("UPDATE_SHAPESHIFT_FORM", watchForms)
+        SetEventRegistered("UPDATE_SHAPESHIFT_FORMS", watchForms)
+        SetUnitEventRegistered("UNIT_SPELLCAST_SUCCEEDED", "player", watchForms)
+    end
+end
+
+if PSA.HasEnabledForeverFormAlerts then
+    function PSA.ApplyForeverFormAlertSettings()
+        UpdatePlayerClass()
+        UpdateCentralEvents()
+        if not hasClassAlerts then ResetForeverFormAlertState() end
+        if not PSA.currentStatusForce then RefreshPetStatusText() end
+    end
 end
 
 RegisterEventSafe("ADDON_LOADED")
@@ -263,12 +283,12 @@ local CACHE_INVALIDATE_EVENTS = {
     TRAIT_CONFIG_LIST_UPDATED = true,
 }
 
-addonFrame:SetScript("OnEvent", function(_, event, unit, slot)
+addonFrame:SetScript("OnEvent", function(_, event, unit, slot, spellID)
     if event == "ADDON_LOADED" then
         if unit == ADDON_NAME or unit == "PetStatusAlert" then
             UnregisterEventSafe("ADDON_LOADED")
-            UpdatePlayerClass()
             InitDB(true)
+            UpdatePlayerClass()
             -- 存档在脚本执行后载入，按保存的语言重新初始化文案和默认提醒。
             if PSA.RefreshLocaleState then
                 PSA.RefreshLocaleState()
@@ -288,6 +308,13 @@ addonFrame:SetScript("OnEvent", function(_, event, unit, slot)
             end
             if PSA.ApplyAlertMasterSwitches then PSA.ApplyAlertMasterSwitches() end
             RegisterNativeOptionsCategory()
+        end
+        return
+    end
+
+    if event == "UNIT_SPELLCAST_SUCCEEDED" then
+        if petActive and hasClassAlerts and HandleForeverFormAlertCast then
+            HandleForeverFormAlertCast(unit, spellID)
         end
         return
     end
@@ -379,6 +406,16 @@ addonFrame:SetScript("OnEvent", function(_, event, unit, slot)
             QueuePetCareRefresh(false)
         end
     end
+    if petActive and hasClassAlerts and ResetForeverFormAlertState then
+        if event == "PLAYER_ENTERING_WORLD" then
+            ResetForeverFormAlertState()
+        elseif event == "PLAYER_DEAD" then
+            ResetForeverFormAlertState()
+            PSA.HideStatus()
+        elseif event == "PLAYER_ALIVE" or event == "PLAYER_UNGHOST" then
+            QueueRefresh(0.08)
+        end
+    end
     if petActive and PET_CARE_ONLY_EVENTS[event] then
         return
     end
@@ -438,6 +475,7 @@ function PSA.ApplyAlertMasterSwitches()
         end
     else
         if isForever and RefreshPetCare then RefreshPetCare() end
+        if ResetForeverFormAlertState then ResetForeverFormAlertState() end
         if PSA.StopCombatTTSReminder then PSA.StopCombatTTSReminder() end
         if PSA.HideStatus then PSA.HideStatus(true) end
     end

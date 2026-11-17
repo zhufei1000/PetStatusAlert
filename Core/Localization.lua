@@ -17,6 +17,9 @@ local LOCALIZED_MESSAGES = {
         NO_PET = "No pet summoned!",
         PET_DEAD = "Pet is dead!",
         WARRIOR_DEFENSIVE_STANCE = "Defensive Stance active!",
+        FOREVER_WARRIOR_BATTLE = "Battle Stance active!",
+        FOREVER_WARRIOR_DEFENSIVE = "Defensive Stance active!",
+        FOREVER_WARRIOR_BERSERKER = "Berserker Stance active!",
         WARLOCK_WRONG_PET = "Wrong demon summoned!",
     },
     zhCN = {
@@ -27,6 +30,9 @@ local LOCALIZED_MESSAGES = {
         NO_PET = "我的宠物不存在",
         PET_DEAD = "我的宠物已死亡",
         WARRIOR_DEFENSIVE_STANCE = "当前处于：防御姿态",
+        FOREVER_WARRIOR_BATTLE = "当前处于：战斗姿态",
+        FOREVER_WARRIOR_DEFENSIVE = "当前处于：防御姿态",
+        FOREVER_WARRIOR_BERSERKER = "当前处于：狂暴姿态",
         WARLOCK_WRONG_PET = "召唤错误",
     },
     zhTW = {
@@ -37,6 +43,9 @@ local LOCALIZED_MESSAGES = {
         NO_PET = "我的寵物不存在",
         PET_DEAD = "我的寵物已死亡",
         WARRIOR_DEFENSIVE_STANCE = "目前處於：防禦姿態",
+        FOREVER_WARRIOR_BATTLE = "目前處於：戰鬥姿態",
+        FOREVER_WARRIOR_DEFENSIVE = "目前處於：防禦姿態",
+        FOREVER_WARRIOR_BERSERKER = "目前處於：狂暴姿態",
         WARLOCK_WRONG_PET = "召喚錯誤",
     },
     ruRU = {
@@ -47,6 +56,9 @@ local LOCALIZED_MESSAGES = {
         NO_PET = "Питомец не призван",
         PET_DEAD = "Питомец мертв",
         WARRIOR_DEFENSIVE_STANCE = "Сейчас включена защитная стойка",
+        FOREVER_WARRIOR_BATTLE = "Сейчас включена боевая стойка",
+        FOREVER_WARRIOR_DEFENSIVE = "Сейчас включена защитная стойка",
+        FOREVER_WARRIOR_BERSERKER = "Сейчас включена стойка берсерка",
         WARLOCK_WRONG_PET = "Призван неподходящий демон!",
     },
 }
@@ -127,7 +139,7 @@ local UI_LOCALE = {
         FEED_REQUIRES_PET = "Summon a hunter pet to list suitable food.",
         FEED_REQUIRES_HUNTER = "Select food on your Forever hunter.",
         SETTING_OUT_OF_COMBAT = "Available out of combat.",
-        ALERT_CLASSES = { HUNTER = "Hunter", WARLOCK = "Warlock", MAGE = "Mage", DEATHKNIGHT = "Death Knight", WARRIOR = "Warrior" },
+        ALERT_CLASSES = { HUNTER = "Hunter", WARLOCK = "Warlock", MAGE = "Mage", DEATHKNIGHT = "Death Knight", WARRIOR = "Warrior", PALADIN = "Paladin" },
         ALERT_CLASS_VARIANTS = { MAGE = "Frost Mage (Water Elemental)", FOREVER_MAGE = "Mage (Water Elemental)",
             DEATHKNIGHT = "Unholy Death Knight", WARRIOR = "Arms / Fury Warrior" },
         WARRIOR_DEFENSIVE_STANCE = "Warrior: Defensive Stance",
@@ -234,7 +246,7 @@ local UI_LOCALE = {
         FEED_REQUIRES_PET = "召出猎人宠物后可查看适合它的食物。",
         FEED_REQUIRES_HUNTER = "请用无限服猎人选择食物。",
         SETTING_OUT_OF_COMBAT = "脱战后可选择。",
-        ALERT_CLASSES = { HUNTER = "猎人", WARLOCK = "术士", MAGE = "法师", DEATHKNIGHT = "死亡骑士", WARRIOR = "战士" },
+        ALERT_CLASSES = { HUNTER = "猎人", WARLOCK = "术士", MAGE = "法师", DEATHKNIGHT = "死亡骑士", WARRIOR = "战士", PALADIN = "圣骑士" },
         ALERT_CLASS_VARIANTS = { MAGE = "冰霜法师（召唤水元素）", FOREVER_MAGE = "法师（召唤水元素）",
             DEATHKNIGHT = "邪恶死亡骑士", WARRIOR = "武器 / 狂暴战士" },
         WARRIOR_DEFENSIVE_STANCE = "战士：防御姿态",
@@ -341,7 +353,7 @@ local UI_LOCALE = {
         FEED_REQUIRES_PET = "召喚獵人寵物後可查看適合牠的食物。",
         FEED_REQUIRES_HUNTER = "請使用無限服獵人選擇食物。",
         SETTING_OUT_OF_COMBAT = "脫離戰鬥後可選擇。",
-        ALERT_CLASSES = { HUNTER = "獵人", WARLOCK = "術士", MAGE = "法師", DEATHKNIGHT = "死亡騎士", WARRIOR = "戰士" },
+        ALERT_CLASSES = { HUNTER = "獵人", WARLOCK = "術士", MAGE = "法師", DEATHKNIGHT = "死亡騎士", WARRIOR = "戰士", PALADIN = "聖騎士" },
         ALERT_CLASS_VARIANTS = { MAGE = "冰霜法師（召喚水元素）", FOREVER_MAGE = "法師（召喚水元素）",
             DEATHKNIGHT = "邪惡死亡騎士", WARRIOR = "武器 / 狂怒戰士" },
         WARRIOR_DEFENSIVE_STANCE = "戰士：防禦姿態",
@@ -448,7 +460,7 @@ local UI_LOCALE = {
         FEED_REQUIRES_PET = "Призовите питомца охотника, чтобы увидеть подходящий корм.",
         FEED_REQUIRES_HUNTER = "Выберите корм на охотнике в Forever.",
         SETTING_OUT_OF_COMBAT = "Доступно вне боя.",
-        ALERT_CLASSES = { HUNTER = "Охотник", WARLOCK = "Чернокнижник", MAGE = "Маг", DEATHKNIGHT = "Рыцарь смерти", WARRIOR = "Воин" },
+        ALERT_CLASSES = { HUNTER = "Охотник", WARLOCK = "Чернокнижник", MAGE = "Маг", DEATHKNIGHT = "Рыцарь смерти", WARRIOR = "Воин", PALADIN = "Паладин" },
         ALERT_CLASS_VARIANTS = { MAGE = "Маг льда (элементаль воды)", FOREVER_MAGE = "Маг (элементаль воды)",
             DEATHKNIGHT = "Рыцарь смерти (Нечестивость)", WARRIOR = "Воин (Оружие / Неистовство)" },
         WARRIOR_DEFENSIVE_STANCE = "Воин: Защитная стойка",
@@ -579,7 +591,7 @@ local SETTINGS_STRINGS = {
     FOOD_BUFF_MISSING = { "Missing food buff", "缺少食物增益", "缺少食物增益", "Нет эффекта еды" },
     FOOD_BUFF_XP = { "+5% XP", "+5% XP", "+5% XP", "+5% опыта" },
     FOOD_PICKER_ENABLE = { "Click to eat", "点击进食", "點擊進食", "Есть по щелчку" },
-    FOOD_PICKER_HINT = { "Right-click the food alert to choose food. Left-click to eat the saved choice.", "右键食物提醒选择食物，左键吃已记住的食物。", "右鍵食物提醒選擇食物，左鍵吃已記住的食物。", "Щёлкните правой кнопкой по напоминанию, чтобы выбрать еду, левой — чтобы съесть выбранную." },
+    FOOD_PICKER_HINT = { "Right-click the alert to choose food. Eating buff food from your bags saves it too. Left-click the alert to eat the saved food.", "右键提醒可选食物，在背包里右键吃增益食物也会自动记住。左键提醒可吃已记住的食物。", "右鍵提醒可選食物，在背包裡右鍵吃增益食物也會自動記住。左鍵提醒可吃已記住的食物。", "Правый щелчок по напоминанию открывает выбор еды. Еда с эффектом, съеденная из сумки, тоже запоминается. Левый щелчок по напоминанию использует сохранённую еду." },
     FOOD_PICKER_TITLE = { "Choose food", "选择食物", "選擇食物", "Выберите еду" },
     FOOD_PICKER_EMPTY = { "No usable buff food in your bags.", "背包里没有可用的增益食物。", "背包裡沒有可用的增益食物。", "В сумках нет подходящей еды с эффектом." },
     FOOD_PICKER_LOADING = { "Loading food data…", "正在读取食物资料…", "正在讀取食物資料…", "Загрузка данных о еде…" },
@@ -597,6 +609,48 @@ local SETTINGS_STRINGS = {
     SUPPORT_MAGE = { "Frost only. Requires the configured Water Elemental ability by default.", "仅冰霜专精。默认要求已学会设定的水元素召唤技能或天赋。", "僅冰霜專精。預設需學會設定的水元素召喚技能或天賦。", "Только «Лёд». По умолчанию нужна указанная способность призыва элементаля воды." },
     SUPPORT_DEATHKNIGHT = { "Unholy only.", "仅邪恶专精。", "僅穢邪專精。", "Только «Нечестивость»." },
     SUPPORT_WARRIOR = { "Arms and Fury only.", "仅武器和狂怒专精。", "僅武器和狂怒專精。", "Только «Оружие» и «Неистовство»." },
+    SUPPORT_FOREVER_WARRIOR = {
+        "Select the stances you want to be warned about. You can select more than one.\n"
+            .. "If you tank in Defensive Stance, select Battle Stance and Berserker Stance. Switching to either one shows an alert to remind you to switch back to Defensive Stance.\n"
+            .. "Right-click the alert icon whenever it appears to change your selection.",
+        "勾选你想在切入时收到提醒的姿态，可多选。\n"
+            .. "比如你在玩防战，平时用防御姿态，可以勾选「战斗姿态」和「狂暴姿态」。临时切到其中一种时就会出现提醒，免得打完技能忘了切回防御姿态。\n"
+            .. "提醒图标出现时，右键点击即可修改勾选。",
+        "勾選你想在切入時收到提醒的姿態，可複選。\n"
+            .. "例如你玩防戰，平時用防禦姿態，可以勾選「戰鬥姿態」和「狂暴姿態」。暫時切到其中一種時就會出現提醒，免得用完技能忘了切回防禦姿態。\n"
+            .. "提醒圖示出現時，按右鍵即可修改勾選。",
+        "Выберите стойки, в которых хотите получать предупреждение. Можно выбрать несколько.\n"
+            .. "Если вы танкуете в защитной стойке, отметьте боевую стойку и стойку берсерка. При переходе в любую из них появится напоминание вернуться в защитную стойку.\n"
+            .. "Щёлкните правой кнопкой по значку предупреждения, чтобы изменить выбор.",
+    },
+    FOREVER_WARRIOR_BATTLE = { "Battle Stance", "战斗姿态", "戰鬥姿態", "Боевая стойка" },
+    FOREVER_WARRIOR_DEFENSIVE = { "Defensive Stance", "防御姿态", "防禦姿態", "Защитная стойка" },
+    FOREVER_WARRIOR_BERSERKER = { "Berserker Stance", "狂暴姿态", "狂暴姿態", "Стойка берсерка" },
+    FOREVER_WARRIOR_FORM_MENU = { "Stance alerts", "姿态提醒", "姿態提醒", "Предупреждения о стойках" },
+    FOREVER_WARRIOR_FORM_MENU_HINT = { "Right-click to choose stance alerts.", "右键选择要提醒的姿态。", "右鍵選擇要提醒的姿態。", "Щёлкните правой кнопкой, чтобы выбрать стойки." },
+    SUPPORT_FOREVER_PALADIN = {
+        "Select the auras you want to be warned about when you activate them yourself. You can select more than one.\n"
+            .. "If you tank with Devotion Aura, select Retribution Aura and Concentration Aura. Activating either one shows an alert to remind you to switch back to Devotion Aura.\n"
+            .. "Right-click the alert icon whenever it appears to change your selection.",
+        "勾选你想在自己开启时收到提醒的光环，可多选。\n"
+            .. "比如你在副本里打坦克，平时开虔诚光环，可以勾选「惩罚光环」和「专注光环」。临时开了其中一个就会出现提醒，免得忘了切回虔诚光环。\n"
+            .. "提醒图标出现时，右键点击即可修改勾选。",
+        "勾選你想在自己開啟時收到提醒的光環，可複選。\n"
+            .. "例如你在副本裡當坦克，平時開虔誠光環，可以勾選「懲罰光環」和「專注光環」。暫時開啟其中一個就會出現提醒，免得忘了切回虔誠光環。\n"
+            .. "提醒圖示出現時，按右鍵即可修改勾選。",
+        "Выберите ауры, при включении которых вы хотите получать предупреждение. Можно выбрать несколько.\n"
+            .. "Если вы танкуете с аурой благочестия, отметьте ауру воздаяния и ауру сосредоточенности. Если вы включите любую из них, появится напоминание вернуться к ауре благочестия.\n"
+            .. "Щёлкните правой кнопкой по значку предупреждения, чтобы изменить выбор.",
+    },
+    FOREVER_PALADIN_DEVOTION = { "Devotion Aura", "虔诚光环", "虔誠光環", "Аура благочестия" },
+    FOREVER_PALADIN_RETRIBUTION = { "Retribution Aura", "惩罚光环", "懲罰光環", "Аура воздаяния" },
+    FOREVER_PALADIN_CONCENTRATION = { "Concentration Aura", "专注光环", "專注光環", "Аура сосредоточенности" },
+    FOREVER_PALADIN_SHADOW_RESISTANCE = { "Shadow Resistance Aura", "暗影抗性光环", "暗影抗性光環", "Аура сопротивления темной магии" },
+    FOREVER_PALADIN_FROST_RESISTANCE = { "Frost Resistance Aura", "冰霜抗性光环", "冰霜抗性光環", "Аура сопротивления магии льда" },
+    FOREVER_PALADIN_FIRE_RESISTANCE = { "Fire Resistance Aura", "火焰抗性光环", "火焰抗性光環", "Аура сопротивления огню" },
+    FOREVER_FORM_ALERT_ACTIVE = { "%s active!", "已开启%s", "已開啟%s", "Действует %s" },
+    FOREVER_PALADIN_FORM_MENU = { "Aura alerts", "光环提醒", "光環提醒", "Предупреждения об аурах" },
+    FOREVER_PALADIN_FORM_MENU_HINT = { "Right-click to choose aura alerts.", "右键选择要提醒的光环。", "右鍵選擇要提醒的光環。", "Щёлкните правой кнопкой, чтобы выбрать ауры." },
     SUPPORT_FOREVER = { "Learn a pet summon ability to enable pet alerts.", "学会宠物召唤技能后生效。", "學會寵物召喚技能後生效。", "Для предупреждений нужна изученная способность призыва питомца." },
     SUPPORT_FOREVER_MAGE = { "Requires the configured Water Elemental ability by default.", "默认要求学会设定的水元素召唤技能。", "預設需學會設定的水元素召喚技能。", "По умолчанию нужна указанная способность призыва элементаля воды." },
 }
@@ -667,6 +721,7 @@ local function RefreshLocaleTables()
         WARRIOR_DEFENSIVE_STANCE = UI.WARRIOR_DEFENSIVE_STANCE,
         WARLOCK_WRONG_PET = UI.WARLOCK_WRONG_PET,
     }
+    for key in pairs(PSA.FOREVER_FORM_ALERT_SPELLS) do STATUS_LABEL[key] = UI[key] end
     PSA.UI = UI
     PSA.STATUS_LABEL = STATUS_LABEL
     if PSA.RefreshSupplyAlertLabels then PSA.RefreshSupplyAlertLabels() end
@@ -675,11 +730,15 @@ end
 RefreshLocaleTables()
 
 local function GetDefaultMessage(statusKey)
-    return L[statusKey] or LOCALIZED_MESSAGES.enUS[statusKey] or ""
+    local message = L[statusKey] or LOCALIZED_MESSAGES.enUS[statusKey]
+    if not message and PSA.FOREVER_FORM_ALERT_SPELLS[statusKey] then
+        return UI.FOREVER_FORM_ALERT_ACTIVE:format(UI[statusKey])
+    end
+    return message or ""
 end
 
 function PSA.GetAlertClassLabel(classFile, forever)
-    if forever ~= nil then
+    if forever ~= nil and not (forever and classFile == "WARRIOR") then
         local key = forever and classFile == "MAGE" and "FOREVER_MAGE" or classFile
         return UI.ALERT_CLASS_VARIANTS[key] or UI.ALERT_CLASSES[classFile]
     end
@@ -688,6 +747,7 @@ end
 
 function PSA.GetClassSupportNote(classFile, forever)
     if not PSA.GetClassAlertStatuses(classFile, forever) then return UI.CLASS_UNSUPPORTED end
+    if forever and PSA.GetForeverFormAlertStatuses(classFile) then return UI["SUPPORT_FOREVER_" .. classFile] end
     if forever then return classFile == "MAGE" and UI.SUPPORT_FOREVER_MAGE or UI.SUPPORT_FOREVER end
     return UI["SUPPORT_" .. classFile]
 end
@@ -722,6 +782,7 @@ end
 
 function PSA.GetDefaultStatusEnabled(statusKey)
     return statusKey ~= "UNKNOWN" and statusKey ~= "AGGRESSIVE" and statusKey ~= PSA.WRONG_PET_STATUS_KEY
+        and not PSA.FOREVER_FORM_ALERT_SPELLS[statusKey]
 end
 
 local function IsStatusEnabled(statusKey, classFile)
@@ -734,6 +795,10 @@ end
 
 local function SetStatusEnabled(statusKey, enabled, classFile)
     PSA.SetStatusSetting("statusEnabled", statusKey, not not enabled, classFile)
+    if PSA.FOREVER_FORM_ALERT_SPELLS[statusKey] and PSA.ApplyForeverFormAlertSettings
+        and (not classFile or classFile == PSA.GetPlayerClassFile()) then
+        PSA.ApplyForeverFormAlertSettings()
+    end
 end
 
 local DEFAULT_TEXT_COLOR = {

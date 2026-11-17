@@ -972,7 +972,8 @@ local function DrawAlertsPage(parent, classFile, forever)
     local _, desc = CreatePageHeader(page, title, description)
     local startY = 36 + desc:GetStringHeight()
     local updateEligibility
-    if statuses and not readOnly and (forever or classFile == "MAGE") and PSA.GetPlayerClassFile() == classFile then
+    if statuses and not readOnly and ((forever and not PSA.GetForeverFormAlertStatuses(classFile)) or classFile == "MAGE")
+        and PSA.GetPlayerClassFile() == classFile then
         local eligibility = CreateText(page, "GameFontDisableSmall", "", 12, STYLE.text)
         eligibility:SetPoint("TOPLEFT", desc, "BOTTOMLEFT", 0, -4)
         eligibility:SetWidth(LAYOUT.contentWidth - 10)
@@ -1784,7 +1785,7 @@ local function CreateOptionsFrame()
 
     frame.activePage = "masters"
     frame.viewForever = isForever
-    local classes = PSA.GetAlertClasses(false)
+    local classes = PSA.GetAlertSettingsClasses()
     local classesExpanded = false
     frame.navButtons = {}
     local settingsPages = {}
