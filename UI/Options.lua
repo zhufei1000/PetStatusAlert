@@ -1690,6 +1690,21 @@ local function CreateOptionsFrame()
     frame.navButtons = {}
     local settingsPages = {}
     local scrollOffsets = {}
+    -- Locale-specific pages are unreachable after a language switch. Drop the
+    -- old pages (and their frames) instead of keeping one full page set per
+    -- language alive for the rest of the session.
+    local function PruneLocalePages()
+        local prefix = GetActiveLocale() .. ":"
+        for cacheKey, page in pairs(settingsPages) do
+            if cacheKey:sub(1, #prefix) ~= prefix and page ~= frame.currentPage then
+                settingsPages[cacheKey] = nil
+                scrollOffsets[cacheKey] = nil
+                page:Hide()
+                page:SetParent(nil)
+            end
+        end
+    end
+    frame.PruneLocalePages = PruneLocalePages
     local navLabels = {}
     local navOrder = {}
 
@@ -1956,10 +1971,12 @@ local function RefreshOptionsFrameLocale()
         AutoFitButton(frame.psaCloseButton, 96)
     end
     if frame.psaStatusLine then
-        frame.psaStatusLine:SetText(UI.FOOTER or "/psa")
+        frame.psaStatusLine:SetText(PSA.IsDisplayPreviewActive() and UI.PREVIEW_SAMPLE or UI.FOOTER or "/psa")
     end
     if frame.DrawPage then
+        if frame.PruneLocalePages then frame.PruneLocalePages() end
         frame:DrawPage()
+        if frame.PruneLocalePages then frame.PruneLocalePages() end
     end
 end
 

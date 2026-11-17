@@ -1,14 +1,11 @@
 # PetStatusAlert
 
-## Unreleased
+## 1.8.0
 
 - Move pixel glow and vertical motion to a separate Animation page. Add a shared glow refresh slider (10–30 updates per second, default 20).
 - Put screen preview, position lock, and position reset at the top of General. Keep the preview visible while adjusting Display or Animation.
-
 - Add a separate Forever low ammo alert switch, on by default. Turning it off keeps the threshold, and a previously saved threshold of zero is carried over as an opt-out.
-
 - On Forever, warn when Hunter pet Growl should be enabled outdoors or disabled in a dungeon or raid. Remind players to set a learned Cower opposite to Growl's actual autocast setting after fixing any Growl mismatch.
-
 - Give pets two seconds to return after dismounting on both clients. Only the missing-pet alert waits, and entering combat checks immediately.
 - On Forever, show a separate zero-food indicator when a pet needs feeding and there is no suitable food in the player's bags. Hide the feed reminder while the pet is eating.
 - Reduce idle and combat CPU: cache mount/vehicle and pet stance state between the events that can change them, cache learned spell lookups, remove protected-call wrappers from the pet refresh hot path, and reuse timer callbacks instead of allocating closures and formatted strings for every pet event.

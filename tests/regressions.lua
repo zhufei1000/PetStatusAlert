@@ -1847,7 +1847,7 @@ Test("Forever Hunter checks Growl by location and Cower against the real Growl s
         growl = true
         Event("PET_BAR_UPDATE")
         Flush()
-        Expect(1742, "−")
+        Expect(1742, "-")
         cower = false
         Event("PET_BAR_UPDATE")
         Flush()
@@ -1857,7 +1857,7 @@ Test("Forever Hunter checks Growl by location and Cower against the real Growl s
         instanceType = "party"
         Event("ZONE_CHANGED_NEW_AREA")
         Flush()
-        Expect(2649, "−")
+        Expect(2649, "-")
         growl = false
         Event("PET_BAR_UPDATE")
         Flush()
@@ -1873,7 +1873,7 @@ Test("Forever Hunter checks Growl by location and Cower against the real Growl s
         instanceType, raid, growl = "none", true, true
         Event("ZONE_CHANGED_NEW_AREA")
         Flush()
-        Expect(2649, "−")
+        Expect(2649, "-")
         raid, cower = false, false -- Convert back to a regular party without moving.
         Event("GROUP_ROSTER_UPDATE")
         Flush()

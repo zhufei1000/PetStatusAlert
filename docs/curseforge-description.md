@@ -1,6 +1,6 @@
 # PetStatusAlert — Pet & Warrior Stance Alerts
 
-**PetStatusAlert** is a lightweight alert addon for **WoW Retail** and **WoW: Forever (Interface 16001)**. It warns you before a pet or class-state mistake costs you a pull: missing or dead pets, the wrong pet mode, the wrong Warlock demon, Defensive Stance on Warriors, low ammunition, and unhappy Hunter pets.
+**PetStatusAlert** is a lightweight alert addon for **WoW Retail** and **WoW: Forever (Interface 16001)**. It warns you before a pet or class-state mistake costs you a pull: missing or dead pets, the wrong pet mode, the wrong Warlock demon, Defensive Stance on Warriors, low ammunition, Growl/Cower autocast, and unhappy Hunter pets.
 
 No external database is required, and the addon only speaks up when something needs fixing.
 
@@ -10,7 +10,7 @@ No external database is required, and the addon only speaks up when something ne
 - **Wrong pet mode**: Passive, Defensive, and optionally Aggressive on Forever. Only Assist is treated as correct.
 - **Warlock wrong-summon alert** with per-demon selection, Sayaad (Succubus/Incubus) sharing one rule, and Grimoire of Sacrifice support.
 - **Warrior Defensive Stance** warning for Arms and Fury on Retail, with combat-safe tracking.
-- **Forever extras**: low-ammo alerts for bows, crossbows and guns, plus one-click Hunter pet feeding, unhappy-pet alerts, and a combat warning for Cheetah or Pack.
+- **Forever extras**: low-ammo alerts for bows, crossbows and guns, one-click Hunter pet feeding with a no-food indicator, unhappy-pet alerts, Growl/Cower autocast checks, and a combat warning for Cheetah or Pack.
 - **Readable at a glance**: text-only, icon-only, or icon + text, with pixel glow and floating animation.
 - **Per-class settings**: alert switches, custom text, colors and class rules, separated for Retail and Forever.
 - **Combat TTS** with adjustable speed, speak-once mode, or a 2–15 second repeat interval.
@@ -53,10 +53,12 @@ Arms and Fury Warriors are warned while Defensive Stance is active. The tracker 
 
 ## Forever: Ammo, Pet Care & Combat Aspects
 
-- **Low ammo alert** — for any class using a bow, crossbow or gun that consumes ammo. The equipped ammunition is checked after combat, and the icon shows the remaining count. Default threshold: 100. Set it to 0 to disable the alert.
-- **One-click feeding** — a feed button appears out of combat when a Hunter pet can be fed. Left-click to feed, right-click to choose food. The choice is saved per character and rechecked before feeding.
+- **Low ammo alert** — for any class using a bow, crossbow or gun that consumes ammo. The equipped ammunition is checked after combat, and the icon shows the remaining count. Default threshold: 100 (1–9999). The alert has its own switch; turning it off keeps your threshold.
+- **One-click feeding** — a feed button appears out of combat when a Hunter pet can be fed. Left-click to feed, right-click to choose food. The choice is saved per character and rechecked before feeding. A gray icon with a red **0** appears when the pet needs feeding and no suitable food is in your bags; the feed reminder hides while the pet is eating.
 - **Unhappy pet reminder** — can be enabled separately from the feed button.
+- **Pet autocast reminder** — on Forever Hunters, warns when Growl should be on outdoors (solo or party) and off in a dungeon or raid. If the pet knows Cower, the reminder checks it against Growl's actual autocast state and only appears after Growl matches its rule. The badge shows `+` to turn autocast on or `-` to turn it off.
 - **Combat aspect reminder** — in combat, a Hunter's own Aspect of the Cheetah or Aspect of the Pack prompts a switch to Falcon, or the highest learned Hawk rank. Set it under **Forever → Hunter Tools → Combat Aspect**. The ammo threshold is under **Forever → Ammo**.
+- **Dismount grace** — on both clients, the missing-pet alert waits two seconds after dismounting so the pet can return. Entering combat checks immediately; death and pet-mode alerts do not wait.
 
 ## Display & Customization
 
@@ -65,11 +67,11 @@ Arms and Fury Warriors are warned while Defensive Stance is active. The tracker 
 - Icon size and icon/text spacing
 - Font size
 - Vertical floating animation with adjustable speed and amplitude
-- Optional pixel glow with adjustable speed
+- Optional pixel glow with adjustable speed and refresh rate (10–30 updates per second for the main icon; accessory icons use about 75% of that rate)
 - Free positioning, position lock, and position reset
 - Live preview while you change settings
 
-The **Display** page keeps a preview available while you scroll, so you can adjust the look without leaving the panel.
+The **General** page keeps preview and position controls at the top. The preview stays visible while you adjust **Display** or **Animation**.
 
 ## Class Settings
 
@@ -106,7 +108,7 @@ English, Simplified Chinese, Traditional Chinese, and Russian. Russian translati
 
 # PetStatusAlert — 宠物与战士姿态提醒
 
-**PetStatusAlert** 是一个轻量级提醒插件，同时支持 **魔兽世界正式服** 和 **魔兽世界：无限服（Interface 16001）**。它会在宠物或职业状态出错时提醒你：未召唤宠物、宠物死亡、宠物模式错误、术士召唤错误、战士防御姿态、弹药不足，以及猎人宠物不高兴。
+**PetStatusAlert** 是一个轻量级提醒插件，同时支持 **魔兽世界正式服** 和 **魔兽世界：无限服（Interface 16001）**。它会在宠物或职业状态出错时提醒你：未召唤宠物、宠物死亡、宠物模式错误、术士召唤错误、战士防御姿态、弹药不足、低吼/畏缩自动施放错误，以及猎人宠物不高兴。
 
 不需要额外数据库插件，状态正常时不会打扰你。
 
@@ -116,7 +118,7 @@ English, Simplified Chinese, Traditional Chinese, and Russian. Russian translati
 - **宠物模式提醒**：被动、防御；无限服还可选攻击状态。只有协助模式不会提醒。
 - **术士召唤错误提醒**：可逐项选择会触发提醒的恶魔；萨亚德同时涵盖魅魔和夜魔；支持牺牲魔典。
 - **战士防御姿态提醒**：正式服武器/狂暴战士，战斗中也能可靠追踪。
-- **无限服专属**：弓、弩、枪械弹药不足提醒；猎人一键喂食、宠物不高兴以及战斗守护切换提醒。
+- **无限服专属**：弓、弩、枪械弹药不足提醒；猎人一键喂食（含无可用食物提示）、宠物不高兴、低吼/畏缩自动施放检查，以及战斗守护切换提醒。
 - **一眼看清**：纯文字、纯图标、图标 + 文字，支持像素流光和上下浮动动画。
 - **按职业设置**：每个职业可单独设置提醒开关、文字、颜色和职业规则，正式服与无限服分开保存。
 - **战斗 TTS 语音**：语速可调，可选仅播一次或每 2–15 秒重复。
@@ -159,10 +161,12 @@ English, Simplified Chinese, Traditional Chinese, and Russian. Russian translati
 
 ## 无限服：弹药、宠物照料与战斗守护
 
-- **弹药不足提醒**：适用于使用弓、弩或枪械且需要弹药的职业。每次战斗结束后检查装备的弹药，图标角标显示剩余数量。默认阈值 100，设为 0 可关闭。
-- **一键喂食**：猎人宠物需要喂食时，脱战状态下显示喂食按钮。左键喂食，右键选择食物；食物选择按角色保存，喂食前会重新核对背包。
+- **弹药不足提醒**：适用于使用弓、弩或枪械且需要弹药的职业。每次战斗结束后检查装备的弹药，图标角标显示剩余数量。默认阈值 100（1–9999），提醒有独立开关，关闭后仍保留阈值。
+- **一键喂食**：猎人宠物需要喂食时，脱战状态下显示喂食按钮。左键喂食，右键选择食物；食物选择按角色保存，喂食前会重新核对背包。宠物需要喂食但背包里没有合适食物时，显示灰色图标和红色 **0**；宠物正在进食时隐藏喂食提醒。
 - **宠物不高兴提醒**：可与喂食按钮分别开关。
+- **宠物自动施放提醒**：无限服猎人在野外（单人或小队）应开启低吼，在五人本或团队中应关闭；宠物学会畏缩后，会在低吼符合规则后再检查畏缩，并用 `+`/`-` 角标提示应开启还是关闭自动施放。
 - **战斗守护提醒**：战斗中自己开启猎豹守护或豹群守护时，提示切换到已学的猎鹰守护，或最高等级的雄鹰守护。守护开关位于 **无限服 → 猎人专用 → 守护提醒**，弹药阈值位于 **无限服 → 弹药提醒**。
+- **下马缓冲**：正式服与无限服在上下马后给宠物 2 秒返回时间，只延后未召唤提醒；进入战斗立即检查，死亡和姿态提醒不受影响。
 
 ## 显示与自定义
 
@@ -171,11 +175,11 @@ English, Simplified Chinese, Traditional Chinese, and Russian. Russian translati
 - 图标大小、图标与文字间距
 - 字体大小
 - 上下浮动动画，可调速度和幅度
-- 可选像素流光，可调速度
+- 可选像素流光，可调速度和刷新频率（主图标每秒 10–30 次，附加图标约为该值的 75%）
 - 自由移动位置、锁定位置、恢复默认位置
 - 调整设置时实时预览
 
-**显示样式** 页在滚动时也会保留预览，不必反复开关面板。
+**通用** 页顶部固定显示预览与位置控件；调整 **显示样式** 或 **动画效果** 时预览会保持可见。
 
 ## 职业设置
 

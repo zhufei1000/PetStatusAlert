@@ -85,7 +85,7 @@ local UI_LOCALE = {
         SAVED = "Saved automatically",
         CLEARED = "Custom text cleared",
         RESET_DONE = "All custom text has been reset",
-        SUPPORT = PSA.IsForeverClient() and "Forever: pet alerts for Hunter, Warlock and Mage; Warrior stance alerts; low ammo and Hunter combat aspect reminders."
+        SUPPORT = PSA.IsForeverClient() and "Forever: pet alerts for Hunter, Warlock and Mage; Warrior stance alerts; low ammo, Hunter pet feeding, pet autocast, and combat aspect reminders."
             or "Retail: Hunter, Warlock, Unholy DK, Frost Mage and Arms/Fury Warrior.",
         LOCKED_STATUS = "Alert position locked",
         UNLOCKED_STATUS = "Alert position unlocked. Drag the alert text to move it.",
@@ -146,8 +146,6 @@ local UI_LOCALE = {
         AMMO_SETTINGS = "Low Ammo Alert",
         AMMO_THRESHOLD = "Ammo threshold",
         AMMO_THRESHOLD_HINT = "Warn out of combat below this amount. Default: 100. Range: 1–9999.",
-        ANIMATION_GLOW_ON = "Pixel glow enabled",
-        ANIMATION_GLOW_OFF = "Pixel glow disabled",
         ANIMATION_GLOW_SPEED = "Pixel glow speed",
         ANIMATION_GLOW_SPEED_HINT = "Adjust the flowing speed of the pixel glow. 1.0x = default speed.",
         ANIMATION_GLOW_SPEED_VALUE = "Glow speed: %sx",
@@ -192,7 +190,7 @@ local UI_LOCALE = {
         SAVED = "已自动保存",
         CLEARED = "已清空，将使用默认文字",
         RESET_DONE = "全部自定义文字已恢复默认",
-        SUPPORT = PSA.IsForeverClient() and "无限服：猎人、术士、法师宠物提醒；战士姿态提醒；弹药与猎人战斗守护提醒。"
+        SUPPORT = PSA.IsForeverClient() and "无限服：猎人、术士、法师宠物提醒；战士姿态提醒；弹药、一键喂食、自动施放与猎人战斗守护提醒。"
             or "正式服：猎人、术士、邪恶死亡骑士、冰霜法师、武器/狂暴战士。",
         LOCKED_STATUS = "提示文字位置已锁定",
         UNLOCKED_STATUS = "提示文字位置已解锁，可拖动屏幕提示文字移动位置。",
@@ -253,8 +251,6 @@ local UI_LOCALE = {
         AMMO_SETTINGS = "弹药不足提醒",
         AMMO_THRESHOLD = "弹药低于此数量时提醒",
         AMMO_THRESHOLD_HINT = "脱战时检查剩余弹药。默认 100，可设为 1–9999。",
-        ANIMATION_GLOW_ON = "像素流光已开启",
-        ANIMATION_GLOW_OFF = "像素流光已关闭",
         ANIMATION_GLOW_SPEED = "像素流光速度",
         ANIMATION_GLOW_SPEED_HINT = "调整像素流光的流动速度。1.0x = 默认速度。",
         ANIMATION_GLOW_SPEED_VALUE = "流光速度：%sx",
@@ -299,7 +295,7 @@ local UI_LOCALE = {
         SAVED = "已自動儲存",
         CLEARED = "已清空，將使用預設文字",
         RESET_DONE = "全部自訂文字已恢復預設",
-        SUPPORT = PSA.IsForeverClient() and "永恆服：獵人、術士、法師寵物提醒；戰士姿態提醒；彈藥與獵人戰鬥守護提醒。"
+        SUPPORT = PSA.IsForeverClient() and "永恆服：獵人、術士、法師寵物提醒；戰士姿態提醒；彈藥、一鍵餵食、自動施放與獵人戰鬥守護提醒。"
             or "正式服：獵人、術士、邪惡死亡騎士、冰霜法師、武器/狂怒戰士。",
         LOCKED_STATUS = "提示文字位置已鎖定",
         UNLOCKED_STATUS = "提示文字位置已解鎖，可拖動螢幕提示文字移動位置。",
@@ -360,8 +356,6 @@ local UI_LOCALE = {
         AMMO_SETTINGS = "彈藥不足提醒",
         AMMO_THRESHOLD = "彈藥低於此數量時提醒",
         AMMO_THRESHOLD_HINT = "脫戰時檢查剩餘彈藥。預設 100，可設為 1–9999。",
-        ANIMATION_GLOW_ON = "像素流光已開啟",
-        ANIMATION_GLOW_OFF = "像素流光已關閉",
         ANIMATION_GLOW_SPEED = "像素流光速度",
         ANIMATION_GLOW_SPEED_HINT = "調整像素流光的流動速度。1.0x = 預設速度。",
         ANIMATION_GLOW_SPEED_VALUE = "流光速度：%sx",
@@ -406,7 +400,7 @@ local UI_LOCALE = {
         SAVED = "Сохранено автоматически",
         CLEARED = "Пользовательский текст очищен",
         RESET_DONE = "Весь пользовательский текст был сброшен",
-        SUPPORT = PSA.IsForeverClient() and "Forever: напоминания о питомце для охотника, чернокнижника и мага; стойки воина; боеприпасы и дух охотника в бою."
+        SUPPORT = PSA.IsForeverClient() and "Forever: напоминания о питомце для охотника, чернокнижника и мага; стойки воина; боеприпасы, кормление питомца, автоприменение способностей питомца и дух охотника в бою."
             or "Retail: охотник, чернокнижник, рыцарь смерти (нечестивость), маг (лёд), воин (оружие/неистовство).",
         LOCKED_STATUS = "Позиция предупреждения закреплена",
         UNLOCKED_STATUS = "Позиция предупреждения разблокирована. Перетащите текст для перемещения.",
@@ -467,8 +461,6 @@ local UI_LOCALE = {
         AMMO_SETTINGS = "Нехватка боеприпасов",
         AMMO_THRESHOLD = "Порог боеприпасов",
         AMMO_THRESHOLD_HINT = "Проверка вне боя. По умолчанию 100. Диапазон 1–9999.",
-        ANIMATION_GLOW_ON = "Пиксельное свечение включено",
-        ANIMATION_GLOW_OFF = "Пиксельное свечение выключено",
         ANIMATION_GLOW_SPEED = "Скорость пиксельного свечения",
         ANIMATION_GLOW_SPEED_HINT = "Регулировка скорости движения пиксельного свечения. 1.0x = скорость по умолчанию.",
         ANIMATION_GLOW_SPEED_VALUE = "Скорость свечения: %sx",

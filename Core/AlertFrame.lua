@@ -15,6 +15,7 @@ local DEFAULT_ALERT_FLOAT_AMPLITUDE = PSA.DEFAULT_ALERT_FLOAT_AMPLITUDE or 8
 local DEFAULT_ALERT_FLOAT_SPEED = PSA.DEFAULT_ALERT_FLOAT_SPEED or 1
 local DEFAULT_ALERT_FONT_SIZE = PSA.DEFAULT_ALERT_FONT_SIZE or 28
 local DEFAULT_ALERT_GLOW_SPEED = PSA.DEFAULT_ALERT_GLOW_SPEED or 1
+local DEFAULT_ALERT_GLOW_FPS = PSA.DEFAULT_ALERT_GLOW_FPS or 20
 local DEFAULT_ALERT_GLOW_COLOR = {0.95, 0.95, 0.32, 1}
 local DEFAULT_ALERT_ICON_MODE = PSA.DEFAULT_ALERT_ICON_MODE or "both"
 local DEFAULT_ALERT_ICON_SIZE = PSA.DEFAULT_ALERT_ICON_SIZE or 48
@@ -623,7 +624,11 @@ local function ForgetGlowUpdate(frame)
 end
 
 local function GetGlowInterval(fps, accessory)
-    return 1 / (accessory and math.floor(fps * 0.75 + 0.5) or fps)
+    fps = tonumber(fps) or DEFAULT_ALERT_GLOW_FPS
+    if accessory then
+        return 1 / math.max(1, math.floor(fps * 0.75 + 0.5))
+    end
+    return 1 / math.max(1, fps)
 end
 
 function PSA.ApplyAlertGlowFPS(fps)
@@ -961,7 +966,7 @@ function PSA.SetPetAutocastAlert(spell, wanted, name)
             autocastFrame:SetScript("OnHide", HideSupplyTooltip)
         end
         autocastIcon:SetTexture(GetSpellTextureByID(spell) or 134400)
-        autocastBadge:SetText(wanted and "+" or "−")
+        autocastBadge:SetText(wanted and "+" or "-")
         if wanted then
             autocastBadge:SetTextColor(0.35, 1, 0.35)
         else
@@ -1412,7 +1417,6 @@ end
 
 PSA.addonFrame = addonFrame
 PSA.alertText = text
-PSA.ApplyAlertTextColor = ApplyAlertTextColor
 PSA.ApplyAlertPosition = ApplyAlertPosition
 PSA.SetAlertPositionLocked = SetAlertPositionLocked
 PSA.GetAlertFontSize = GetAlertFontSize

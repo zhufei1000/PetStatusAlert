@@ -1,1 +1,1 @@
-Pet and Warrior stance alerts for Retail and WoW: Forever. Forever adds low ammo, Hunter pet care, and combat warnings for Cheetah or Pack. Custom icons, text, colors and combat voice.
+Pet and Warrior stance alerts for Retail and WoW: Forever. Forever adds low ammo, Hunter pet care, Growl/Cower autocast, and combat warnings for Cheetah or Pack. Custom icons, text, colors and combat voice.

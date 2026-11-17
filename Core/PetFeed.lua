@@ -140,12 +140,17 @@ end
 -- The feeding effect is only used out of combat and when its aura is public.
 local function IsPetEating()
     local auras, secrets = C_UnitAuras, C_Secrets
-    if not auras or not auras.GetUnitAuraBySpellID
-        or (secrets and ((secrets.ShouldAurasBeSecret and secrets.ShouldAurasBeSecret())
-            or (secrets.ShouldSpellAuraBeSecret and secrets.ShouldSpellAuraBeSecret(FEED_PET_EFFECT)))) then
+    if not auras or not auras.GetUnitAuraBySpellID or not secrets or not secrets.ShouldAurasBeSecret then
         return false
     end
-    local aura = auras.GetUnitAuraBySpellID("pet", FEED_PET_EFFECT)
+    local aurasSecret = secrets.ShouldAurasBeSecret()
+    if not IsAccessible(aurasSecret) or aurasSecret then return false end
+    if secrets.ShouldSpellAuraBeSecret then
+        local spellSecret = secrets.ShouldSpellAuraBeSecret(FEED_PET_EFFECT)
+        if not IsAccessible(spellSecret) or spellSecret then return false end
+    end
+    local ok, aura = pcall(auras.GetUnitAuraBySpellID, "pet", FEED_PET_EFFECT)
+    if not ok then return false end
     return IsAccessible(aura) and aura ~= nil
 end
 

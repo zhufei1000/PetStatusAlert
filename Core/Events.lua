@@ -122,8 +122,9 @@ local PET_AUTOCAST_STATE_EVENTS = {
     ZONE_CHANGED_NEW_AREA = true,
     UNIT_PET = true,
     UNIT_FLAGS = true,
+    -- PET_UI_UPDATE fires repeatedly while the pet fights; it does not change
+    -- the pet spellbook autocast flags and must not trigger a spellbook scan.
     PET_BAR_UPDATE = true,
-    PET_UI_UPDATE = true,
     SPELLS_CHANGED = true,
     LEARNED_SPELL_IN_SKILL_LINE = true,
     PLAYER_REGEN_ENABLED = true,
