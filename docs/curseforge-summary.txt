@@ -1,1 +1,1 @@
-Lightweight pet and stance alerts for Retail & Forever. Warns for missing/dead pets, wrong mode, wrong Warlock demon, Defensive Stance, low ammo, Growl/Cower autocast and unhappy Hunter pets. Icons, per-class text/colors, combat TTS, 4 languages.
+Lightweight pet and stance alerts for Retail & Forever. Warns for missing/dead pets, wrong mode, wrong Warlock demon, Defensive Stance, low ammo, Growl/Cower autocast, one-click Hunter pet feeding and unhappy pets. Icons, text/colors, combat TTS.
