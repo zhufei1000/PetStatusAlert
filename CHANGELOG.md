@@ -1,5 +1,12 @@
 # PetStatusAlert
 
+## 1.8.1
+
+- Fix pet stance alerts (Passive, Defensive, and Aggressive) going silent on Retail and Forever. The client returns the pet action flags as numeric `1`/`0` rather than Lua booleans, so the previous read left the active stance unreadable. Stance parsing now accepts both the Retail and Classic tuple layouts and both boolean and numeric flags.
+- Retry an unreadable stance instead of caching the first failed read, so alerts recover after a summon or pet-bar update.
+- Fix the Warrior aura-refresh guard to use the timer bucket that `QueueRefresh` actually stores.
+- Remove an unused TTS localization string.
+
 ## 1.8.0
 
 - Move pixel glow and vertical motion to a separate Animation page. Add a shared glow refresh slider (10–30 updates per second, default 20).

@@ -1771,7 +1771,8 @@ local function CreateOptionsFrame()
             end
             local active = key == frame.activePage
             if key == "classes" and not classesExpanded then
-                active = frame.navButtons[frame.activePage].inPetGroup
+                local activeButton = frame.navButtons[frame.activePage]
+                active = activeButton and activeButton.inPetGroup
             end
             SetNavButtonActive(button, active)
         end

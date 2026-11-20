@@ -44,9 +44,18 @@ local function Session(config)
         return nil, spellID == config.activeFormSpell, true, spellID
     end
     env.C_SpellBook = {IsSpellKnown = function(id) return config.known and config.known[id] or false end}
+    local tokenFlag = config.rawToken
+    if tokenFlag == nil then tokenFlag = config.token ~= false end
+    local activeFlag = config.rawActive
+    if activeFlag == nil then activeFlag = config.active end
     env.GetPetActionInfo = function(slot)
         if slot ~= 1 then return end
-        return config.mode, 1, config.token ~= false, config.active ~= false
+        if config.actionShape == "classic" then
+            -- Classic: name, subtext, texture, isToken, isActive
+            return config.mode, nil, "Interface\\Icons\\Ability_Seal", tokenFlag, activeFlag
+        end
+        -- Retail: name, texture, isToken, isActive, autoCastAllowed, autoCastEnabled, spellID
+        return config.mode, "Interface\\Icons\\Ability_Seal", tokenFlag, activeFlag, false, false, 0
     end
     env.PET_MODE_PASSIVE = "Localized Passive"
     env.PET_MODE_DEFENSIVE = "Localized Defensive"
@@ -193,8 +202,18 @@ Test("unrelated active actions and empty bars are never guessed as Defensive", f
         assert(session.Refresh() == "UNKNOWN")
     end
 end)
-Test("inactive pet modes do not become active modes", function()
+Test("a single stance button keeps its mode even when the client reports it inactive", function()
+    -- Modern clients keep one cycling stance button whose name already is the
+    -- current mode; its isActive flag is not the stance signal.
     local session = Session({forever = true, pet = true, known = {[883] = true}, mode = "PET_MODE_PASSIVE", active = false})
+    assert(session.Refresh() == "PASSIVE")
+end)
+Test("a split stance bar with no active button is not guessed", function()
+    local session = Session({forever = true, pet = true, known = {[883] = true}})
+    session.env.GetPetActionInfo = function(slot)
+        if slot == 1 then return "PET_MODE_PASSIVE", "Interface\\Icons\\Ability_Seal", true, false end
+        if slot == 2 then return "PET_MODE_DEFENSIVE", "Interface\\Icons\\Ability_Defend", true, false end
+    end
     session.env.PetStatusAlertDB.statusEnabled.UNKNOWN = true
     assert(session.Refresh() == "UNKNOWN")
 end)
@@ -209,6 +228,64 @@ Test("missing pet action API uses Unknown", function()
     session.env.GetPetActionInfo = false
     session.env.PetStatusAlertDB.statusEnabled.UNKNOWN = true
     assert(session.Refresh() == "UNKNOWN")
+end)
+Test("Retail pet action order reads the stance flag, not the autocast flag", function()
+    -- autoCastAllowed is always false for a stance button; a positional read that
+    -- lands on it used to make every stance inactive and silent.
+    local passive = Session({forever = true, pet = true, known = {[883] = true}, mode = "PET_MODE_PASSIVE"})
+    assert(passive.Refresh() == "PASSIVE")
+    local defensive = Session({forever = true, pet = true, known = {[883] = true}, mode = "PET_MODE_DEFENSIVE"})
+    assert(defensive.Refresh() == "DEFENSIVE")
+end)
+Test("Retail numeric token and active flags mark the selected stance", function()
+    -- Retail returns isToken/isActive as 1/0 rather than booleans. A type check
+    -- for "boolean" left all three stance buttons unreadable and every stance
+    -- alert silent. Only the texture string identifies the layout reliably.
+    local function Stance(activeSlot)
+        local session = Session({pet = true})
+        session.env.GetPetActionInfo = function(slot)
+            if slot == 8 then
+                return "PET_MODE_ASSIST", "Interface\\Icons\\Ability_Hunter_Pet_Assist", 1, activeSlot == 8 and 1 or 0
+            end
+            if slot == 9 then
+                return "PET_MODE_DEFENSIVEASSIST", "Interface\\Icons\\Ability_Defend", 1, activeSlot == 9 and 1 or 0
+            end
+            if slot == 10 then
+                return "PET_MODE_PASSIVE", "Interface\\Icons\\Ability_Seal", 1, activeSlot == 10 and 1 or 0
+            end
+        end
+        return session
+    end
+    assert(Stance(9).Refresh() == "DEFENSIVE")
+    assert(Stance(10).Refresh() == "PASSIVE")
+end)
+Test("classic subtext pet action order still identifies the stance", function()
+    local session = Session({forever = true, pet = true, known = {[883] = true},
+        mode = "PET_MODE_PASSIVE", actionShape = "classic"})
+    assert(session.Refresh() == "PASSIVE")
+end)
+Test("classic subtext order accepts numeric flags", function()
+    local session = Session({forever = true, pet = true, known = {[883] = true},
+        mode = "PET_MODE_DEFENSIVEASSIST", actionShape = "classic", rawToken = 1, rawActive = 1})
+    assert(session.Refresh() == "DEFENSIVE")
+end)
+Test("a multi-button stance bar picks the active stance", function()
+    local session = Session({forever = true, pet = true, known = {[883] = true}})
+    session.env.GetPetActionInfo = function(slot)
+        if slot == 1 then return "PET_MODE_PASSIVE", "Interface\\Icons\\Ability_Seal", true, false end
+        if slot == 2 then return "PET_MODE_DEFENSIVE", "Interface\\Icons\\Ability_Defend", true, true end
+    end
+    assert(session.Refresh() == "DEFENSIVE")
+end)
+Test("a transient unknown stance is retried instead of cached", function()
+    local session = Session({forever = true, pet = true, known = {[883] = true}})
+    session.env.PetStatusAlertDB.statusEnabled.UNKNOWN = true
+    session.env.GetPetActionInfo = function() end
+    assert(session.Refresh() == "UNKNOWN")
+    session.env.GetPetActionInfo = function(slot)
+        if slot == 1 then return "PET_MODE_PASSIVE", "Interface\\Icons\\Ability_Seal", true, true end
+    end
+    assert(session.Refresh() == "PASSIVE", "an empty action bar read must not stay cached")
 end)
 Test("dead pets take priority over normal pet mode", function()
     assert(Session({forever = true, pet = true, dead = true, known = {[883] = true},

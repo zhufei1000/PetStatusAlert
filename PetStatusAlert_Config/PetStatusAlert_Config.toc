@@ -2,7 +2,7 @@
 ## Title: PetStatusAlert Settings | 宠物状态提醒设置
 ## Notes: Shared controls loaded when the PetStatusAlert settings panel opens.
 ## Author: zhufei1000
-## Version: 1.8.0
+## Version: 1.8.1
 ## Dependencies: PetStatusAlert
 ## LoadOnDemand: 1
 

@@ -2,7 +2,7 @@
 ## Title: PetStatusAlert - Pet & Warrior Stance Alerts | 宠物与战士姿态提醒
 ## Notes: Pet status, Warrior stances, and combat voice alerts for Retail and Forever. Forever also supports Hunter pet feeding, pet autocast, low ammo, and combat aspect alerts.
 ## Author: zhufei1000
-## Version: 1.8.0
+## Version: 1.8.1
 ## X-Curse-Project-ID: 1500392
 ## SavedVariables: PetStatusAlertDB
 ## OptionalDeps: QFXAddonManager

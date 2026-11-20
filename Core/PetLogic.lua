@@ -446,24 +446,92 @@ end
 
 -- Pet action names are fixed for the session. Build the token/localized-name to
 -- mode lookup once instead of walking five token entries for every active slot.
-local petModeByActionName
+-- Token names win over localized names so a pet ability that happens to share a
+-- translated mode name cannot be mistaken for a stance.
+local petModeTokenMap, petModeLocalizedNameMap
 
-local function GetPetModeActionMap()
-    local map = petModeByActionName
-    if map then
-        return map
+local function GetPetModeActionMaps()
+    if petModeTokenMap then
+        return petModeTokenMap, petModeLocalizedNameMap
     end
-    map = {}
+    petModeTokenMap, petModeLocalizedNameMap = {}, {}
     for _, entry in ipairs(PET_MODE_TOKENS) do
         local token, mode = entry[1], entry[2]
-        map[token] = mode
+        petModeTokenMap[token] = mode
         local localized = _G[token]
         if type(localized) == "string" and localized ~= token then
-            map[localized] = mode
+            petModeLocalizedNameMap[localized] = mode
         end
     end
-    petModeByActionName = map
-    return map
+    return petModeTokenMap, petModeLocalizedNameMap
+end
+
+-- GetPetActionInfo returns name, texture, isToken, isActive, autoCastAllowed,
+-- autoCastEnabled, spellID, checksRange, inRange on Retail (Blizzard's own
+-- Blizzard_ActionBar/Shared/PetActionBar.lua reads exactly that order), while
+-- the Classic-era clients return the same prefix shifted by a subtext name.
+-- The client does not guarantee Lua booleans: Retail reports isToken/isActive
+-- as 1/0, so a type check for "boolean" put the active flag nowhere and every
+-- stance alert stayed silent. The texture string is the only reliable layout
+-- marker: the Classic layout puts it third (after subtext), Retail second.
+local function IsActiveFlag(value)
+    return value == true or value == 1
+end
+
+local function ReadPetActionSlot(index)
+    local name, second, third, fourth, fifth = GetPetActionInfo(index)
+    local isToken, isActive
+    if type(second) == "boolean" then
+        -- Oldest: name, isToken, isActive
+        isToken, isActive = second, third
+    elseif type(third) == "string" then
+        -- Classic: name, subtext, texture, isToken, isActive
+        isToken, isActive = fourth, fifth
+    else
+        -- Retail: name, texture, isToken, isActive, autoCastAllowed, ...
+        -- isToken is 1/false/nil here; the texture string is the layout marker.
+        isToken, isActive = third, fourth
+    end
+
+    -- Secret values cannot be indexed or compared. Drop only the unreadable
+    -- field; one secret must not turn the whole stance into "unknown".
+    if not PSA.IsAccessibleValue(name) then name = nil end
+    if not PSA.IsAccessibleValue(isToken) then isToken = nil end
+    if not PSA.IsAccessibleValue(isActive) then isActive = nil end
+    return name, isToken, isActive
+end
+
+local function PickPetMode()
+    local tokenMap, localizedMap = GetPetModeActionMaps()
+    local slotCount = tonumber(NUM_PET_ACTION_SLOTS) or 10
+    local pendingMode, pendingCount
+
+    for i = 1, slotCount do
+        local name, _, isActive = ReadPetActionSlot(i)
+        if name ~= nil then
+            local mode = tokenMap[name]
+            if mode == nil then
+                mode = localizedMap[name]
+            end
+            if mode ~= nil then
+                if IsActiveFlag(isActive) then
+                    return mode
+                end
+                pendingCount = (pendingCount or 0) + 1
+                if pendingMode == nil then
+                    pendingMode = mode
+                end
+            end
+        end
+    end
+
+    -- One stance button is the whole switch: its name already reports the
+    -- current mode, so neither a missing nor an explicit false isActive may
+    -- hide it. Several stance buttons are disambiguated by isActive above; when
+    -- none of them is active the stance stays unknown instead of being guessed.
+    if pendingMode ~= nil and pendingCount == 1 then
+        return pendingMode
+    end
 end
 
 local function GetPetMode()
@@ -472,7 +540,10 @@ local function GetPetMode()
     end
 
     if not UnitExists("pet") then
-        petModeValid, petModeValue = true, nil
+        -- The caller already checked UnitExists; do not cache this nil. A pet
+        -- that appears without its UNIT_PET event reaching us would otherwise
+        -- stay invisible until the next cache invalidation.
+        petModeValid, petModeValue = false, nil
         return nil
     end
 
@@ -481,32 +552,19 @@ local function GetPetMode()
         return "UNKNOWN"
     end
 
-    local slotCount = tonumber(NUM_PET_ACTION_SLOTS) or 10
-    local modeByActionName = GetPetModeActionMap()
-
-    for i = 1, slotCount do
-        local name, _, texture, isToken, isActive = GetPetActionInfo(i)
-        -- Some classic-era builds return name, subtext, isToken, isActive
-        -- without a texture slot. Normalize both shapes.
-        if isActive == nil and type(texture) == "boolean" and type(isToken) == "boolean" then
-            isToken, isActive = texture, isToken
-        end
-        if not PSA.IsAccessibleValue(name)
-            or not PSA.IsAccessibleValue(isToken) or not PSA.IsAccessibleValue(isActive) then
-            petModeValid, petModeValue = true, "UNKNOWN"
-            return "UNKNOWN"
-        end
-
-        if name and isActive then
-            local mode = modeByActionName[name]
-            if mode then
-                petModeValid, petModeValue = true, mode
-                return mode
-            end
-        end
+    -- The pet action bar is refreshed from Blizzard code paths, but a client
+    -- build without the expected returns must not abort the whole alert
+    -- refresh, so a failed scan falls back to the unknown state.
+    local ok, mode = pcall(PickPetMode)
+    if ok and mode ~= nil then
+        petModeValid, petModeValue = true, mode
+        return mode
     end
 
-    petModeValid, petModeValue = true, "UNKNOWN"
+    -- An unknown stance is not cached: right after a summon or a control change
+    -- the pet action bar can still be populating, and a cached "UNKNOWN" keeps
+    -- every stance alert silent until the next invalidating event.
+    petModeValid, petModeValue = false, nil
     return "UNKNOWN"
 end
 

@@ -1413,7 +1413,7 @@ Test("Forever feeding tracks happiness, food, combat, and the stance layout", fu
     UnitIsDeadOrGhost = function() return false end
     SpellIsTargeting = function() return false end
     GetCursorInfo = function() return nil end
-    GetPetActionInfo = function() return stance, nil, true, true end
+    GetPetActionInfo = function() return stance, "Interface\\Icons\\Ability_Seal", true, true, false, false, 0 end
     C_Timer.After = function(_, callback) callback() end
 
     local session = LoadLanguageSession({language = "enUS"})

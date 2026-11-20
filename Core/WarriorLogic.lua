@@ -396,7 +396,8 @@ if IsWarrior() then
     end
 
     function PSA.HandleWarriorAuraChanged(update)
-        if not stanceAuraWanted or warriorQueuedRefreshTimers["0.02"]
+        -- QueueRefresh keys its timer buckets by delay * 100, so 0.02 is slot 2.
+        if not stanceAuraWanted or warriorQueuedRefreshTimers[2]
             or not AuraUpdateAffectsStance(update) then return end
         -- Cast events maintain stance while Blizzard restricts aura reads.
         if CanReadDefensiveStanceAura() then PSA.QueueRefresh(0.02) end
